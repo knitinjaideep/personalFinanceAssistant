@@ -61,7 +61,8 @@ async def init_db() -> None:
     all registered table models (imported via database.models).
     """
     # Import all models to ensure they are registered in SQLModel.metadata
-    import app.database.models  # noqa: F401
+    import app.database.models         # noqa: F401
+    import app.database.staged_models  # noqa: F401
 
     engine = _get_engine()
     async with engine.begin() as conn:

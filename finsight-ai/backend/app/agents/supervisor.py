@@ -5,9 +5,6 @@ Graph topology:
   START
     │
     ▼
-  [ingest_node]        Validate file, create DB record
-    │
-    ▼
   [parse_node]         PDF → ParsedDocument
     │
     ▼
@@ -31,6 +28,12 @@ Graph topology:
     ▼
   END
 
+Phase 2.4 upgrade:
+  Every node emits typed ``SSEEvent`` messages to the per-document ``EventBus``
+  via ``bus_registry.emit()``.  If no bus is registered (job was not started
+  via the streaming-aware upload path, or the bus was already closed), the
+  emit is a silent no-op — no crashes.
+
 Design decisions:
 - The supervisor does NOT contain business logic; it delegates to agents/services.
 - Conditional routing (route_node) uses agent.can_handle() scores to pick
@@ -42,6 +45,8 @@ Design decisions:
 
 from __future__ import annotations
 
+import time
+
 import structlog
 from langgraph.graph import END, START, StateGraph
 
@@ -50,8 +55,21 @@ from app.agents.institutions.morgan_stanley import MorganStanleyAgent
 from app.agents.institutions.chase import ChaseAgent
 from app.agents.institutions.etrade import ETradeAgent
 from app.agents.state import IngestionState
+from app.api.schemas.sse_schemas import (
+    EmbeddingCompletedPayload,
+    EmbeddingStartedPayload,
+    ExtractionStartedPayload,
+    FieldsDetectedPayload,
+    InstitutionHypothesesPayload,
+    IngestionCompletePayload,
+    ParseStartedPayload,
+    PersistCompletedPayload,
+    PersistStartedPayload,
+    TextExtractedPayload,
+)
 from app.domain.enums import DocumentStatus, ExtractionStatus, InstitutionType
 from app.parsers.pdf_parser import PDFParser
+from app.services.event_bus import bus_registry, make_ingestion_event
 
 logger = structlog.get_logger(__name__)
 
@@ -64,6 +82,21 @@ INSTITUTION_AGENT_REGISTRY: list[BaseInstitutionAgent] = [
 ]
 
 
+# ── Internal emit helper ────────────────────────────────────────────────────────
+
+async def _emit(state: IngestionState, **kwargs) -> None:
+    """
+    Emit an ingestion event to the document's EventBus.
+
+    Silent no-op if no bus is registered for this document_id.
+    """
+    doc_id = state.get("document_id")
+    if not doc_id:
+        return
+    event = make_ingestion_event(session_id=doc_id, document_id=doc_id, **kwargs)
+    await bus_registry.emit(doc_id, event)
+
+
 # ── Node functions ─────────────────────────────────────────────────────────────
 
 async def parse_node(state: IngestionState) -> IngestionState:
@@ -71,24 +104,70 @@ async def parse_node(state: IngestionState) -> IngestionState:
     from pathlib import Path
 
     file_path = state.get("file_path")
+    doc_id = state.get("document_id", "unknown")
+
     if not file_path:
         state.setdefault("errors", []).append("No file_path in state")
         return state
 
+    await _emit(
+        state,
+        event_type="parse_started",
+        stage="parse_pdf",
+        message="Extracting text and structure from PDF",
+        status="started",
+        progress=0.05,
+        payload=ParseStartedPayload(
+            document_id=doc_id,
+            file_path=file_path,
+        ).model_dump(),
+    )
+
+    t0 = time.monotonic()
     parser = PDFParser()
     try:
         parsed = await parser.parse(Path(file_path))
         state["parsed_document"] = parsed
         state["page_count"] = parsed.page_count
+        duration_ms = int((time.monotonic() - t0) * 1000)
+
+        # Estimate char count from all pages
+        char_count = sum(len(p.text or "") for p in parsed.pages)
+        has_tables = any(p.tables for p in parsed.pages if hasattr(p, "tables"))
+
         logger.info(
             "parse_node.done",
             pages=parsed.page_count,
-            document_id=state.get("document_id"),
+            document_id=doc_id,
         )
+        await _emit(
+            state,
+            event_type="text_extracted",
+            stage="parse_pdf",
+            message=f"Extracted {parsed.page_count} page(s), {char_count:,} characters",
+            status="complete",
+            progress=0.15,
+            duration_ms=duration_ms,
+            payload=TextExtractedPayload(
+                document_id=doc_id,
+                page_count=parsed.page_count,
+                char_count=char_count,
+                has_tables=has_tables,
+            ).model_dump(),
+        )
+
     except Exception as exc:
         logger.exception("parse_node.error", error=str(exc))
         state.setdefault("errors", []).append(f"Parse failed: {exc}")
         state["document_status"] = DocumentStatus.FAILED.value
+        await _emit(
+            state,
+            event_type="error",
+            stage="parse_pdf",
+            message=f"PDF parsing failed: {exc}",
+            status="failed",
+            progress=0.15,
+        )
 
     return state
 
@@ -100,17 +179,27 @@ async def classify_node(state: IngestionState) -> IngestionState:
     Stores the winning institution_type and classification_confidence in state.
     """
     parsed = state.get("parsed_document")
+    doc_id = state.get("document_id", "unknown")
+
     if not parsed:
         state["institution_type"] = InstitutionType.UNKNOWN
         state["classification_confidence"] = 0.0
         return state
 
+    t0 = time.monotonic()
     best_agent: BaseInstitutionAgent | None = None
     best_confidence: float = 0.0
+    hypotheses: list[dict] = []
 
     for agent in INSTITUTION_AGENT_REGISTRY:
         try:
             can_handle, confidence = await agent.can_handle(parsed)
+            hypothesis = {
+                "institution": agent.institution_type.value,
+                "confidence": confidence,
+                "can_handle": can_handle,
+            }
+            hypotheses.append(hypothesis)
             logger.debug(
                 "classify_node.agent_check",
                 agent=agent.institution_type.value,
@@ -130,46 +219,178 @@ async def classify_node(state: IngestionState) -> IngestionState:
     if best_agent:
         state["institution_type"] = best_agent.institution_type
         state["classification_confidence"] = best_confidence
+        selected = best_agent.institution_type.value
         logger.info(
             "classify_node.result",
-            institution=best_agent.institution_type.value,
+            institution=selected,
             confidence=best_confidence,
         )
     else:
         state["institution_type"] = InstitutionType.UNKNOWN
         state["classification_confidence"] = 0.0
+        selected = "unknown"
         state.setdefault("warnings", []).append(
             "Could not identify institution. Document marked as unknown."
         )
+
+    duration_ms = int((time.monotonic() - t0) * 1000)
+    await _emit(
+        state,
+        event_type="institution_hypotheses",
+        stage="classify_document",
+        message=f"Institution identified: {selected} (confidence {best_confidence:.0%})",
+        status="complete",
+        progress=0.25,
+        duration_ms=duration_ms,
+        payload=InstitutionHypothesesPayload(
+            document_id=doc_id,
+            hypotheses=hypotheses,
+            selected_institution=selected,
+            selected_confidence=best_confidence,
+        ).model_dump(),
+    )
 
     return state
 
 
 async def morgan_stanley_node(state: IngestionState) -> IngestionState:
     """Run the Morgan Stanley agent."""
+    await _emit(
+        state,
+        event_type="extraction_started_v2",
+        stage="extract_fields",
+        message="Running Morgan Stanley field extractor",
+        status="started",
+        progress=0.35,
+        payload=ExtractionStartedPayload(
+            document_id=state.get("document_id", ""),
+            institution="morgan_stanley",
+            agent="MorganStanleyAgent",
+        ).model_dump(),
+    )
     agent = next(
         a for a in INSTITUTION_AGENT_REGISTRY
         if a.institution_type == InstitutionType.MORGAN_STANLEY
     )
-    return await agent.run(state)
+    state = await agent.run(state)
+    await _emit_extraction_complete(state)
+    return state
 
 
 async def chase_node(state: IngestionState) -> IngestionState:
     """Run the Chase agent."""
+    await _emit(
+        state,
+        event_type="extraction_started_v2",
+        stage="extract_fields",
+        message="Running Chase field extractor",
+        status="started",
+        progress=0.35,
+        payload=ExtractionStartedPayload(
+            document_id=state.get("document_id", ""),
+            institution="chase",
+            agent="ChaseAgent",
+        ).model_dump(),
+    )
     agent = next(
         a for a in INSTITUTION_AGENT_REGISTRY
         if a.institution_type == InstitutionType.CHASE
     )
-    return await agent.run(state)
+    state = await agent.run(state)
+    await _emit_extraction_complete(state)
+    return state
 
 
 async def etrade_node(state: IngestionState) -> IngestionState:
     """Run the E*TRADE agent."""
+    await _emit(
+        state,
+        event_type="extraction_started_v2",
+        stage="extract_fields",
+        message="Running E*TRADE field extractor",
+        status="started",
+        progress=0.35,
+        payload=ExtractionStartedPayload(
+            document_id=state.get("document_id", ""),
+            institution="etrade",
+            agent="ETradeAgent",
+        ).model_dump(),
+    )
     agent = next(
         a for a in INSTITUTION_AGENT_REGISTRY
         if a.institution_type == InstitutionType.ETRADE
     )
-    return await agent.run(state)
+    state = await agent.run(state)
+    await _emit_extraction_complete(state)
+    return state
+
+
+async def _emit_extraction_complete(state: IngestionState) -> None:
+    """
+    Emit ``fields_detected`` after any institution agent finishes.
+
+    Pulls counts from the extraction result when available.
+    """
+    result = state.get("extraction_result")
+    doc_id = state.get("document_id", "")
+    institution = state.get("institution_type", InstitutionType.UNKNOWN)
+
+    if result and result.statement:
+        stmt = result.statement
+        tx_count = len(getattr(stmt, "transactions", []))
+        fee_count = len(getattr(stmt, "fees", []))
+        holding_count = len(getattr(stmt, "holdings", []))
+        snapshot_count = len(getattr(stmt, "balance_snapshots", []))
+        confidence = getattr(result, "overall_confidence", 0.0)
+        low_conf_fields: list[str] = []
+    else:
+        tx_count = fee_count = holding_count = snapshot_count = 0
+        confidence = 0.0
+        low_conf_fields = []
+
+    needs_review = confidence < 0.7 or bool(state.get("errors"))
+
+    await _emit(
+        state,
+        event_type="fields_detected",
+        stage="extract_fields",
+        message=(
+            f"Extraction complete — {tx_count} transactions, "
+            f"{fee_count} fees, {holding_count} holdings "
+            f"(confidence {confidence:.0%})"
+        ),
+        status="complete" if not state.get("errors") else "warning",
+        progress=0.5,
+        warnings=state.get("warnings", []),
+        payload=FieldsDetectedPayload(
+            document_id=doc_id,
+            institution=institution.value if hasattr(institution, "value") else str(institution),
+            transaction_count=tx_count,
+            fee_count=fee_count,
+            holding_count=holding_count,
+            balance_snapshot_count=snapshot_count,
+            overall_confidence=confidence,
+            low_confidence_fields=low_conf_fields,
+        ).model_dump(),
+    )
+
+    if needs_review:
+        await _emit(
+            state,
+            event_type="fields_needing_review",
+            stage="extract_fields",
+            message="Some extracted fields require human review",
+            status="warning",
+            progress=0.5,
+            payload={
+                "document_id": doc_id,
+                "review_item_count": 0,  # Phase 2.2 review service populates this
+                "reasons": (
+                    ["Overall extraction confidence below threshold"]
+                    if confidence < 0.7 else []
+                ) + state.get("errors", []),
+            },
+        )
 
 
 async def unknown_institution_node(state: IngestionState) -> IngestionState:
@@ -190,6 +411,18 @@ async def unknown_institution_node(state: IngestionState) -> IngestionState:
         ],
     )
     state["document_status"] = DocumentStatus.FAILED.value
+
+    await _emit(
+        state,
+        event_type="error",
+        stage="classify_document",
+        message=(
+            "Could not identify institution. "
+            "Supported: Morgan Stanley, Chase, E*TRADE."
+        ),
+        status="failed",
+        progress=0.3,
+    )
     return state
 
 
@@ -205,10 +438,34 @@ async def persist_node(state: IngestionState) -> IngestionState:
     from app.domain.enums import DocumentStatus
 
     result = state.get("extraction_result")
+    doc_id = state.get("document_id", "")
+
     if not result or not result.statement:
         logger.info("persist_node.skip", reason="no extraction result or statement")
         return state
 
+    stmt = result.statement
+    record_counts = {
+        "transactions": len(getattr(stmt, "transactions", [])),
+        "fees": len(getattr(stmt, "fees", [])),
+        "holdings": len(getattr(stmt, "holdings", [])),
+        "balance_snapshots": len(getattr(stmt, "balance_snapshots", [])),
+    }
+
+    await _emit(
+        state,
+        event_type="persist_started",
+        stage="persist_canonical",
+        message=f"Writing {sum(record_counts.values())} records to database",
+        status="started",
+        progress=0.6,
+        payload=PersistStartedPayload(
+            document_id=doc_id,
+            record_counts=record_counts,
+        ).model_dump(),
+    )
+
+    t0 = time.monotonic()
     try:
         async with get_session() as session:
             inst_repo = InstitutionRepository(session)
@@ -252,17 +509,40 @@ async def persist_node(state: IngestionState) -> IngestionState:
             await stmt_repo.create(result.statement)
 
             # Update document status
-            doc_id = state.get("document_id")
             if doc_id:
                 await doc_repo.update_status(
                     uuid.UUID(doc_id), DocumentStatus.PROCESSED
                 )
 
+        duration_ms = int((time.monotonic() - t0) * 1000)
         logger.info("persist_node.done", statement_id=str(result.statement.id))
+
+        await _emit(
+            state,
+            event_type="persist_completed",
+            stage="persist_canonical",
+            message="All records written to database",
+            status="complete",
+            progress=0.7,
+            duration_ms=duration_ms,
+            payload=PersistCompletedPayload(
+                document_id=doc_id,
+                statement_id=str(result.statement.id),
+                promoted_counts=record_counts,
+            ).model_dump(),
+        )
 
     except Exception as exc:
         logger.exception("persist_node.error", error=str(exc))
         state.setdefault("errors", []).append(f"Persistence failed: {exc}")
+        await _emit(
+            state,
+            event_type="error",
+            stage="persist_canonical",
+            message=f"Database write failed: {exc}",
+            status="failed",
+            progress=0.7,
+        )
 
     return state
 
@@ -278,6 +558,24 @@ async def embed_node(state: IngestionState) -> IngestionState:
     if not parsed or not doc_id:
         return state
 
+    # Estimate chunk count (embedding service decides final split)
+    total_chars = sum(len(p.text or "") for p in parsed.pages)
+    estimated_chunks = max(1, total_chars // 512)
+
+    await _emit(
+        state,
+        event_type="embedding_started_v2",
+        stage="embed_chunks",
+        message=f"Embedding ~{estimated_chunks} text chunk(s) into vector store",
+        status="started",
+        progress=0.75,
+        payload=EmbeddingStartedPayload(
+            document_id=doc_id,
+            chunk_count=estimated_chunks,
+        ).model_dump(),
+    )
+
+    t0 = time.monotonic()
     try:
         service = EmbeddingService()
         statement_id = str(result.statement.id) if result and result.statement else None
@@ -288,29 +586,82 @@ async def embed_node(state: IngestionState) -> IngestionState:
             statement_id=statement_id,
             institution_type=institution,
         )
+        duration_ms = int((time.monotonic() - t0) * 1000)
         logger.info("embed_node.done", document_id=doc_id)
+
+        await _emit(
+            state,
+            event_type="embedding_completed",
+            stage="embed_chunks",
+            message="Document indexed in vector store — now searchable",
+            status="complete",
+            progress=0.9,
+            duration_ms=duration_ms,
+            payload=EmbeddingCompletedPayload(
+                document_id=doc_id,
+                embedded_count=estimated_chunks,
+                skipped_count=0,
+            ).model_dump(),
+        )
+
     except Exception as exc:
         logger.exception("embed_node.error", error=str(exc))
         state.setdefault("warnings", []).append(f"Embedding failed (non-fatal): {exc}")
+        await _emit(
+            state,
+            event_type="warning",
+            stage="embed_chunks",
+            message=f"Embedding failed (document still usable): {exc}",
+            status="warning",
+            progress=0.9,
+        )
 
     return state
 
 
 async def report_node(state: IngestionState) -> IngestionState:
-    """Finalize state and log summary."""
+    """Finalize state, log summary, emit terminal ingestion event."""
     result = state.get("extraction_result")
     errors = state.get("errors", [])
+    warnings = state.get("warnings", [])
+    doc_id = state.get("document_id", "")
+    institution = state.get("institution_type", InstitutionType.UNKNOWN)
+
+    overall_status = "success" if not errors else "partial" if result else "failed"
+    overall_confidence = result.overall_confidence if result else 0.0
 
     logger.info(
         "ingestion.complete",
-        document_id=state.get("document_id"),
-        institution=state.get("institution_type", InstitutionType.UNKNOWN).value
-        if state.get("institution_type")
-        else "unknown",
+        document_id=doc_id,
+        institution=institution.value if hasattr(institution, "value") else str(institution),
         status=result.status.value if result else "unknown",
-        confidence=result.overall_confidence if result else 0.0,
+        confidence=overall_confidence,
         error_count=len(errors),
     )
+
+    await _emit(
+        state,
+        event_type="ingestion_pipeline_complete",
+        stage="finalize",
+        message=(
+            f"Ingestion complete — {overall_status} "
+            f"({len(errors)} error(s), {len(warnings)} warning(s))"
+        ),
+        status="complete" if not errors else "warning",
+        progress=1.0,
+        warnings=warnings,
+        payload=IngestionCompletePayload(
+            document_id=doc_id,
+            institution=institution.value if hasattr(institution, "value") else str(institution),
+            statement_type=state.get("statement_type", "unknown"),
+            overall_status=overall_status,
+            overall_confidence=overall_confidence,
+            error_count=len(errors),
+            warning_count=len(warnings),
+            review_item_count=0,  # Phase 2.2 will populate this
+        ).model_dump(),
+    )
+
     return state
 
 

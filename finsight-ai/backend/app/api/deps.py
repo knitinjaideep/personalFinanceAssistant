@@ -17,6 +17,7 @@ from app.rag.chroma_store import ChromaStore
 from app.services.chat_service import ChatService
 from app.services.ingestion_service import IngestionService
 from app.services.analytics_service import AnalyticsService
+from app.services.correction_service import CorrectionService
 
 
 async def get_session(
@@ -43,3 +44,10 @@ def get_analytics_service(
     session: AsyncSession = Depends(get_db_session),
 ) -> AnalyticsService:
     return AnalyticsService(session)
+
+
+def get_correction_service(
+    session: AsyncSession = Depends(get_db_session),
+) -> CorrectionService:
+    """Dependency: CorrectionService with a session-scoped repository."""
+    return CorrectionService(session)

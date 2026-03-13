@@ -15,11 +15,13 @@ import time
 
 import structlog
 
+from app.api.schemas.answer_schemas import StructuredAnswer
 from app.domain.entities import ChatRequest, ChatResponse, EmbeddingRecord
 from app.domain.enums import InstitutionType
 from app.ollama.model_router import ModelRouter, TaskType, get_model_router
 from app.rag.prompt_builder import SYSTEM_PROMPT, build_chat_prompt
 from app.rag.retriever import HybridRetriever, RetrievalResult
+from app.services.answer_builder import build_structured_answer
 
 logger = structlog.get_logger(__name__)
 
@@ -86,11 +88,22 @@ class ChatService:
         # Build source records from vector chunks
         sources = self._build_sources(retrieval.vector_chunks)
 
+        # Phase 2.7: build structured answer
+        structured = build_structured_answer(
+            question=request.question,
+            prose_answer=answer,
+            retrieval=retrieval,
+        )
+
         return ChatResponse(
             answer=answer,
             sources=sources,
             sql_query_used=retrieval.sql_query,
             processing_time_seconds=round(processing_time, 2),
+            structured_answer=structured.model_dump(),
+            answer_type=structured.answer_type,
+            confidence=getattr(structured, "confidence", None),
+            caveats=getattr(structured, "caveats", []),
         )
 
     def _build_sources(self, chunks: list[dict]) -> list[EmbeddingRecord]:

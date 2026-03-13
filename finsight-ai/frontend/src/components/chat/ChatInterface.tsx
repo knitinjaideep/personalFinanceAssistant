@@ -17,7 +17,8 @@ import { chatApi } from "../../api/chat";
 import { BucketPicker } from "./BucketPicker";
 import { AgentTrace } from "./AgentTrace";
 import { SourceCitations } from "./SourceCitations";
-import type { ChatMessage } from "../../types";
+import { AnswerCard } from "../answers/AnswerCard";
+import type { ChatMessage, StructuredAnswer } from "../../types";
 import type { SourceChunk } from "./SourceCitations";
 
 const EXAMPLE_QUESTIONS = [
@@ -29,16 +30,23 @@ const EXAMPLE_QUESTIONS = [
   "What financial statements are missing for 2026?",
 ];
 
-// ── Per-message type (extended with sources) ──────────────────────────────────
+// ── Per-message type (extended with sources + structured answer) ──────────────
 
 interface RichMessage extends ChatMessage {
   sources?: SourceChunk[];
+  structured_answer?: StructuredAnswer | null;
+  answer_type?: string;
 }
 
 // ── Message bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ message }: { message: RichMessage }) {
   const isUser = message.role === "user";
+  const isStructured =
+    !isUser &&
+    message.structured_answer != null &&
+    message.answer_type !== "prose";
+
   return (
     <div className={clsx("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
       <div
@@ -53,18 +61,28 @@ function MessageBubble({ message }: { message: RichMessage }) {
           <Bot size={14} className="text-gray-600" />
         )}
       </div>
-      <div className="flex flex-col gap-1 max-w-[80%]">
-        <div
-          className={clsx(
-            "px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap",
-            isUser
-              ? "bg-blue-600 text-white rounded-tr-sm"
-              : "bg-gray-100 text-gray-800 rounded-tl-sm"
-          )}
-        >
-          {message.content}
-        </div>
-        {!isUser && message.sources && message.sources.length > 0 && (
+
+      <div className="flex flex-col gap-1 max-w-[85%] min-w-0">
+        {isStructured && message.structured_answer ? (
+          // Structured answer — render typed card
+          <div className="w-full">
+            <AnswerCard structured={message.structured_answer} />
+          </div>
+        ) : (
+          // Prose — render standard bubble
+          <div
+            className={clsx(
+              "px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap",
+              isUser
+                ? "bg-blue-600 text-white rounded-tr-sm"
+                : "bg-gray-100 text-gray-800 rounded-tl-sm"
+            )}
+          >
+            {message.content}
+          </div>
+        )}
+
+        {!isUser && message.sources && message.sources.length > 0 && !isStructured && (
           <div className="ml-1">
             <SourceCitations sources={message.sources} />
           </div>
@@ -141,6 +159,8 @@ export function ChatInterface() {
           content: result.answer,
           timestamp: new Date().toISOString(),
           sources: result.sources as SourceChunk[],
+          structured_answer: result.structured_answer as StructuredAnswer | null,
+          answer_type: result.answer_type,
         };
         setRichHistory((prev) => [...prev, assistantMsg]);
         addChatMessage({ role: "assistant", content: result.answer });

@@ -200,6 +200,158 @@ export interface BucketScopedChatRequest {
   session_id?: string;
 }
 
+// ── Phase 2.7: Structured answer types ───────────────────────────────────────
+
+export interface EvidenceChunk {
+  id: string;
+  document_id: string;
+  chunk_text: string;
+  page_number: number | null;
+  section: string | null;
+  institution_type: string | null;
+  statement_period: string | null;
+  relevance_score: number | null;
+}
+
+export interface AnswerEvidence {
+  chunks: EvidenceChunk[];
+  sql_query: string | null;
+  sql_row_count: number | null;
+  data_source: "sql" | "vector" | "hybrid" | "none";
+}
+
+export interface ProseAnswer {
+  answer_type: "prose";
+  text: string;
+  confidence: number | null;
+  caveats: string[];
+  evidence: AnswerEvidence;
+}
+
+export interface NumericAnswerPayload {
+  answer_type: "numeric";
+  label: string;
+  value: string;
+  raw_value: number | null;
+  unit: string | null;
+  period: string | null;
+  institution: string | null;
+  account: string | null;
+  summary_text: string | null;
+  confidence: number | null;
+  caveats: string[];
+  evidence: AnswerEvidence;
+}
+
+export interface TableRow {
+  cells: Record<string, unknown>;
+}
+
+export interface TableAnswerPayload {
+  answer_type: "table";
+  title: string;
+  columns: string[];
+  rows: TableRow[];
+  row_count: number;
+  truncated: boolean;
+  summary_text: string | null;
+  confidence: number | null;
+  caveats: string[];
+  evidence: AnswerEvidence;
+}
+
+export interface ComparisonItem {
+  label: string;
+  value: string;
+  raw_value: number | null;
+  delta_pct: number | null;
+  is_baseline: boolean;
+}
+
+export interface ComparisonAnswerPayload {
+  answer_type: "comparison";
+  title: string;
+  dimension: string;
+  metric: string;
+  unit: string | null;
+  items: ComparisonItem[];
+  summary_text: string | null;
+  confidence: number | null;
+  caveats: string[];
+  evidence: AnswerEvidence;
+}
+
+export type StructuredAnswer = ProseAnswer | NumericAnswerPayload | TableAnswerPayload | ComparisonAnswerPayload;
+
+export interface StructuredChatResponse {
+  session_id: string;
+  answer: string;
+  answer_type: string;
+  structured_answer: StructuredAnswer | null;
+  sources: EmbeddingSource[];
+  sql_query_used: string | null;
+  confidence: number | null;
+  caveats: string[];
+  processing_time_seconds: number | null;
+}
+
+// ── Phase 2.8: Derived metrics types ─────────────────────────────────────────
+
+export interface AccountNetWorthPoint {
+  account_id: string;
+  account_label: string;
+  institution_type: string;
+  total_value: string;
+}
+
+export interface NetWorthDataPoint {
+  month_start: string;
+  year: number;
+  month: number;
+  total_value: string;
+  accounts: AccountNetWorthPoint[];
+}
+
+export interface SpendingDataPoint {
+  month_start: string;
+  year: number;
+  month: number;
+  total_fees: string;
+  total_withdrawals: string;
+  total_deposits: string;
+  net_cash_flow: string;
+  total_dividends: string;
+}
+
+export interface MonthlyAccountSummary {
+  account_id: string;
+  account_label: string;
+  institution_type: string;
+  institution_name: string;
+  total_value: string | null;
+  total_fees: string | null;
+  total_deposits: string | null;
+  total_withdrawals: string | null;
+  net_cash_flow: string | null;
+  transaction_count: number;
+  holding_count: number;
+}
+
+export interface MonthlySummary {
+  year: number;
+  month: number;
+  account_count: number;
+  total_value: string;
+  total_fees: string;
+  accounts: MonthlyAccountSummary[];
+}
+
+export interface AvailableMonth {
+  year: number;
+  month: number;
+  month_start: string;
+}
+
 // ── Document deletion ─────────────────────────────────────────────────────────
 
 export interface DeletionSummary {

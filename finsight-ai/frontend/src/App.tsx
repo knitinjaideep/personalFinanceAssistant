@@ -3,6 +3,7 @@ import { Toaster } from "react-hot-toast";
 import { Sidebar } from "./components/layout/Sidebar";
 import { DocumentUpload } from "./components/upload/DocumentUpload";
 import { ChatInterface } from "./components/chat/ChatInterface";
+import { MetricsPage } from "./pages/MetricsPage";
 import { StatementList } from "./components/statements/StatementList";
 import { FeeChart } from "./components/analytics/FeeChart";
 import { BalanceTimeline } from "./components/analytics/BalanceTimeline";
@@ -52,6 +53,8 @@ function PageContent() {
       return <ChatInterface />;
     case "analytics":
       return <AnalyticsDashboard />;
+    case "metrics":
+      return <MetricsPage />;
     default:
       return <DocumentUpload />;
   }

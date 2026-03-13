@@ -322,6 +322,11 @@ class ChatResponse(BaseModel):
     sources: list[EmbeddingRecord] = Field(default_factory=list)
     sql_query_used: str | None = None
     processing_time_seconds: float | None = None
+    # Phase 2.7: structured answer payload (None for backward-compat prose path)
+    structured_answer: dict | None = None
+    answer_type: str = "prose"
+    confidence: float | None = None
+    caveats: list[str] = Field(default_factory=list)
 
 
 # ── Bucket entities ───────────────────────────────────────────────────────────

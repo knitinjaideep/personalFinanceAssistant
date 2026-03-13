@@ -14,7 +14,7 @@ import type { Bucket, ChatMessage, StatementDocument } from "../types";
 
 interface AppState {
   // Navigation
-  activePage: "upload" | "statements" | "chat" | "analytics";
+  activePage: "upload" | "statements" | "chat" | "analytics" | "metrics";
   setActivePage: (page: AppState["activePage"]) => void;
 
   // Chat history persists across navigation

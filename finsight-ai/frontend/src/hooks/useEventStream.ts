@@ -79,12 +79,19 @@ export function useEventStream(options: UseEventStreamOptions = {}) {
 
   /**
    * POST a chat question and stream SSE events from the response body.
-   * Returns the final answer and sources extracted from the response_complete event.
+   * Returns the full structured response_complete payload when the stream ends.
    */
   const streamChatQuery = useCallback(
     async (
       payload: object
-    ): Promise<{ answer: string; sources: unknown[] } | null> => {
+    ): Promise<{
+      answer: string;
+      sources: unknown[];
+      structured_answer: unknown | null;
+      answer_type: string;
+      confidence: number | null;
+      caveats: string[];
+    } | null> => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -110,7 +117,14 @@ export function useEventStream(options: UseEventStreamOptions = {}) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        let finalResult: { answer: string; sources: unknown[] } | null = null;
+        let finalResult: {
+          answer: string;
+          sources: unknown[];
+          structured_answer: unknown | null;
+          answer_type: string;
+          confidence: number | null;
+          caveats: string[];
+        } | null = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -139,13 +153,19 @@ export function useEventStream(options: UseEventStreamOptions = {}) {
               _push(data);
 
               // Extract answer from the response_complete event
+              // The backend sends payload (not metadata) per sse_schemas.py
+              const eventPayload = (data as unknown as Record<string, unknown>).payload as Record<string, unknown> | undefined;
               if (
                 data.event_type === "response_complete" &&
-                data.metadata?.answer
+                eventPayload?.answer
               ) {
                 finalResult = {
-                  answer: data.metadata.answer as string,
-                  sources: (data.metadata.sources as unknown[]) ?? [],
+                  answer: eventPayload.answer as string,
+                  sources: (eventPayload.sources as unknown[]) ?? [],
+                  structured_answer: eventPayload.structured_answer ?? null,
+                  answer_type: (eventPayload.answer_type as string) ?? "prose",
+                  confidence: (eventPayload.confidence as number | null) ?? null,
+                  caveats: (eventPayload.caveats as string[]) ?? [],
                 };
               }
             } catch {

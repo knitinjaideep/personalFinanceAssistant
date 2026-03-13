@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database.engine import init_db
 from app.rag.chroma_store import ChromaStore
-from app.api.routes import documents, statements, chat, analytics, buckets
+from app.api.routes import documents, statements, chat, analytics, buckets, review, reconciliation, corrections, metrics
 
 logger = structlog.get_logger(__name__)
 
@@ -77,6 +77,10 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
     app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytics"])
     app.include_router(buckets.router, prefix="/api/v1/buckets", tags=["Buckets"])
+    app.include_router(review.router, prefix="/api/v1/review", tags=["Review"])
+    app.include_router(reconciliation.router, prefix="/api/v1/reconciliation", tags=["Reconciliation"])
+    app.include_router(corrections.router, prefix="/api/v1/corrections", tags=["Corrections"])
+    app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["Metrics"])
 
     @app.get("/health", tags=["Health"])
     async def health_check() -> JSONResponse:
