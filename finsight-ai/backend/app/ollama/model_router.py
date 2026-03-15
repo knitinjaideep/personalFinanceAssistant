@@ -36,6 +36,7 @@ class ModelRouter:
 
     def __init__(self, client: OllamaClient | None = None) -> None:
         self._client = client or get_ollama_client()
+        self._config = settings.ollama  # exposed so callers can read model names
         self._task_model_map: dict[TaskType, str] = {
             TaskType.CLASSIFICATION: settings.ollama.classification_model,
             TaskType.EXTRACTION: settings.ollama.extraction_model,
@@ -69,11 +70,20 @@ class ModelRouter:
         prompt: str,
         system: str | None = None,
         format: str | None = None,
+        timeout: int | None = None,
     ) -> str:
-        """Convenience method: route task → model → generate."""
+        """Convenience method: route task → model → generate.
+
+        Args:
+            task: Task type used to select the configured model.
+            prompt: User prompt text.
+            system: Optional system message.
+            format: Optional response format hint (e.g., "json").
+            timeout: Hard timeout in seconds; overrides ``settings.ollama.timeout_seconds``.
+        """
         model = self.model_for(task)
         return await self._client.generate(
-            model=model, prompt=prompt, system=system, format=format
+            model=model, prompt=prompt, system=system, format=format, timeout=timeout
         )
 
     async def embed(self, text: str) -> list[float]:

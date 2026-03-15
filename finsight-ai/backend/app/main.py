@@ -20,7 +20,8 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database.engine import init_db
-from app.rag.chroma_store import ChromaStore
+from app.rag.chroma_store import ChromaStore, set_chroma_store
+from app.services.cache_service import initialize_caches, close_caches
 from app.api.routes import documents, statements, chat, analytics, buckets, review, reconciliation, corrections, metrics
 
 logger = structlog.get_logger(__name__)
@@ -38,13 +39,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Warm up Chroma vector store
     chroma = ChromaStore()
     await chroma.initialize()
+    # Register the initialized instance as the module-level singleton so that
+    # HybridRetriever (and any other caller of get_chroma_store()) receives the
+    # already-initialized store rather than creating a new uninitialized one.
+    set_chroma_store(chroma)
     logger.info("chroma.initialized", collection=settings.chroma.collection_name)
+
+    # Initialize three-tier local caches (embedding, LLM task, retrieval)
+    await initialize_caches()
 
     # Store shared resources on app state for dependency injection
     app.state.chroma = chroma
 
     yield
 
+    # Graceful shutdown — flush and close persistent cache connections
+    await close_caches()
     logger.info("finsight_ai.shutdown")
 
 

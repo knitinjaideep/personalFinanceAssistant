@@ -14,7 +14,7 @@ import uuid
 
 import structlog
 
-from app.agents.institutions.base import BaseInstitutionAgent
+from app.agents.institutions.base import BaseInstitutionAgent, InstitutionCapabilities
 from app.agents.state import IngestionState
 from app.domain.entities import ExtractionResult
 from app.domain.enums import ExtractionStatus, InstitutionType, StatementType
@@ -39,6 +39,21 @@ class MorganStanleyAgent(BaseInstitutionAgent):
     @property
     def institution_type(self) -> InstitutionType:
         return InstitutionType.MORGAN_STANLEY
+
+    @property
+    def capabilities(self) -> InstitutionCapabilities:
+        return InstitutionCapabilities(
+            institution_type=InstitutionType.MORGAN_STANLEY.value,
+            display_name="Morgan Stanley",
+            supported_statement_types=["brokerage", "advisory", "retirement"],
+            can_extract_transactions=True,
+            can_extract_fees=True,
+            can_extract_holdings=True,
+            can_extract_balances=True,
+            classification_method="regex+llm",
+            extraction_method="regex+llm",
+            notes="Full implementation. Handles brokerage, advisory, and retirement accounts.",
+        )
 
     async def can_handle(self, document: ParsedDocument) -> tuple[bool, float]:
         """Check if this document is from Morgan Stanley."""

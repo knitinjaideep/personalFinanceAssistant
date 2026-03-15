@@ -2,6 +2,8 @@
 Domain enumerations.
 
 All enums live here to avoid circular imports across the domain layer.
+Includes taxonomy mappings (BucketType, TransactionCategory) introduced
+in the Phase 3 refactor for bucket-aware analytics and banking normalization.
 """
 
 from __future__ import annotations
@@ -9,14 +11,62 @@ from __future__ import annotations
 from enum import Enum
 
 
+# ── Top-level bucket taxonomy ─────────────────────────────────────────────────
+
+class BucketType(str, Enum):
+    """
+    Top-level product buckets.
+
+    INVESTMENTS — Morgan Stanley (IRA, Advisory, Brokerage) + E*TRADE (Brokerage).
+    BANKING     — Chase (Checking, Credit Card) + Amex (Credit Card) + Discover (Credit Card).
+    """
+
+    INVESTMENTS = "investments"
+    BANKING = "banking"
+
+
+# ── Institutions ──────────────────────────────────────────────────────────────
+
 class InstitutionType(str, Enum):
     """Supported financial institutions."""
 
     MORGAN_STANLEY = "morgan_stanley"
     CHASE = "chase"
     ETRADE = "etrade"
+    AMEX = "amex"
+    DISCOVER = "discover"
     UNKNOWN = "unknown"
 
+
+# ── Account types ─────────────────────────────────────────────────────────────
+
+class AccountType(str, Enum):
+    """
+    Specific account types within an institution.
+
+    Investments group:
+      IRA, ROTH_IRA, ADVISORY, INDIVIDUAL_BROKERAGE, FOUR_01K
+
+    Banking group:
+      CHECKING, CREDIT_CARD, SAVINGS
+    """
+
+    # Investments
+    IRA = "ira"
+    ROTH_IRA = "roth_ira"
+    ADVISORY = "advisory"
+    INDIVIDUAL_BROKERAGE = "individual_brokerage"
+    FOUR_01K = "401k"
+
+    # Banking
+    CHECKING = "checking"
+    SAVINGS = "savings"
+    CREDIT_CARD = "credit_card"
+
+    UNKNOWN = "unknown"
+
+
+# ── Statement types ───────────────────────────────────────────────────────────
 
 class StatementType(str, Enum):
     """Types of financial statements we can process."""
@@ -29,19 +79,7 @@ class StatementType(str, Enum):
     UNKNOWN = "unknown"
 
 
-class AccountType(str, Enum):
-    """Types of financial accounts."""
-
-    BROKERAGE = "brokerage"
-    CHECKING = "checking"
-    SAVINGS = "savings"
-    CREDIT_CARD = "credit_card"
-    IRA = "ira"
-    ROTH_IRA = "roth_ira"
-    FOUR_01K = "401k"
-    ADVISORY = "advisory"
-    UNKNOWN = "unknown"
-
+# ── Transaction types ─────────────────────────────────────────────────────────
 
 class TransactionType(str, Enum):
     """Transaction classifications."""
@@ -56,8 +94,59 @@ class TransactionType(str, Enum):
     TRADE_SELL = "trade_sell"
     TAX_WITHHOLDING = "tax_withholding"
     ADVISORY_FEE = "advisory_fee"
+    PAYMENT = "payment"              # Credit card payment
+    PURCHASE = "purchase"            # Credit card / debit purchase
+    REFUND = "refund"                # Merchant refund
     OTHER = "other"
 
+
+# ── Transaction spending categories (banking) ─────────────────────────────────
+
+class TransactionCategory(str, Enum):
+    """
+    Spending categories for banking transactions (Chase, Amex, Discover).
+
+    Applied by the merchant normalizer using deterministic rules first;
+    LLM fallback only when rule confidence is below threshold.
+    """
+
+    GROCERIES = "groceries"
+    RESTAURANTS = "restaurants"
+    SUBSCRIPTIONS = "subscriptions"
+    TRAVEL = "travel"
+    SHOPPING = "shopping"
+    GAS = "gas"
+    UTILITIES = "utilities"
+    HEALTHCARE = "healthcare"
+    ENTERTAINMENT = "entertainment"
+    EDUCATION = "education"
+    INSURANCE = "insurance"
+    TRANSFERS = "transfers"
+    FEES = "fees"
+    ATM_CASH = "atm_cash"
+    OTHER = "other"
+
+
+# ── Confidence display tiers ───────────────────────────────────────────────────
+
+class ConfidenceTier(str, Enum):
+    """
+    Human-readable confidence tier for UI display.
+
+    Computed by ConfidenceService from a 0.0–1.0 float:
+      HIGH         ≥ 0.80
+      MEDIUM       ≥ 0.50
+      LOW          ≥ 0.25
+      NEEDS_REVIEW < 0.25 or ExtractionStatus.PARTIAL
+    """
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    NEEDS_REVIEW = "needs_review"
+
+
+# ── Processing statuses ───────────────────────────────────────────────────────
 
 class ExtractionStatus(str, Enum):
     """Processing status for a statement document."""
@@ -90,6 +179,8 @@ class BucketStatus(str, Enum):
     ARCHIVED = "archived"
     DELETED = "deleted"
 
+
+# ── Processing event types ────────────────────────────────────────────────────
 
 class ProcessingEventType(str, Enum):
     """Types of structured processing events streamed to the frontend."""
@@ -166,6 +257,15 @@ class ProcessingEventType(str, Enum):
     """Vector chunks retrieved and re-ranked by relevance."""
     RESPONSE_DRAFT_STARTED = "response_draft_started"
     """LLM prompt submitted; generation in progress."""
+
+    # Phase 3 — Chat reliability events
+    CHAT_RETRIEVE_STARTED = "chat_retrieve_started"
+    CHAT_RETRIEVE_DONE = "chat_retrieve_done"
+    CHAT_GENERATE_STARTED = "chat_generate_started"
+    CHAT_GENERATE_PROGRESS = "chat_generate_progress"
+    CHAT_GENERATE_DONE = "chat_generate_done"
+    CHAT_FALLBACK_TRIGGERED = "chat_fallback_triggered"
+    CHAT_ANSWER_READY = "chat_answer_ready"
 
     # ── Generic ────────────────────────────────────────────────────────────────
     INFO = "info"
@@ -290,3 +390,76 @@ class CheckStatus(str, Enum):
     PASSED = "passed"
     FAILED = "failed"
     SKIPPED = "skipped"     # Could not evaluate (missing data)
+
+
+# ── Taxonomy mapping constants ────────────────────────────────────────────────
+# These dicts are the single source of truth for cross-cutting taxonomy lookups.
+# Import from here; never hardcode institution→bucket mappings elsewhere.
+
+INSTITUTION_BUCKET_MAP: dict[InstitutionType, BucketType] = {
+    InstitutionType.MORGAN_STANLEY: BucketType.INVESTMENTS,
+    InstitutionType.ETRADE: BucketType.INVESTMENTS,
+    InstitutionType.CHASE: BucketType.BANKING,
+    InstitutionType.AMEX: BucketType.BANKING,
+    InstitutionType.DISCOVER: BucketType.BANKING,
+}
+"""Maps each institution to its top-level bucket. UNKNOWN is intentionally absent."""
+
+INSTITUTION_ACCOUNT_TYPES: dict[InstitutionType, list[AccountType]] = {
+    InstitutionType.MORGAN_STANLEY: [
+        AccountType.IRA,
+        AccountType.ROTH_IRA,
+        AccountType.ADVISORY,
+        AccountType.INDIVIDUAL_BROKERAGE,
+    ],
+    InstitutionType.ETRADE: [
+        AccountType.INDIVIDUAL_BROKERAGE,
+    ],
+    InstitutionType.CHASE: [
+        AccountType.CHECKING,
+        AccountType.CREDIT_CARD,
+    ],
+    InstitutionType.AMEX: [
+        AccountType.CREDIT_CARD,
+    ],
+    InstitutionType.DISCOVER: [
+        AccountType.CREDIT_CARD,
+    ],
+}
+"""Lists the account types each institution can produce. Used by agents and UI capability matrix."""
+
+BUCKET_INSTITUTIONS: dict[BucketType, list[InstitutionType]] = {
+    BucketType.INVESTMENTS: [InstitutionType.MORGAN_STANLEY, InstitutionType.ETRADE],
+    BucketType.BANKING: [InstitutionType.CHASE, InstitutionType.AMEX, InstitutionType.DISCOVER],
+}
+"""Inverse of INSTITUTION_BUCKET_MAP — lists institutions per bucket."""
+
+INVESTMENTS_ACCOUNT_TYPES: frozenset[AccountType] = frozenset({
+    AccountType.IRA,
+    AccountType.ROTH_IRA,
+    AccountType.ADVISORY,
+    AccountType.INDIVIDUAL_BROKERAGE,
+    AccountType.FOUR_01K,
+})
+"""Account types that belong in the INVESTMENTS bucket."""
+
+BANKING_ACCOUNT_TYPES: frozenset[AccountType] = frozenset({
+    AccountType.CHECKING,
+    AccountType.SAVINGS,
+    AccountType.CREDIT_CARD,
+})
+"""Account types that belong in the BANKING bucket."""
+
+
+def get_bucket_for_institution(institution: InstitutionType) -> BucketType | None:
+    """Return the bucket for an institution, or None if unknown."""
+    return INSTITUTION_BUCKET_MAP.get(institution)
+
+
+def get_bucket_for_account_type(account_type: AccountType) -> BucketType | None:
+    """Infer the bucket from an account type alone."""
+    if account_type in INVESTMENTS_ACCOUNT_TYPES:
+        return BucketType.INVESTMENTS
+    if account_type in BANKING_ACCOUNT_TYPES:
+        return BucketType.BANKING
+    return None

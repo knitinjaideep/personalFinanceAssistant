@@ -1,46 +1,47 @@
 """
 LangGraph Supervisor Agent — orchestrates the document ingestion pipeline.
 
-Graph topology:
+Graph topology (post Phase-1 MCP refactor):
   START
     │
     ▼
-  [parse_node]         PDF → ParsedDocument
+  [parse_node]       PDF → ParsedDocument (also stored in InFlightDocumentStore)
     │
     ▼
-  [classify_node]      Identify institution via agent can_handle()
+  [classify_node]    Identify institution via agent.can_handle()
+    │
+    ▼ (conditional)
+  [extract_node]     Route to correct agent via ExtractDocumentTool  ─── "known"
+  [unknown_node]     Unrecognised institution                         ─── "unknown"
+    │ (converge)
+    ▼
+  [persist_node]     Write Statement to SQLite
     │
     ▼
-  [route_node]  ───────► [morgan_stanley_node]
-                         [chase_node]
-                         [etrade_node]
-                         [unknown_node]
-    │ (all routes converge)
-    ▼
-  [persist_node]       Write Statement to SQLite
+  [embed_node]       Chunk + embed into Chroma
     │
     ▼
-  [embed_node]         Chunk + embed into Chroma
-    │
-    ▼
-  [report_node]        Finalize ExtractionResult
+  [report_node]      Finalize ExtractionResult, clean up InFlightDocumentStore
     │
     ▼
   END
 
-Phase 2.4 upgrade:
+Refactor notes (Phase 1 MCP boundary):
+- ``morgan_stanley_node``, ``chase_node``, ``etrade_node`` are replaced by a
+  single ``extract_node`` that dispatches via ``ExtractDocumentTool``.
+- The supervisor no longer imports ``MorganStanleyAgent``, ``ChaseAgent``, or
+  ``ETradeAgent`` directly.  Adding a new institution = adding an agent to
+  ``INSTITUTION_AGENT_REGISTRY`` below; no LangGraph node change needed.
+- ``route_to_institution`` (per-institution conditional) is replaced by a
+  binary ``route_after_classify`` edge: "known" → extract, "unknown" → unknown.
+- The ``ParsedDocument`` is stored in ``InFlightDocumentStore`` by
+  ``parse_node`` and cleaned up by ``report_node``.
+
+Phase 2.4 note:
   Every node emits typed ``SSEEvent`` messages to the per-document ``EventBus``
   via ``bus_registry.emit()``.  If no bus is registered (job was not started
   via the streaming-aware upload path, or the bus was already closed), the
   emit is a silent no-op — no crashes.
-
-Design decisions:
-- The supervisor does NOT contain business logic; it delegates to agents/services.
-- Conditional routing (route_node) uses agent.can_handle() scores to pick
-  the best-matching agent dynamically. Adding a new institution = adding an
-  agent to INSTITUTION_AGENT_REGISTRY.
-- Errors at any node add to state["errors"] but don't crash the graph;
-  the report_node summarizes the final status.
 """
 
 from __future__ import annotations
@@ -54,6 +55,8 @@ from app.agents.institutions.base import BaseInstitutionAgent
 from app.agents.institutions.morgan_stanley import MorganStanleyAgent
 from app.agents.institutions.chase import ChaseAgent
 from app.agents.institutions.etrade import ETradeAgent
+from app.agents.institutions.amex import AmexAgent
+from app.agents.institutions.discover import DiscoverAgent
 from app.agents.state import IngestionState
 from app.api.schemas.sse_schemas import (
     EmbeddingCompletedPayload,
@@ -73,12 +76,20 @@ from app.services.event_bus import bus_registry, make_ingestion_event
 
 logger = structlog.get_logger(__name__)
 
-# Registry of all available institution agents.
-# To add a new institution: instantiate its agent and append it here.
+# ---------------------------------------------------------------------------
+# Institution agent registry.
+#
+# This list is the SINGLE place to register a new institution.  Both the
+# classify_node (via can_handle()) and the ExtractDocumentTool (via name
+# lookup) consume this registry.  No LangGraph node changes are needed when
+# adding a new institution.
+# ---------------------------------------------------------------------------
 INSTITUTION_AGENT_REGISTRY: list[BaseInstitutionAgent] = [
     MorganStanleyAgent(),
     ChaseAgent(),
     ETradeAgent(),
+    AmexAgent(),
+    DiscoverAgent(),
 ]
 
 
@@ -100,8 +111,17 @@ async def _emit(state: IngestionState, **kwargs) -> None:
 # ── Node functions ─────────────────────────────────────────────────────────────
 
 async def parse_node(state: IngestionState) -> IngestionState:
-    """Parse the raw document file into a ParsedDocument."""
+    """
+    Parse the raw document file into a ParsedDocument.
+
+    After a successful parse the ``ParsedDocument`` is stored in
+    ``InFlightDocumentStore`` keyed by ``document_id`` so that the subsequent
+    ``extract_node`` (running via ``ExtractDocumentTool``) can retrieve it
+    without re-parsing the file.
+    """
     from pathlib import Path
+
+    from app.mcp_tools.document_store import document_store
 
     file_path = state.get("file_path")
     doc_id = state.get("document_id", "unknown")
@@ -129,10 +149,16 @@ async def parse_node(state: IngestionState) -> IngestionState:
         parsed = await parser.parse(Path(file_path))
         state["parsed_document"] = parsed
         state["page_count"] = parsed.page_count
+
+        # Store in InFlightDocumentStore so ExtractDocumentTool can retrieve it
+        # without re-parsing the PDF.  Cleaned up by report_node.
+        if doc_id and doc_id != "unknown":
+            document_store.put(doc_id, parsed)
+
         duration_ms = int((time.monotonic() - t0) * 1000)
 
         # Estimate char count from all pages
-        char_count = sum(len(p.text or "") for p in parsed.pages)
+        char_count = sum(len(p.raw_text or "") for p in parsed.pages)
         has_tables = any(p.tables for p in parsed.pages if hasattr(p, "tables"))
 
         logger.info(
@@ -253,74 +279,96 @@ async def classify_node(state: IngestionState) -> IngestionState:
     return state
 
 
-async def morgan_stanley_node(state: IngestionState) -> IngestionState:
-    """Run the Morgan Stanley agent."""
+async def extract_node(state: IngestionState) -> IngestionState:
+    """
+    Dispatch document extraction to the correct institution agent via the MCP boundary.
+
+    Rather than calling ``MorganStanleyAgent``, ``ChaseAgent``, or
+    ``ETradeAgent`` directly, this node calls ``ExtractDocumentTool`` — the
+    typed MCP tool that looks up the agent from ``INSTITUTION_AGENT_REGISTRY``
+    at call time.  This keeps the graph topology static regardless of how many
+    institutions are registered.
+
+    After the tool call the ``ExtractionResult`` produced by the agent is
+    written back into state from the response, preserving the same state
+    contract that downstream nodes (persist, embed, report) depend on.
+    """
+    from app.domain.entities import ExtractionResult
+    from app.domain.enums import ExtractionStatus
+    from app.mcp_tools.contracts import ExtractDocumentRequest
+    from app.mcp_tools.institution_tools import ExtractDocumentTool
+
+    doc_id = state.get("document_id", "")
+    institution = state.get("institution_type", InstitutionType.UNKNOWN)
+    institution_value = (
+        institution.value if hasattr(institution, "value") else str(institution)
+    )
+
     await _emit(
         state,
         event_type="extraction_started_v2",
         stage="extract_fields",
-        message="Running Morgan Stanley field extractor",
+        message=f"Running {institution_value} field extractor",
         status="started",
         progress=0.35,
         payload=ExtractionStartedPayload(
-            document_id=state.get("document_id", ""),
-            institution="morgan_stanley",
-            agent="MorganStanleyAgent",
+            document_id=doc_id,
+            institution=institution_value,
+            agent=f"{institution_value.title().replace('_', '')}Agent",
         ).model_dump(),
     )
-    agent = next(
-        a for a in INSTITUTION_AGENT_REGISTRY
-        if a.institution_type == InstitutionType.MORGAN_STANLEY
-    )
-    state = await agent.run(state)
-    await _emit_extraction_complete(state)
-    return state
 
+    tool = ExtractDocumentTool()
+    response = await tool.execute(
+        ExtractDocumentRequest(
+            document_id=doc_id,
+            institution_type=institution_value,
+        )
+    )
 
-async def chase_node(state: IngestionState) -> IngestionState:
-    """Run the Chase agent."""
-    await _emit(
-        state,
-        event_type="extraction_started_v2",
-        stage="extract_fields",
-        message="Running Chase field extractor",
-        status="started",
-        progress=0.35,
-        payload=ExtractionStartedPayload(
-            document_id=state.get("document_id", ""),
-            institution="chase",
-            agent="ChaseAgent",
-        ).model_dump(),
-    )
-    agent = next(
-        a for a in INSTITUTION_AGENT_REGISTRY
-        if a.institution_type == InstitutionType.CHASE
-    )
-    state = await agent.run(state)
-    await _emit_extraction_complete(state)
-    return state
+    if not response.success:
+        # Tool-level failure — surface errors into state and set a failed result.
+        import uuid
 
+        for err in response.errors:
+            state.setdefault("errors", []).append(err)
 
-async def etrade_node(state: IngestionState) -> IngestionState:
-    """Run the E*TRADE agent."""
-    await _emit(
-        state,
-        event_type="extraction_started_v2",
-        stage="extract_fields",
-        message="Running E*TRADE field extractor",
-        status="started",
-        progress=0.35,
-        payload=ExtractionStartedPayload(
-            document_id=state.get("document_id", ""),
-            institution="etrade",
-            agent="ETradeAgent",
-        ).model_dump(),
-    )
-    agent = next(
-        a for a in INSTITUTION_AGENT_REGISTRY
-        if a.institution_type == InstitutionType.ETRADE
-    )
-    state = await agent.run(state)
+        state["extraction_result"] = ExtractionResult(
+            document_id=uuid.UUID(doc_id) if doc_id else uuid.uuid4(),
+            institution_type=institution,
+            status=ExtractionStatus.FAILED,
+            errors=response.errors,
+        )
+        state["document_status"] = DocumentStatus.FAILED.value
+    else:
+        # Successful tool call — retrieve the ExtractionResult that
+        # ExtractDocumentTool stored in InFlightDocumentStore and write it
+        # into the supervisor's graph state so that persist/embed/report nodes
+        # can access it via their normal state["extraction_result"] reads.
+        from app.mcp_tools.document_store import document_store as _ds
+
+        extraction_result = _ds.get_result(doc_id)
+        if extraction_result is not None:
+            state["extraction_result"] = extraction_result
+            state["document_status"] = (
+                "processed"
+                if extraction_result.status == ExtractionStatus.SUCCESS
+                else "failed"
+            )
+        else:
+            # Tool reported success but didn't store a result — treat as partial.
+            import uuid
+
+            state["extraction_result"] = ExtractionResult(
+                document_id=uuid.UUID(doc_id) if doc_id else uuid.uuid4(),
+                institution_type=institution,
+                status=ExtractionStatus.PARTIAL,
+                errors=["ExtractDocumentTool succeeded but no ExtractionResult was stored."],
+            )
+
+        for err in response.errors:
+            state.setdefault("errors", []).append(err)
+
     await _emit_extraction_complete(state)
     return state
 
@@ -488,7 +536,7 @@ async def persist_node(state: IngestionState) -> IngestionState:
                 id=result.statement.account_id,
                 institution_id=result.statement.institution_id,
                 account_number_masked="****0000",
-                account_type=AccountType.BROKERAGE,
+                account_type=AccountType.INDIVIDUAL_BROKERAGE,
             )
             acct_model = await acct_repo.get_or_create(account, inst_model.id)
 
@@ -512,6 +560,68 @@ async def persist_node(state: IngestionState) -> IngestionState:
             if doc_id:
                 await doc_repo.update_status(
                     uuid.UUID(doc_id), DocumentStatus.PROCESSED
+                )
+
+            # ── Auto-assign document to bucket based on institution ────────
+            if doc_id and result.institution_type:
+                from app.database.repositories.bucket_repo import (
+                    BucketDocumentRepository,
+                    BucketRepository,
+                )
+                from app.domain.enums import INSTITUTION_BUCKET_MAP, BucketType
+
+                bucket_type = INSTITUTION_BUCKET_MAP.get(result.institution_type)
+                if bucket_type:
+                    bucket_repo = BucketRepository(session)
+                    bucket_doc_repo = BucketDocumentRepository(session)
+
+                    # Find or create the canonical bucket for this type
+                    bucket_name = bucket_type.value.title()  # "Investments" or "Banking"
+                    bucket_model = await bucket_repo.get_by_name(bucket_name)
+                    if not bucket_model:
+                        from app.domain.entities import BucketCreateRequest
+                        bucket_model = await bucket_repo.create(
+                            BucketCreateRequest(
+                                name=bucket_name,
+                                description=f"Auto-created {bucket_name} bucket",
+                            )
+                        )
+                        # Set the bucket_type on the model
+                        from sqlalchemy import update as sql_update
+                        from app.database.models import BucketModel
+                        await session.execute(
+                            sql_update(BucketModel)
+                            .where(BucketModel.id == bucket_model.id)
+                            .values(bucket_type=bucket_type.value)
+                        )
+                        await session.commit()
+
+                    await bucket_doc_repo.assign(
+                        uuid.UUID(bucket_model.id), uuid.UUID(doc_id)
+                    )
+                    await bucket_repo.refresh_document_count(uuid.UUID(bucket_model.id))
+                    logger.info(
+                        "persist_node.bucket_assigned",
+                        document_id=doc_id,
+                        bucket=bucket_name,
+                    )
+
+            # ── Auto-compute derived metrics ───────────────────────────────
+            try:
+                from app.services.metrics_service import MetricsService
+                metrics_svc = MetricsService(session)
+                metrics_written = await metrics_svc.generate_for_statement(
+                    str(result.statement.id), source="ingestion"
+                )
+                logger.info(
+                    "persist_node.metrics_generated",
+                    statement_id=str(result.statement.id),
+                    rows=metrics_written,
+                )
+            except Exception as metrics_exc:
+                logger.warning(
+                    "persist_node.metrics_error",
+                    error=str(metrics_exc),
                 )
 
         duration_ms = int((time.monotonic() - t0) * 1000)
@@ -559,7 +669,7 @@ async def embed_node(state: IngestionState) -> IngestionState:
         return state
 
     # Estimate chunk count (embedding service decides final split)
-    total_chars = sum(len(p.text or "") for p in parsed.pages)
+    total_chars = sum(len(p.raw_text or "") for p in parsed.pages)
     estimated_chunks = max(1, total_chars // 512)
 
     await _emit(
@@ -620,7 +730,17 @@ async def embed_node(state: IngestionState) -> IngestionState:
 
 
 async def report_node(state: IngestionState) -> IngestionState:
-    """Finalize state, log summary, emit terminal ingestion event."""
+    """
+    Finalize state, log summary, emit terminal ingestion event, and clean up
+    the ``InFlightDocumentStore`` entry for this document.
+
+    Removing the ``ParsedDocument`` from the in-flight store here (rather than
+    in ``extract_node``) ensures the document remains available for any
+    post-extraction steps that might need it (e.g. reconciliation in a future
+    phase) without leaking memory across separate ingestion runs.
+    """
+    from app.mcp_tools.document_store import document_store
+
     result = state.get("extraction_result")
     errors = state.get("errors", [])
     warnings = state.get("warnings", [])
@@ -629,6 +749,10 @@ async def report_node(state: IngestionState) -> IngestionState:
 
     overall_status = "success" if not errors else "partial" if result else "failed"
     overall_confidence = result.overall_confidence if result else 0.0
+
+    # Clean up the in-flight document store for this run.
+    if doc_id:
+        document_store.remove(doc_id)
 
     logger.info(
         "ingestion.complete",
@@ -667,20 +791,24 @@ async def report_node(state: IngestionState) -> IngestionState:
 
 # ── Routing logic ──────────────────────────────────────────────────────────────
 
-def route_to_institution(state: IngestionState) -> str:
+def route_after_classify(state: IngestionState) -> str:
     """
-    Conditional edge function — routes to the correct institution node.
+    Conditional edge function — routes to ``extract`` or ``unknown``.
 
-    LangGraph calls this after classify_node to determine which node runs next.
+    LangGraph calls this after ``classify_node`` to determine the next node.
+
+    All recognised institution types (any value in ``INSTITUTION_AGENT_REGISTRY``)
+    map to the single ``"extract"`` branch.  Only genuinely unrecognised
+    documents go to ``"unknown"``.  Adding a new institution to the registry
+    automatically makes it eligible for the extract path; no routing change is
+    needed here.
     """
     institution = state.get("institution_type", InstitutionType.UNKNOWN)
-    route_map = {
-        InstitutionType.MORGAN_STANLEY: "morgan_stanley",
-        InstitutionType.CHASE: "chase",
-        InstitutionType.ETRADE: "etrade",
-        InstitutionType.UNKNOWN: "unknown",
-    }
-    return route_map.get(institution, "unknown")
+    registered_types = {a.institution_type for a in INSTITUTION_AGENT_REGISTRY}
+
+    if institution in registered_types:
+        return "known"
+    return "unknown"
 
 
 # ── Graph construction ─────────────────────────────────────────────────────────
@@ -689,6 +817,17 @@ def build_ingestion_graph() -> StateGraph:
     """
     Build and compile the document ingestion LangGraph.
 
+    Topology (post Phase-1 MCP refactor)::
+
+        START → parse → classify ─┬─(known)──→ extract ─┐
+                                   └─(unknown)─→ unknown ─┘
+                                                          ↓
+                                               persist → embed → report → END
+
+    Adding a new institution no longer requires editing this function.
+    Register the agent in ``INSTITUTION_AGENT_REGISTRY`` above and the
+    classify → extract path will handle it automatically.
+
     Returns a compiled StateGraph ready to be invoked with an IngestionState.
     """
     graph = StateGraph(IngestionState)
@@ -696,34 +835,31 @@ def build_ingestion_graph() -> StateGraph:
     # Register nodes
     graph.add_node("parse", parse_node)
     graph.add_node("classify", classify_node)
-    graph.add_node("morgan_stanley", morgan_stanley_node)
-    graph.add_node("chase", chase_node)
-    graph.add_node("etrade", etrade_node)
+    graph.add_node("extract", extract_node)        # replaces morgan_stanley/chase/etrade nodes
     graph.add_node("unknown", unknown_institution_node)
     graph.add_node("persist", persist_node)
     graph.add_node("embed", embed_node)
     graph.add_node("report", report_node)
 
-    # Linear edges
+    # Linear entry
     graph.add_edge(START, "parse")
     graph.add_edge("parse", "classify")
 
-    # Conditional routing after classification
+    # Binary conditional routing after classification:
+    #   "known"   → extract  (any institution in INSTITUTION_AGENT_REGISTRY)
+    #   "unknown" → unknown  (unrecognised institution)
     graph.add_conditional_edges(
         "classify",
-        route_to_institution,
+        route_after_classify,
         {
-            "morgan_stanley": "morgan_stanley",
-            "chase": "chase",
-            "etrade": "etrade",
+            "known": "extract",
             "unknown": "unknown",
         },
     )
 
-    # All institution paths converge to persist → embed → report
-    for institution_node in ("morgan_stanley", "chase", "etrade", "unknown"):
-        graph.add_edge(institution_node, "persist")
-
+    # Both paths converge at persist → embed → report
+    graph.add_edge("extract", "persist")
+    graph.add_edge("unknown", "persist")
     graph.add_edge("persist", "embed")
     graph.add_edge("embed", "report")
     graph.add_edge("report", END)

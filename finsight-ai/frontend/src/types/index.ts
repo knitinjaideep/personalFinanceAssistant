@@ -202,6 +202,27 @@ export interface BucketScopedChatRequest {
 
 // ── Phase 2.7: Structured answer types ───────────────────────────────────────
 
+export interface AnswerHighlight {
+  /** Human-readable label for the stat chip, e.g. "Total Fees". */
+  label: string;
+  /** Formatted value string, e.g. "$1,234.56". */
+  value: string;
+  unit: string | null;
+  /** Direction indicator — used to colour-code the trend annotation. */
+  trend: "up" | "down" | "neutral" | null;
+  /** Human-readable trend annotation, e.g. "+12% vs last month". */
+  trend_label: string | null;
+}
+
+export interface AnswerSection {
+  /** Section heading shown in the accordion trigger. */
+  heading: string;
+  /** Section body text rendered as prose. */
+  content: string;
+  /** Whether the accordion should be open on first render. */
+  expanded_by_default: boolean;
+}
+
 export interface EvidenceChunk {
   id: string;
   document_id: string;
@@ -223,6 +244,10 @@ export interface AnswerEvidence {
 export interface ProseAnswer {
   answer_type: "prose";
   text: string;
+  title?: string | null;
+  highlights?: AnswerHighlight[];
+  sections?: AnswerSection[];
+  suggested_followups?: string[];
   confidence: number | null;
   caveats: string[];
   evidence: AnswerEvidence;
@@ -230,6 +255,7 @@ export interface ProseAnswer {
 
 export interface NumericAnswerPayload {
   answer_type: "numeric";
+  title?: string | null;
   label: string;
   value: string;
   raw_value: number | null;
@@ -238,6 +264,9 @@ export interface NumericAnswerPayload {
   institution: string | null;
   account: string | null;
   summary_text: string | null;
+  highlights?: AnswerHighlight[];
+  sections?: AnswerSection[];
+  suggested_followups?: string[];
   confidence: number | null;
   caveats: string[];
   evidence: AnswerEvidence;
@@ -255,6 +284,9 @@ export interface TableAnswerPayload {
   row_count: number;
   truncated: boolean;
   summary_text: string | null;
+  highlights?: AnswerHighlight[];
+  sections?: AnswerSection[];
+  suggested_followups?: string[];
   confidence: number | null;
   caveats: string[];
   evidence: AnswerEvidence;
@@ -276,12 +308,59 @@ export interface ComparisonAnswerPayload {
   unit: string | null;
   items: ComparisonItem[];
   summary_text: string | null;
+  highlights?: AnswerHighlight[];
+  sections?: AnswerSection[];
+  suggested_followups?: string[];
   confidence: number | null;
   caveats: string[];
   evidence: AnswerEvidence;
 }
 
-export type StructuredAnswer = ProseAnswer | NumericAnswerPayload | TableAnswerPayload | ComparisonAnswerPayload;
+/** Deterministic no-data answer — built without the LLM. */
+export interface NoDataAnswer {
+  answer_type: "no_data";
+  title: string;
+  summary: string;
+  what_was_checked: string[];
+  possible_reasons: string[];
+  suggested_followups: string[];
+  confidence: number;
+  caveats: string[];
+  evidence: AnswerEvidence;
+  bucket_label: string | null;
+  institution_labels: string[];
+}
+
+/** Deterministic partial-data answer — some context found, LLM skipped. */
+export interface PartialDataAnswer {
+  answer_type: "partial_data";
+  title: string;
+  summary: string;
+  what_was_found: string[];
+  what_is_missing: string[];
+  suggested_followups: string[];
+  confidence: number | null;
+  caveats: string[];
+  evidence: AnswerEvidence;
+  bucket_label: string | null;
+  institution_labels: string[];
+}
+
+export type StructuredAnswer =
+  | ProseAnswer
+  | NumericAnswerPayload
+  | TableAnswerPayload
+  | ComparisonAnswerPayload
+  | NoDataAnswer
+  | PartialDataAnswer;
+
+/** Mirrors backend PipelineMeta schema. Carried in every response_complete payload. */
+export interface PipelineMeta {
+  pipeline_stage: "llm" | "no_data" | "partial_data" | "retrieval_only" | "safe_error";
+  fallback_triggered: boolean;
+  fallback_reason: string | null;
+  warnings: string[];
+}
 
 export interface StructuredChatResponse {
   session_id: string;
@@ -293,6 +372,8 @@ export interface StructuredChatResponse {
   confidence: number | null;
   caveats: string[];
   processing_time_seconds: number | null;
+  /** Pipeline execution metadata — always present in Phase 2.7+ responses. */
+  pipeline_meta: PipelineMeta;
 }
 
 // ── Phase 2.8: Derived metrics types ─────────────────────────────────────────
@@ -350,6 +431,149 @@ export interface AvailableMonth {
   year: number;
   month: number;
   month_start: string;
+}
+
+// ── Phase 3: Bucket-aware analytics types ────────────────────────────────────
+
+export type BucketKind = "investments" | "banking";
+
+/** Standard envelope returned by all /analytics/* Phase 3 endpoints. */
+export interface AnalyticsEnvelope<T> {
+  data: T;
+  warnings: string[];
+  partial: boolean;
+}
+
+// Investments
+export interface AccountSummary {
+  account_id: string;
+  account_name: string;
+  account_type: string;
+  institution: string;
+  current_value: string;
+  as_of_date: string | null;
+  portfolio_pct: string;
+}
+
+export interface HoldingRow {
+  symbol: string | null;
+  description: string;
+  quantity: string | null;
+  price: string | null;
+  market_value: string;
+  cost_basis: string | null;
+  unrealized_gain_loss: string | null;
+  unrealized_pct: string | null;
+  asset_class: string | null;
+  account_id: string;
+  account_name: string;
+  institution: string;
+}
+
+export interface InvMonthlyFee {
+  year: number;
+  month: number;
+  total_fees: string;
+  fee_count: number;
+  by_category: Record<string, string>;
+}
+
+export interface InvBalancePoint {
+  snapshot_date: string;
+  total_value: string;
+  account_id: string;
+  account_name: string;
+  institution: string;
+}
+
+export interface PeriodChange {
+  account_id: string;
+  account_name: string;
+  institution: string;
+  previous_value: string | null;
+  current_value: string;
+  change_amount: string | null;
+  change_pct: string | null;
+  period_start: string | null;
+  period_end: string | null;
+}
+
+export interface InvestmentsOverview {
+  total_portfolio_value: string;
+  accounts: AccountSummary[];
+  holdings_breakdown: HoldingRow[];
+  fee_trend: InvMonthlyFee[];
+  balance_trend: InvBalancePoint[];
+  period_changes: PeriodChange[];
+}
+
+// Banking
+export interface MerchantSpend {
+  merchant_name: string;
+  total_amount: string;
+  transaction_count: number;
+  category: string | null;
+}
+
+export interface Subscription {
+  merchant_name: string;
+  typical_amount: string;
+  frequency_days: number;
+  last_charged: string;
+  category: string | null;
+  transaction_ids: string[];
+}
+
+export interface CardBalance {
+  account_id: string;
+  account_name: string;
+  institution: string;
+  current_balance: string;
+  as_of_date: string | null;
+}
+
+export interface CheckingInOut {
+  total_inflows: string;
+  total_outflows: string;
+  net: string;
+}
+
+export interface TransactionSummary {
+  id: string;
+  account_id: string;
+  transaction_date: string;
+  description: string;
+  merchant_name: string;
+  amount: string;
+  spend_amount: string | null;
+  type: string | null;
+  category: string | null;
+}
+
+export interface BankingOverview {
+  total_spend_this_month: string;
+  spend_by_category: Record<string, string>;
+  spend_by_merchant: MerchantSpend[];
+  subscriptions: Subscription[];
+  credit_card_balances: CardBalance[];
+  checking_summary: CheckingInOut;
+  top_transactions: TransactionSummary[];
+  unusual_transactions: TransactionSummary[];
+}
+
+// ── Phase 4: chat pipeline types ─────────────────────────────────────────────
+
+export type PipelineStageValue = "llm" | "retrieval_only" | "safe_error";
+
+/**
+ * @deprecated Use PipelineMeta (from StructuredChatResponse) instead.
+ * Kept for backward compatibility with older response_complete payloads.
+ */
+export interface ChatPipelinePayload {
+  fallback_triggered: boolean;
+  pipeline_stage: PipelineStageValue;
+  warnings: string[];
+  partial: boolean;
 }
 
 // ── Document deletion ─────────────────────────────────────────────────────────

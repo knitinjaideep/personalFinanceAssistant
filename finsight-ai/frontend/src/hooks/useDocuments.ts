@@ -1,19 +1,22 @@
 /**
- * Documents hook — manages document list and upload with status polling.
+ * Documents hook — manages document list, upload, deletion, and status polling.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { documentsApi } from "../api/documents";
-import type { StatementDocument, DocumentUploadResponse } from "../types";
+import type { StatementDocument, DocumentUploadResponse, DeletionSummary } from "../types";
 import toast from "react-hot-toast";
 
-export function useDocuments() {
+export function useDocuments(onProcessed?: () => void) {
   const [documents, setDocuments] = useState<StatementDocument[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   // Track docs being polled for status
   const pollingRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  // Store the callback ref so polling closure sees latest value
+  const onProcessedRef = useRef(onProcessed);
+  onProcessedRef.current = onProcessed;
 
   const fetchDocuments = useCallback(async () => {
     setIsLoading(true);
@@ -30,7 +33,6 @@ export function useDocuments() {
   useEffect(() => {
     fetchDocuments();
     return () => {
-      // Cleanup all polling intervals on unmount
       Object.values(pollingRef.current).forEach(clearInterval);
     };
   }, [fetchDocuments]);
@@ -43,7 +45,7 @@ export function useDocuments() {
           setDocuments((prev) =>
             prev.map((doc) =>
               doc.id === documentId
-                ? { ...doc, document_status: status.status as any }
+                ? { ...doc, document_status: status.status as any, institution_type: (status as any).institution_type ?? doc.institution_type }
                 : doc
             )
           );
@@ -52,6 +54,8 @@ export function useDocuments() {
             delete pollingRef.current[documentId];
             if (status.status === "processed") {
               toast.success("Statement processed successfully!");
+              // Trigger analytics refresh callback
+              onProcessedRef.current?.();
             } else {
               toast.error(`Processing failed: ${status.error_message || "Unknown error"}`);
             }
@@ -60,7 +64,7 @@ export function useDocuments() {
           clearInterval(pollingRef.current[documentId]);
           delete pollingRef.current[documentId];
         }
-      }, 3000); // poll every 3 seconds
+      }, 3000);
       pollingRef.current[documentId] = interval;
     },
     []
@@ -102,5 +106,23 @@ export function useDocuments() {
     [pollDocumentStatus]
   );
 
-  return { documents, isLoading, isUploading, uploadDocument, fetchDocuments };
+  const deleteDocument = useCallback(
+    async (documentId: string): Promise<DeletionSummary | null> => {
+      try {
+        const result = await documentsApi.delete(documentId);
+        setDocuments((prev) => prev.filter((d) => d.id !== documentId));
+        toast.success("Document deleted.");
+        // Trigger analytics refresh
+        onProcessedRef.current?.();
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Delete failed";
+        toast.error(msg);
+        return null;
+      }
+    },
+    []
+  );
+
+  return { documents, isLoading, isUploading, uploadDocument, deleteDocument, fetchDocuments };
 }

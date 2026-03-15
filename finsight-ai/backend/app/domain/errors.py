@@ -94,6 +94,19 @@ class LLMResponseParseError(FinSightError):
     """Raised when the LLM response cannot be parsed into the expected structure."""
 
 
+class OllamaStalledException(FinSightError):
+    """Raised when the Ollama generation stalls (token rate drops below threshold)."""
+
+    def __init__(self, elapsed_seconds: float, tokens_so_far: int) -> None:
+        super().__init__(
+            f"Ollama generation stalled after {elapsed_seconds:.1f}s "
+            f"({tokens_so_far} tokens produced)",
+            details={"elapsed_seconds": elapsed_seconds, "tokens_so_far": tokens_so_far},
+        )
+        self.elapsed_seconds = elapsed_seconds
+        self.tokens_so_far = tokens_so_far
+
+
 # ── Vector store errors ───────────────────────────────────────────────────────
 
 class VectorStoreError(FinSightError):

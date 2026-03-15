@@ -3,23 +3,165 @@
  * - Bucket scope selector (all / specific buckets)
  * - Streaming SSE responses with live agent trace
  * - Source citations per assistant message
- * - Fallback to non-streaming for compatibility
+ * - Pipeline state machine via usePipelineReducer (no duplicate terminal events)
  */
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Trash2, Loader2, Bot, User } from "lucide-react";
+import { AlertTriangle, Bot, ChevronDown, ChevronRight, Loader2, Send, Trash2, User } from "lucide-react";
 import { clsx } from "clsx";
 
 import { useAppStore } from "../../store/appStore";
 import { useBuckets } from "../../hooks/useBuckets";
 import { useEventStream } from "../../hooks/useEventStream";
+import {
+  usePipelineReducer,
+  isGenerationStalling,
+  stageColor,
+  stageLabelFor,
+} from "../../hooks/usePipelineReducer";
 import { chatApi } from "../../api/chat";
-import { BucketPicker } from "./BucketPicker";
-import { AgentTrace } from "./AgentTrace";
 import { SourceCitations } from "./SourceCitations";
 import { AnswerCard } from "../answers/AnswerCard";
-import type { ChatMessage, StructuredAnswer } from "../../types";
+import type { ChatMessage, ProcessingEvent, StructuredAnswer } from "../../types";
 import type { SourceChunk } from "./SourceCitations";
+
+// ── Clean stage progress bar ──────────────────────────────────────────────────
+//
+// Shows a single human-friendly status line + progress bar.
+// Technical trace is hidden by default behind an expandable section.
+
+interface StageProgressProps {
+  pipelineState: ReturnType<typeof usePipelineReducer>["state"];
+  isStreaming: boolean;
+  events: ProcessingEvent[];
+}
+
+function StageProgressBar({ pipelineState, isStreaming, events }: StageProgressProps) {
+  const [traceOpen, setTraceOpen] = useState(false);
+
+  if (!isStreaming && pipelineState.stage === "idle") return null;
+
+  const stalling = isGenerationStalling(pipelineState);
+  const color = stageColor(pipelineState);
+  const label = stageLabelFor(pipelineState, stalling);
+
+  const barColor: Record<string, string> = {
+    blue: "bg-blue-500",
+    green: "bg-green-500",
+    amber: "bg-amber-400",
+    red: "bg-red-500",
+  };
+
+  const spinColor: Record<string, string> = {
+    blue: "text-blue-500",
+    green: "text-green-500",
+    amber: "text-amber-500",
+    red: "text-red-500",
+  };
+
+  const isDone = pipelineState.isTerminal;
+
+  // Build clean step list for the progress display.
+  // For no-data path, skip the "Generating answer" step entirely.
+  const steps = pipelineState.isNoDataPath
+    ? ["Searching your documents", "No matching records found", "Preparing response", "Answer ready"]
+    : ["Searching your documents", "Reviewing matching records", "Generating answer", "Answer ready"];
+
+  const currentStepIndex: Record<string, number> = {
+    idle: -1,
+    retrieving: 0,
+    retrieval_complete: 1,
+    preparing_response: 2,
+    building_answer: 2,
+    fallback_building: 2,
+    done: 3,
+    failed: 3,
+  };
+  const activeStep = currentStepIndex[pipelineState.stage] ?? -1;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-2.5">
+      {/* Progress bar */}
+      <div className="flex items-center gap-3">
+        {!isDone && (
+          <Loader2
+            size={13}
+            className={clsx("shrink-0 animate-spin", spinColor[color])}
+          />
+        )}
+        <div className="flex-1 bg-gray-200 rounded-full h-1.5 overflow-hidden">
+          <div
+            className={clsx(
+              "h-full rounded-full transition-all duration-500",
+              barColor[color]
+            )}
+            style={{
+              width: `${Math.max(pipelineState.progress, pipelineState.stage === "idle" ? 5 : 0)}%`,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Clean step list */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {steps.map((step, i) => {
+          const isActive = i === activeStep;
+          const isPast = i < activeStep || isDone;
+          const isFailed = pipelineState.stage === "failed" && i === activeStep;
+          return (
+            <React.Fragment key={step}>
+              <span
+                className={clsx(
+                  "text-xs",
+                  isFailed
+                    ? "text-red-500 font-medium"
+                    : isActive
+                    ? clsx("font-medium", color === "amber" ? "text-amber-700" : "text-blue-600")
+                    : isPast
+                    ? "text-gray-400 line-through"
+                    : "text-gray-300"
+                )}
+              >
+                {step}
+              </span>
+              {i < steps.length - 1 && (
+                <span className="text-gray-300 text-xs">›</span>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      {/* Stall or warning banner */}
+      {(stalling || color === "amber") && !isDone && (
+        <p className="text-xs text-amber-600 font-medium">
+          <AlertTriangle size={11} className="inline mr-1 mb-0.5" />
+          {label}
+        </p>
+      )}
+
+      {/* Expandable technical trace */}
+      {events.length > 0 && (
+        <button
+          onClick={() => setTraceOpen((v) => !v)}
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          {traceOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          Technical trace
+        </button>
+      )}
+      {traceOpen && events.length > 0 && (
+        <div className="mt-1 space-y-0.5 max-h-32 overflow-y-auto border-t border-gray-200 pt-2">
+          {events.map((e, i) => (
+            <p key={i} className="text-[10px] font-mono text-gray-400 truncate">
+              {e.event_type}: {e.message ?? ""}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const EXAMPLE_QUESTIONS = [
   "How much did I pay in fees in the last 6 months?",
@@ -30,22 +172,28 @@ const EXAMPLE_QUESTIONS = [
   "What financial statements are missing for 2026?",
 ];
 
-// ── Per-message type (extended with sources + structured answer) ──────────────
+// ── Per-message type ───────────────────────────────────────────────────────────
 
 interface RichMessage extends ChatMessage {
   sources?: SourceChunk[];
   structured_answer?: StructuredAnswer | null;
   answer_type?: string;
+  /** From pipeline_meta.pipeline_stage: 'llm' | 'retrieval_only' | 'safe_error' */
+  pipeline_stage?: string;
+  warnings?: string[];
 }
 
-// ── Message bubble ────────────────────────────────────────────────────────────
+// ── Message bubble ─────────────────────────────────────────────────────────────
 
-function MessageBubble({ message }: { message: RichMessage }) {
+interface MessageBubbleProps {
+  message: RichMessage;
+  onFollowup?: (q: string) => void;
+}
+
+function MessageBubble({ message, onFollowup }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const isStructured =
-    !isUser &&
-    message.structured_answer != null &&
-    message.answer_type !== "prose";
+    !isUser && message.structured_answer != null;
 
   return (
     <div className={clsx("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
@@ -64,12 +212,17 @@ function MessageBubble({ message }: { message: RichMessage }) {
 
       <div className="flex flex-col gap-1 max-w-[85%] min-w-0">
         {isStructured && message.structured_answer ? (
-          // Structured answer — render typed card
+          // Structured answer — AnswerCard handles fallback banner internally
           <div className="w-full">
-            <AnswerCard structured={message.structured_answer} />
+            <AnswerCard
+              structured={message.structured_answer}
+              pipelineStage={message.pipeline_stage ?? "llm"}
+              warnings={message.warnings ?? []}
+              onFollowup={onFollowup}
+            />
           </div>
         ) : (
-          // Prose — render standard bubble
+          // Prose — render as styled bubble
           <div
             className={clsx(
               "px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap",
@@ -92,24 +245,33 @@ function MessageBubble({ message }: { message: RichMessage }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export function ChatInterface() {
-  const { chatHistory, addChatMessage, clearChat } = useAppStore();
+  const { chatHistory, addChatMessage, clearChat, selectedBucket, setSelectedBucket } = useAppStore();
   const { buckets } = useBuckets();
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedBucketIds, setSelectedBucketIds] = useState<string[]>([]);
-  // Local rich history (not stored in global store to keep store simple)
   const [richHistory, setRichHistory] = useState<RichMessage[]>([]);
+
+  // Derive bucket IDs from global selectedBucket context
+  const selectedBucketIds = buckets
+    .filter((b) => b.name.toLowerCase() === selectedBucket)
+    .map((b) => b.id);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const { events, isStreaming, clearEvents, streamChatQuery } = useEventStream();
+  // Pipeline state machine — replaces ad-hoc derivePipelineStage()
+  const { state: pipelineState, pushEvent, reset: resetPipeline } = usePipelineReducer();
 
-  // Sync global chatHistory into rich history on mount / external changes
+  const { events, isStreaming, clearEvents, streamChatQuery } = useEventStream({
+    // Feed each SSE event into the reducer as it arrives.
+    onEvent: pushEvent,
+  });
+
+  // Sync global chatHistory into rich history on mount
   useEffect(() => {
     setRichHistory(chatHistory.map((m) => ({ ...m })));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -118,15 +280,10 @@ export function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [richHistory, isLoading, isStreaming]);
 
-  const handleToggleBucket = useCallback((id: string) => {
-    setSelectedBucketIds((prev) =>
-      prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id]
-    );
-  }, []);
-
-  const handleSelectAll = useCallback(() => {
-    setSelectedBucketIds([]);
-  }, []);
+  // Bucket toggle for the chat header
+  const handleBucketToggle = useCallback(() => {
+    setSelectedBucket(selectedBucket === "investments" ? "banking" : "investments");
+  }, [selectedBucket, setSelectedBucket]);
 
   const handleSend = useCallback(async () => {
     const q = input.trim();
@@ -134,6 +291,7 @@ export function ChatInterface() {
 
     setInput("");
     clearEvents();
+    resetPipeline();
 
     const userMsg: RichMessage = {
       role: "user",
@@ -145,7 +303,6 @@ export function ChatInterface() {
     setIsLoading(true);
 
     try {
-      // Use streaming endpoint
       const result = await streamChatQuery({
         question: q,
         conversation_history: chatHistory,
@@ -154,6 +311,10 @@ export function ChatInterface() {
       });
 
       if (result) {
+        // Extract pipeline_meta from the result (added in Phase 2.7 schema upgrade)
+        const raw = result as unknown as Record<string, unknown>;
+        const meta = raw.pipeline_meta as Record<string, unknown> | undefined;
+
         const assistantMsg: RichMessage = {
           role: "assistant",
           content: result.answer,
@@ -161,11 +322,13 @@ export function ChatInterface() {
           sources: result.sources as SourceChunk[],
           structured_answer: result.structured_answer as StructuredAnswer | null,
           answer_type: result.answer_type,
+          pipeline_stage: (meta?.pipeline_stage as string | undefined) ?? "llm",
+          warnings: (meta?.warnings as string[] | undefined) ?? [],
         };
         setRichHistory((prev) => [...prev, assistantMsg]);
         addChatMessage({ role: "assistant", content: result.answer });
       } else {
-        // Fallback: non-streaming
+        // Fallback: non-streaming query endpoint
         const response = await chatApi.query({
           question: q,
           conversation_history: chatHistory,
@@ -197,10 +360,13 @@ export function ChatInterface() {
     isLoading,
     isStreaming,
     clearEvents,
+    resetPipeline,
     streamChatQuery,
     chatHistory,
     selectedBucketIds,
     addChatMessage,
+    buckets,
+    selectedBucket,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -214,17 +380,29 @@ export function ChatInterface() {
     clearChat();
     setRichHistory([]);
     clearEvents();
-  }, [clearChat, clearEvents]);
+    resetPipeline();
+  }, [clearChat, clearEvents, resetPipeline]);
 
-  const handleExampleClick = useCallback(
-    (q: string) => {
-      setInput(q);
-      inputRef.current?.focus();
-    },
-    []
-  );
+  const handleExampleClick = useCallback((q: string) => {
+    setInput(q);
+    inputRef.current?.focus();
+  }, []);
 
-  const busy = isLoading || isStreaming;
+  const handleFollowup = useCallback((q: string) => {
+    setInput(q);
+    inputRef.current?.focus();
+  }, []);
+
+  // busy: true while a request is in flight.
+  // We rely on pipelineState.isTerminal as an additional gate because
+  // isStreaming (from the hook) may clear slightly before the terminal
+  // response_complete event has been processed by the reducer.
+  const busy = isLoading || (isStreaming && !pipelineState.isTerminal);
+
+  // Show progress bar while streaming OR while pipeline hasn't reached terminal.
+  // Once isTerminal is true, the bar disappears and the answer card is shown.
+  const showProgress =
+    isStreaming || (pipelineState.stage !== "idle" && !pipelineState.isTerminal);
 
   return (
     <div className="flex flex-col h-full">
@@ -245,18 +423,18 @@ export function ChatInterface() {
         )}
       </div>
 
-      {/* Bucket scope picker */}
-      {buckets.length > 0 && (
-        <div className="px-6 py-2.5 border-b bg-gray-50">
-          <BucketPicker
-            buckets={buckets}
-            selectedIds={selectedBucketIds}
-            onToggle={handleToggleBucket}
-            onSelectAll={handleSelectAll}
-            disabled={busy}
-          />
-        </div>
-      )}
+      {/* Bucket context indicator */}
+      <div className="px-6 py-2 border-b bg-gray-50 flex items-center gap-2">
+        <span className="text-xs text-gray-500">Context:</span>
+        <button
+          onClick={handleBucketToggle}
+          disabled={busy}
+          className="text-xs font-medium px-2.5 py-1 rounded-md bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors capitalize disabled:opacity-50"
+        >
+          {selectedBucket}
+        </button>
+        <span className="text-xs text-gray-400">Click to switch</span>
+      </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
@@ -284,17 +462,22 @@ export function ChatInterface() {
         ) : (
           <>
             {richHistory.map((msg, i) => (
-              <MessageBubble key={i} message={msg} />
+              <MessageBubble key={i} message={msg} onFollowup={handleFollowup} />
             ))}
 
-            {/* Live agent trace — shown while streaming */}
-            {(events.length > 0 || isStreaming) && (
+            {/* Pipeline progress bar — shown while streaming or until terminal.
+                Technical trace is nested inside and collapsed by default. */}
+            {showProgress && (
               <div className="ml-10">
-                <AgentTrace events={events} isStreaming={isStreaming} />
+                <StageProgressBar
+                  pipelineState={pipelineState}
+                  isStreaming={isStreaming}
+                  events={events}
+                />
               </div>
             )}
 
-            {/* Loading indicator */}
+            {/* Fallback spinner if no events yet */}
             {busy && events.length === 0 && (
               <div className="flex gap-3">
                 <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center">
@@ -334,11 +517,9 @@ export function ChatInterface() {
         </div>
         <p className="text-xs text-gray-400 mt-2">
           Enter to send · Shift+Enter for newline
-          {selectedBucketIds.length > 0 && (
-            <span className="ml-2 text-blue-500">
-              · Querying {selectedBucketIds.length} bucket{selectedBucketIds.length > 1 ? "s" : ""}
-            </span>
-          )}
+          <span className="ml-2 text-blue-500 capitalize">
+            · Searching {selectedBucket}
+          </span>
         </p>
       </div>
     </div>

@@ -117,15 +117,44 @@ def get_tool_registry() -> ToolRegistry:
 
 
 def _build_registry() -> ToolRegistry:
-    """Instantiate and register all MCP tools."""
+    """Instantiate and register all MCP tools.
+
+    Import order is intentional: legacy tools first, then the new
+    institution-boundary tools introduced in Phase 1 of the MCP refactor.
+    All institution-tool imports are deferred inside their respective
+    ``execute()`` methods to avoid circular imports at registry build time.
+    """
     from app.mcp_tools.ingest_tool import IngestDocumentTool
     from app.mcp_tools.fee_analysis_tool import FeeAnalysisTool
     from app.mcp_tools.rag_query_tool import RAGQueryTool
     from app.mcp_tools.report_tool import ReportTool
 
+    # Phase 1 MCP refactor — capability-based institution dispatch tools
+    from app.mcp_tools.institution_tools import (
+        AnswerRenderTool,
+        ClassifyDocumentTool,
+        ExtractDocumentTool,
+        FeeAnalysisTool as InstitutionFeeAnalysisTool,
+        HoldingsAnalysisTool,
+        HybridRetrievalTool,
+        TransactionSearchTool,
+    )
+
     registry = ToolRegistry()
+
+    # ── Legacy tools (Phase 1 MVP) ─────────────────────────────────────────────
     registry.register(IngestDocumentTool())
     registry.register(FeeAnalysisTool())
     registry.register(RAGQueryTool())
     registry.register(ReportTool())
+
+    # ── Institution-boundary tools (Phase 1 MCP refactor) ─────────────────────
+    registry.register(ClassifyDocumentTool())
+    registry.register(ExtractDocumentTool())
+    registry.register(InstitutionFeeAnalysisTool())
+    registry.register(HoldingsAnalysisTool())
+    registry.register(TransactionSearchTool())
+    registry.register(HybridRetrievalTool())
+    registry.register(AnswerRenderTool())
+
     return registry

@@ -26,6 +26,7 @@ import structlog
 
 from app.api.schemas.answer_schemas import (
     AnswerEvidence,
+    AnswerHighlight,
     ComparisonAnswer,
     ComparisonItem,
     EvidenceChunk,
@@ -154,6 +155,69 @@ def _estimate_confidence(retrieval: RetrievalResult) -> float:
     return round(base, 2)
 
 
+def _suggest_followups(question: str, intent: str) -> list[str]:
+    """
+    Generate contextually relevant follow-up question suggestions.
+
+    Uses simple keyword matching on the original question to surface the most
+    likely next questions. Returns at most three suggestions.
+
+    Args:
+        question: The user's original question.
+        intent:   The classified intent — 'numeric', 'table', 'comparison', 'prose'.
+
+    Returns:
+        List of up to three follow-up question strings.
+    """
+    followups: list[str] = []
+    q_lower = question.lower()
+
+    if "fee" in q_lower:
+        followups += [
+            "Which fee category was highest?",
+            "Compare fees month over month.",
+            "Show all fee transactions.",
+        ]
+    elif "balance" in q_lower or "portfolio" in q_lower:
+        followups += [
+            "What changed since last month?",
+            "Show my holdings breakdown.",
+            "What are my top holdings by value?",
+        ]
+    elif "transaction" in q_lower:
+        followups += [
+            "Show largest transactions.",
+            "What recurring charges do I have?",
+            "Summarize deposits vs withdrawals.",
+        ]
+    elif "holding" in q_lower or "investment" in q_lower:
+        followups += [
+            "What is my total portfolio value?",
+            "Which holdings gained the most?",
+            "Show my asset class breakdown.",
+        ]
+    elif "deposit" in q_lower or "withdrawal" in q_lower:
+        followups += [
+            "What is my net cash flow?",
+            "Compare deposits vs withdrawals month over month.",
+            "Which account had the most activity?",
+        ]
+    elif intent == "comparison":
+        followups += [
+            "Show the full breakdown as a table.",
+            "Which month had the highest amount?",
+            "What is the trend over time?",
+        ]
+    else:
+        followups += [
+            "Summarize my financial activity.",
+            "Show my recent transactions.",
+            "What fees did I pay this year?",
+        ]
+
+    return followups[:3]
+
+
 def _format_currency(value: Any) -> tuple[str, float | None]:
     """
     Format a value as USD currency string.
@@ -214,13 +278,30 @@ def _build_numeric_answer(
     if confidence < 0.5:
         caveats.append("Low confidence — limited data available for this question.")
 
+    # Build a single highlight chip from the primary value so it renders
+    # prominently above the metric card.
+    highlights: list[AnswerHighlight] = []
+    if value_str != "N/A":
+        highlights.append(
+            AnswerHighlight(
+                label=label[:40],
+                value=value_str,
+                unit=unit if unit and unit != "USD" else None,
+            )
+        )
+
+    title = question.strip().rstrip("?")[:60]
+
     return NumericAnswer(
+        title=title,
         label=label,
         value=value_str,
         raw_value=raw_value,
         unit=unit,
         period=period,
         summary_text=prose_answer[:200] if prose_answer else None,
+        highlights=highlights,
+        suggested_followups=_suggest_followups(question, "numeric"),
         confidence=confidence,
         caveats=caveats,
         evidence=evidence,
@@ -235,13 +316,16 @@ def _build_table_answer(
     confidence: float,
 ) -> TableAnswer:
     """Build a TableAnswer from multi-row SQL results."""
+    table_title = question.strip().rstrip("?")
+
     if not sql_results:
         return TableAnswer(
-            title=question.strip().rstrip("?"),
+            title=table_title,
             columns=[],
             rows=[],
             row_count=0,
             summary_text=prose_answer[:200] if prose_answer else None,
+            suggested_followups=_suggest_followups(question, "table"),
             confidence=confidence,
             evidence=evidence,
         )
@@ -255,13 +339,24 @@ def _build_table_answer(
     if len(sql_results) > MAX_DISPLAY:
         caveats.append(f"Showing {MAX_DISPLAY} of {len(sql_results)} results.")
 
+    # Highlight chip showing total row count for quick scanning.
+    highlights: list[AnswerHighlight] = [
+        AnswerHighlight(
+            label="Results",
+            value=str(len(sql_results)),
+            unit="rows",
+        )
+    ]
+
     return TableAnswer(
-        title=question.strip().rstrip("?"),
+        title=table_title,
         columns=columns,
         rows=rows,
         row_count=len(sql_results),
         truncated=len(sql_results) > MAX_DISPLAY,
         summary_text=prose_answer[:200] if prose_answer else None,
+        highlights=highlights,
+        suggested_followups=_suggest_followups(question, "table"),
         confidence=confidence,
         caveats=caveats,
         evidence=evidence,
@@ -315,9 +410,36 @@ def _build_comparison_answer(
 
     # Mark the highest-value item
     numeric_items = [(i, item) for i, item in enumerate(items) if item.raw_value is not None]
+    max_item: ComparisonItem | None = None
+    min_item: ComparisonItem | None = None
     if numeric_items:
         max_idx = max(numeric_items, key=lambda x: x[1].raw_value or 0)[0]
         items[max_idx] = items[max_idx].model_copy(update={"is_baseline": True})
+        max_item = items[max_idx]
+        min_idx = min(numeric_items, key=lambda x: x[1].raw_value or 0)[0]
+        min_item = items[min_idx]
+
+    # Build highlights for max and min items so the user immediately sees
+    # the high and low watermarks without scanning the full list.
+    highlights: list[AnswerHighlight] = []
+    if max_item is not None:
+        highlights.append(
+            AnswerHighlight(
+                label=f"Highest · {max_item.label}",
+                value=max_item.value,
+                unit="USD" if max_item.raw_value is not None else None,
+                trend="up",
+            )
+        )
+    if min_item is not None and min_item.label != (max_item.label if max_item else ""):
+        highlights.append(
+            AnswerHighlight(
+                label=f"Lowest · {min_item.label}",
+                value=min_item.value,
+                unit="USD" if min_item.raw_value is not None else None,
+                trend="down",
+            )
+        )
 
     return ComparisonAnswer(
         title=question.strip().rstrip("?"),
@@ -326,6 +448,8 @@ def _build_comparison_answer(
         unit="USD",
         items=items,
         summary_text=prose_answer[:200] if prose_answer else None,
+        highlights=highlights,
+        suggested_followups=_suggest_followups(question, "comparison"),
         confidence=confidence,
         evidence=evidence,
     )
@@ -383,7 +507,9 @@ def build_structured_answer(
             caveats.append("Limited data available — answer may be incomplete.")
 
         return ProseAnswer(
+            title=question.strip().rstrip("?")[:60],
             text=prose_answer,
+            suggested_followups=_suggest_followups(question, "prose"),
             confidence=confidence,
             caveats=caveats,
             evidence=evidence,

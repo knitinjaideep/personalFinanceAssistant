@@ -168,13 +168,36 @@ class ChromaStore:
         return result
 
 
-# Module-level singleton (set during FastAPI lifespan startup)
+# Module-level singleton — set during FastAPI lifespan startup via set_chroma_store().
+# Never create a new instance here: the lifespan must call initialize() first.
 _chroma_instance: ChromaStore | None = None
 
 
+def set_chroma_store(store: ChromaStore) -> None:
+    """
+    Register the application-level ChromaStore singleton.
+
+    Called once during FastAPI lifespan startup, after ``await store.initialize()``.
+    This ensures every caller of ``get_chroma_store()`` receives the same
+    already-initialized instance rather than a fresh uninitialized one.
+    """
+    global _chroma_instance
+    _chroma_instance = store
+
+
 def get_chroma_store() -> ChromaStore:
-    """Return the initialized ChromaStore singleton."""
+    """
+    Return the initialized ChromaStore singleton.
+
+    Raises RuntimeError if called before set_chroma_store() (i.e. outside the
+    FastAPI lifespan).  This surfaces the misconfiguration immediately rather
+    than silently returning 0 chunks.
+    """
     global _chroma_instance
     if _chroma_instance is None:
-        _chroma_instance = ChromaStore()
+        raise RuntimeError(
+            "ChromaStore has not been initialized. "
+            "Ensure set_chroma_store() is called during FastAPI lifespan startup "
+            "before any retrieval requests are made."
+        )
     return _chroma_instance

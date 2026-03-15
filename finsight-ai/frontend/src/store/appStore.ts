@@ -13,9 +13,13 @@ import { create } from "zustand";
 import type { Bucket, ChatMessage, StatementDocument } from "../types";
 
 interface AppState {
-  // Navigation
-  activePage: "upload" | "statements" | "chat" | "analytics" | "metrics";
+  // Navigation — simplified to 2 tabs
+  activePage: "home" | "chat";
   setActivePage: (page: AppState["activePage"]) => void;
+
+  // Selected bucket context — shared between Home and Chat
+  selectedBucket: "investments" | "banking";
+  setSelectedBucket: (bucket: AppState["selectedBucket"]) => void;
 
   // Chat history persists across navigation
   chatHistory: ChatMessage[];
@@ -37,8 +41,11 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  activePage: "upload",
+  activePage: "home",
   setActivePage: (page) => set({ activePage: page }),
+
+  selectedBucket: "investments",
+  setSelectedBucket: (bucket) => set({ selectedBucket: bucket }),
 
   chatHistory: [],
   addChatMessage: (message) =>

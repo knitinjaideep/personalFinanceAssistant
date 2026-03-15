@@ -236,7 +236,9 @@ class MorganStanleyExtractor:
             id=ctx.statement_id,
             document_id=uuid.uuid4(),  # Will be set by the agent with the real document_id
             institution_id=institution.id,
+            institution_type=InstitutionType.MORGAN_STANLEY,
             account_id=account.id,
+            account_type=account.account_type,
             statement_type=statement_type,
             period=period,
             balance_snapshots=balance_snapshots,
@@ -259,25 +261,46 @@ class MorganStanleyExtractor:
         )
         return statement
 
+    # Account type detection patterns
+    _IRA_RE = re.compile(r"\b(?:traditional|rollover|inherited)?\s*ira\b", re.IGNORECASE)
+    _ROTH_RE = re.compile(r"\broth\s+ira\b", re.IGNORECASE)
+    _ADVISORY_RE = re.compile(r"\b(?:advisory|managed|discretionary|portfolio\s+management)\b", re.IGNORECASE)
+
     def _extract_account(self, document: ParsedDocument) -> Account:
         """Extract account number and type from first page header."""
         account_number = "****0000"  # Default masked fallback
-        account_type = AccountType.BROKERAGE
+
+        # Sample first two pages for account detection
+        sample = "\n".join(p.raw_text for p in document.pages[:2])
 
         for page in document.pages[:2]:
             match = _ACCOUNT_RE.search(page.raw_text)
             if match:
                 raw_num = match.group(1).strip()
-                # Mask all but last 4 digits
                 digits_only = re.sub(r"[^\d]", "", raw_num)
                 account_number = f"****{digits_only[-4:]}" if len(digits_only) >= 4 else raw_num
                 break
 
+        # Detect account type in priority order: Roth IRA > IRA > Advisory > Brokerage
+        if self._ROTH_RE.search(sample):
+            account_type = AccountType.ROTH_IRA
+            account_name = "Morgan Stanley Roth IRA"
+        elif self._IRA_RE.search(sample):
+            account_type = AccountType.IRA
+            account_name = "Morgan Stanley IRA"
+        elif self._ADVISORY_RE.search(sample):
+            account_type = AccountType.ADVISORY
+            account_name = "Morgan Stanley Advisory Account"
+        else:
+            account_type = AccountType.INDIVIDUAL_BROKERAGE
+            account_name = "Morgan Stanley Brokerage Account"
+
         return Account(
             institution_id=self.MS_INSTITUTION.id,
+            institution_type=InstitutionType.MORGAN_STANLEY,
             account_number_masked=account_number,
             account_type=account_type,
-            account_name="Morgan Stanley Account",
+            account_name=account_name,
         )
 
     async def _extract_period(

@@ -91,6 +91,7 @@ export function useEventStream(options: UseEventStreamOptions = {}) {
       answer_type: string;
       confidence: number | null;
       caveats: string[];
+      pipeline_meta: Record<string, unknown> | null;
     } | null> => {
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -124,11 +125,32 @@ export function useEventStream(options: UseEventStreamOptions = {}) {
           answer_type: string;
           confidence: number | null;
           caveats: string[];
+          pipeline_meta: Record<string, unknown> | null;
         } | null = null;
+
+        // Track whether we received a response_complete before stream closed.
+        // If the stream closes without a terminal event, we synthesize a failure.
+        let receivedTerminal = false;
 
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+
+          if (done) {
+            // Stream closed — check if we got a terminal event.
+            // If not, synthesize a failure so the frontend can stop loading.
+            if (!receivedTerminal) {
+              _push({
+                event_type: "stream_closed_without_terminal",
+                step_name: "stream",
+                stage: "stream",
+                message: "Stream closed before answer arrived",
+                status: "failed",
+                timestamp: new Date().toISOString(),
+              } as unknown as ProcessingEvent);
+              options.onError?.("Stream closed before the answer was received.");
+            }
+            break;
+          }
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
@@ -147,18 +169,22 @@ export function useEventStream(options: UseEventStreamOptions = {}) {
 
               if (data.type === "stream_done") {
                 options.onDone?.();
-                break;
+                // stream_done means server is done — no more reads needed.
+                // We don't break here; we let the outer while loop naturally
+                // reach `done = true` so cleanup is consistent.
+                continue;
               }
 
               _push(data);
 
-              // Extract answer from the response_complete event
-              // The backend sends payload (not metadata) per sse_schemas.py
+              // Extract answer from the response_complete event.
+              // The backend sends payload (not metadata) per sse_schemas.py.
               const eventPayload = (data as unknown as Record<string, unknown>).payload as Record<string, unknown> | undefined;
               if (
                 data.event_type === "response_complete" &&
-                eventPayload?.answer
+                eventPayload?.answer != null
               ) {
+                receivedTerminal = true;
                 finalResult = {
                   answer: eventPayload.answer as string,
                   sources: (eventPayload.sources as unknown[]) ?? [],
@@ -166,10 +192,17 @@ export function useEventStream(options: UseEventStreamOptions = {}) {
                   answer_type: (eventPayload.answer_type as string) ?? "prose",
                   confidence: (eventPayload.confidence as number | null) ?? null,
                   caveats: (eventPayload.caveats as string[]) ?? [],
+                  // pipeline_meta carries fallback/warning context in one place
+                  pipeline_meta: (eventPayload.pipeline_meta as Record<string, unknown> | null) ?? null,
                 };
               }
+
+              // Also count error events as terminal (prevents stuck state).
+              if (data.event_type === "error") {
+                receivedTerminal = true;
+              }
             } catch {
-              // ignore parse errors
+              // ignore parse errors on individual frames
             }
           }
         }

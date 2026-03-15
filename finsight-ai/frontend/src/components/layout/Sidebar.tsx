@@ -1,16 +1,13 @@
 import React from "react";
-import { UploadCloud, MessageSquare, BarChart2, FileText, TrendingUp, LineChart } from "lucide-react";
+import { Home, MessageSquare, TrendingUp } from "lucide-react";
 import { clsx } from "clsx";
 import { useAppStore } from "../../store/appStore";
 
-type Page = "upload" | "statements" | "chat" | "analytics" | "metrics";
+type Page = "home" | "chat";
 
 const NAV_ITEMS: { id: Page; label: string; icon: React.ReactNode }[] = [
-  { id: "upload", label: "Upload", icon: <UploadCloud size={18} /> },
-  { id: "statements", label: "Statements", icon: <FileText size={18} /> },
+  { id: "home", label: "Home", icon: <Home size={18} /> },
   { id: "chat", label: "Chat", icon: <MessageSquare size={18} /> },
-  { id: "analytics", label: "Analytics", icon: <BarChart2 size={18} /> },
-  { id: "metrics", label: "Metrics", icon: <LineChart size={18} /> },
 ];
 
 export function Sidebar() {

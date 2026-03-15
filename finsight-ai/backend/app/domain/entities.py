@@ -11,6 +11,10 @@ Design decisions:
   a source location (page, section) for auditability.
 - Optional fields default to None rather than raising on missing data,
   since financial statements frequently omit certain sections.
+- BucketType is denormalized onto Account and Statement so analytics queries
+  can filter by bucket without joining through InstitutionType lookups.
+- TransactionCategory is set by the merchant normalizer and stored on
+  Transaction for banking analytics (spending by category).
 """
 
 from __future__ import annotations
@@ -25,13 +29,18 @@ from pydantic import BaseModel, Field, field_validator
 from app.domain.enums import (
     AccountType,
     BucketStatus,
+    BucketType,
+    ConfidenceTier,
     DocumentStatus,
     ExtractionStatus,
     InstitutionType,
     ProcessingEventStatus,
     ProcessingEventType,
     StatementType,
+    TransactionCategory,
     TransactionType,
+    get_bucket_for_account_type,
+    get_bucket_for_institution,
 )
 
 
@@ -61,20 +70,43 @@ class FinancialInstitution(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     name: str
     institution_type: InstitutionType
+    bucket_type: BucketType | None = None   # Denormalized for fast analytics filtering
     website: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+    def model_post_init(self, __context: Any) -> None:
+        # Auto-populate bucket_type from institution_type if not explicitly set
+        if self.bucket_type is None:
+            object.__setattr__(
+                self, "bucket_type", get_bucket_for_institution(self.institution_type)
+            )
+
 
 class Account(BaseModel):
-    """A single financial account at an institution."""
+    """
+    A single financial account at an institution.
+
+    bucket_type is denormalized here so analytics services can filter accounts
+    by bucket (INVESTMENTS vs BANKING) without re-resolving institution type.
+    """
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     institution_id: uuid.UUID
+    institution_type: InstitutionType = InstitutionType.UNKNOWN
     account_number_masked: str          # e.g., "****1234"
-    account_name: str | None = None     # e.g., "Individual Brokerage"
+    account_name: str | None = None     # e.g., "Individual Brokerage Account"
     account_type: AccountType = AccountType.UNKNOWN
+    bucket_type: BucketType | None = None
     currency: str = "USD"
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.bucket_type is None:
+            # Resolve from account_type first (most specific), then institution
+            bt = get_bucket_for_account_type(self.account_type)
+            if bt is None:
+                bt = get_bucket_for_institution(self.institution_type)
+            object.__setattr__(self, "bucket_type", bt)
 
 
 class BalanceSnapshot(BaseModel):
@@ -92,9 +124,20 @@ class BalanceSnapshot(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, default=1.0)
     source: SourceLocation | None = None
 
+    @field_validator("total_value", mode="before")
+    @classmethod
+    def coerce_total_value(cls, v: Any) -> Decimal:
+        return Decimal(str(v))
+
 
 class Transaction(BaseModel):
-    """A single financial transaction."""
+    """
+    A single financial transaction.
+
+    For banking accounts (Chase, Amex, Discover), `category` is populated
+    by the merchant normalizer after extraction.  For investment accounts,
+    category is left as None (use transaction_type instead).
+    """
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     account_id: uuid.UUID
@@ -102,12 +145,15 @@ class Transaction(BaseModel):
     transaction_date: date
     settlement_date: date | None = None
     description: str
+    merchant_name: str | None = None         # Cleaned merchant name (banking)
     transaction_type: TransactionType = TransactionType.OTHER
-    amount: Decimal                      # Positive = credit, negative = debit
+    category: TransactionCategory | None = None  # Banking spend category
+    amount: Decimal                          # Positive = credit, negative = debit
     currency: str = "USD"
-    quantity: Decimal | None = None      # For trades
+    quantity: Decimal | None = None          # For trades
     price_per_unit: Decimal | None = None
-    symbol: str | None = None            # Ticker/CUSIP
+    symbol: str | None = None               # Ticker/CUSIP
+    is_recurring: bool = False              # Subscription detection flag
     confidence: float = Field(ge=0.0, le=1.0, default=1.0)
     source: SourceLocation | None = None
 
@@ -193,12 +239,18 @@ class Statement(BaseModel):
 
     This is the central domain entity that ties together all extracted data
     from a single uploaded document.
+
+    bucket_type is denormalized here for the same reason as Account — so
+    analytics services can query statements by bucket without an extra join.
     """
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     document_id: uuid.UUID               # Links to the raw StatementDocument
     institution_id: uuid.UUID
+    institution_type: InstitutionType = InstitutionType.UNKNOWN
     account_id: uuid.UUID
+    account_type: AccountType = AccountType.UNKNOWN
+    bucket_type: BucketType | None = None
     statement_type: StatementType = StatementType.UNKNOWN
     period: StatementPeriod
     currency: str = "USD"
@@ -216,6 +268,13 @@ class Statement(BaseModel):
     extraction_notes: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.bucket_type is None:
+            bt = get_bucket_for_account_type(self.account_type)
+            if bt is None:
+                bt = get_bucket_for_institution(self.institution_type)
+            object.__setattr__(self, "bucket_type", bt)
 
 
 class StatementDocument(BaseModel):
@@ -271,6 +330,33 @@ class ExtractionResult(BaseModel):
     processing_time_seconds: float | None = None
 
 
+# ── Document confidence summary (computed by ConfidenceService) ───────────────
+
+class DocumentConfidenceSummary(BaseModel):
+    """
+    Aggregated confidence score and tier for a processed document.
+
+    Computed by ConfidenceService from field_confidences on ExtractionResult.
+    Used to drive UI confidence badges (High / Medium / Low / Needs Review).
+    """
+
+    document_id: uuid.UUID
+    overall_confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    tier: ConfidenceTier = ConfidenceTier.NEEDS_REVIEW
+    extraction_status: ExtractionStatus = ExtractionStatus.PENDING
+
+    # Field-level breakdown for detail view
+    fields_found: int = 0
+    fields_missing: int = 0
+    fields_low_confidence: int = 0   # confidence < 0.5
+
+    # Human-readable display label
+    display_label: str = "Needs Review"
+    display_color: str = "red"       # "green" | "yellow" | "red" | "gray"
+
+    warnings: list[str] = Field(default_factory=list)
+
+
 # ── Embedding record ──────────────────────────────────────────────────────────
 
 class EmbeddingRecord(BaseModel):
@@ -284,6 +370,7 @@ class EmbeddingRecord(BaseModel):
     page_number: int | None = None
     section: str | None = None
     institution_type: InstitutionType | None = None
+    bucket_type: BucketType | None = None   # For bucket-scoped retrieval
     statement_period: str | None = None  # ISO date range string
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -327,23 +414,28 @@ class ChatResponse(BaseModel):
     answer_type: str = "prose"
     confidence: float | None = None
     caveats: list[str] = Field(default_factory=list)
+    # Phase 3: chat pipeline stage info
+    fallback_used: bool = False
+    fallback_reason: str | None = None
 
 
 # ── Bucket entities ───────────────────────────────────────────────────────────
 
 class Bucket(BaseModel):
     """
-    A bucket is an agent-scoped workspace that owns a collection of documents,
-    maintains its own retrieval scope, and can answer questions within its context.
+    A bucket is a product-level grouping (INVESTMENTS or BANKING) that owns
+    a collection of documents, maintains its own retrieval scope, and drives
+    the analytics and chat experience.
 
-    Buckets are first-class entities — not tags or folders.
+    The `bucket_type` field pins this to the taxonomy.  User-created buckets
+    may have bucket_type=None for custom/free-form groupings.
     """
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
-    # Optional: pin a bucket to an institution (e.g. "morgan_stanley")
-    institution_type: InstitutionType | None = None
+    bucket_type: BucketType | None = None   # INVESTMENTS | BANKING | None (custom)
+    institution_type: InstitutionType | None = None  # Optional: pin to one institution
     status: BucketStatus = BucketStatus.ACTIVE
     color: str = "#3b82f6"          # UI color tag (hex)
     icon: str | None = None         # Optional emoji or icon name
@@ -357,6 +449,7 @@ class BucketCreateRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
+    bucket_type: BucketType | None = None
     institution_type: InstitutionType | None = None
     color: str = "#3b82f6"
     icon: str | None = None
@@ -424,4 +517,6 @@ class BucketScopedChatRequest(BaseModel):
     conversation_history: list[ChatMessage] = Field(default_factory=list)
     # None = all buckets, list of IDs = specific buckets
     bucket_ids: list[uuid.UUID] | None = None
+    # Phase 3: explicit bucket type filter for analytics-driven chat
+    bucket_type: BucketType | None = None
     session_id: str | None = None           # For SSE correlation

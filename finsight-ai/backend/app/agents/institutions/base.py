@@ -16,6 +16,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import structlog
+from pydantic import BaseModel
 
 from app.agents.state import IngestionState
 from app.domain.entities import ExtractionResult
@@ -23,6 +24,28 @@ from app.domain.enums import ExtractionStatus, InstitutionType, StatementType
 from app.parsers.base import ParsedDocument
 
 logger = structlog.get_logger(__name__)
+
+
+class InstitutionCapabilities(BaseModel):
+    """
+    Describes what an institution agent can extract.
+
+    Used for:
+    - Displaying accurate trace event info during ingestion
+    - Routing to correct tool with capability awareness
+    - Future: UI institution-capability matrix display
+    """
+
+    institution_type: str
+    display_name: str
+    supported_statement_types: list[str]  # e.g. ["brokerage", "advisory"]
+    can_extract_transactions: bool = False
+    can_extract_fees: bool = False
+    can_extract_holdings: bool = False
+    can_extract_balances: bool = False
+    classification_method: str = "regex"      # "regex" | "regex+llm" | "llm"
+    extraction_method: str = "regex+llm"      # "regex" | "regex+llm" | "llm"
+    notes: str = ""
 
 
 class BaseInstitutionAgent(ABC):
@@ -40,6 +63,12 @@ class BaseInstitutionAgent(ABC):
     @abstractmethod
     def institution_type(self) -> InstitutionType:
         """The institution this agent handles."""
+        ...
+
+    @property
+    @abstractmethod
+    def capabilities(self) -> InstitutionCapabilities:
+        """Describe what this agent can extract."""
         ...
 
     @abstractmethod
