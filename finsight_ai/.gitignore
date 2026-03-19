@@ -1,0 +1,175 @@
+# ==========================================
+
+# Coral Monorepo .gitignore
+
+# Python backend + React frontend
+
+# ==========================================
+
+############################
+
+# OS / System files
+
+############################
+.DS_Store
+Thumbs.db
+
+############################
+
+# Python (Backend)
+
+############################
+**pycache**/
+*.py[cod]
+*.pyo
+*.pyd
+
+# virtual environments
+
+.venv/
+venv/
+env/
+ENV/
+
+# Python build artifacts
+
+build/
+dist/
+*.egg-info/
+
+# pytest
+
+.pytest_cache/
+
+# mypy
+
+.mypy_cache/
+
+# Ruff / lint
+
+.ruff_cache/
+
+# coverage
+
+.coverage
+coverage.xml
+htmlcov/
+
+############################
+
+# Node / Frontend
+
+############################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# build outputs
+
+dist/
+build/
+
+# Vite
+
+.vite/
+
+############################
+
+# Environment variables
+
+############################
+.env
+.env.*
+!.env.example
+
+############################
+
+# Local data (VERY IMPORTANT)
+
+# Financial data must never be committed
+
+############################
+data/uploads/*
+data/db/*
+data/chroma/*
+
+# Fixed statement folders — contents are private financial documents
+data/investments/morgan_stanley/*
+data/investments/etrade/*
+data/banking/chase/checking/*
+data/banking/chase/credit_cards/*
+data/banking/amex/*
+data/banking/discover/*
+
+# Keep folder structure in git
+!data/uploads/.gitkeep
+!data/db/.gitkeep
+!data/chroma/.gitkeep
+!data/investments/morgan_stanley/.gitkeep
+!data/investments/etrade/.gitkeep
+!data/banking/chase/checking/.gitkeep
+!data/banking/chase/credit_cards/.gitkeep
+!data/banking/amex/.gitkeep
+!data/banking/discover/.gitkeep
+
+############################
+
+# Logs
+
+############################
+*.log
+logs/
+
+############################
+
+# SQLite temp files
+
+############################
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+############################
+
+# Ollama cache (if used locally)
+
+############################
+ollama_models/
+ollama_cache/
+
+############################
+
+# IDE / Editors
+
+############################
+
+# VSCode
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# JetBrains
+
+.idea/
+
+############################
+
+# Temporary files
+
+############################
+*.tmp
+*.temp
+*.swp
+*.swo
+
+############################
+
+# Misc
+
+############################
+*.bak
+*.old

@@ -1,0 +1,19 @@
+# Root-level gitignore for the PersonalFinanceAssistant repo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Temp
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.old
