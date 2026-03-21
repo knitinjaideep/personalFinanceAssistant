@@ -116,6 +116,7 @@ class DocumentUploadResponse(BaseModel):
     document_id: str
     filename: str
     status: str
+    message: str | None = None
 
 
 class ChatRequest(BaseModel):

@@ -58,7 +58,7 @@ class AccountModel(SQLModel, table=True):
 
 
 class DocumentModel(SQLModel, table=True):
-    """Raw uploaded document tracking."""
+    """Raw document tracking — covers both uploaded files and scanner-discovered files."""
     __tablename__ = "documents"
 
     id: str = Field(default_factory=_uuid, primary_key=True)
@@ -73,6 +73,16 @@ class DocumentModel(SQLModel, table=True):
     upload_time: datetime = Field(default_factory=_now)
     processed_time: Optional[datetime] = None
     error_message: Optional[str] = None
+
+    # ── Scanner-provided fields (populated when sourced from local folders) ──
+    # SHA-256 hex digest of the file — used to deduplicate re-scans.
+    file_hash: Optional[str] = Field(default=None, index=True)
+    # Absolute path as discovered by the scanner (may differ from stored_filename for uploads).
+    source_file_path: Optional[str] = None
+    # Human-readable product label, e.g. "Chase Freedom Unlimited", "Morgan Stanley IRA".
+    account_product: Optional[str] = None
+    # Source ID from StatementSource registry, e.g. "chase_freedom".
+    source_id: Optional[str] = Field(default=None, index=True)
 
     statements: list["StatementModel"] = Relationship(back_populates="document")
 

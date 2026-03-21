@@ -158,6 +158,33 @@ async def get_or_create_account(
 
 # ── Statements ───────────────────────────────────────────────────────────────
 
+async def delete_statements_for_document(session: AsyncSession, doc_id: str) -> None:
+    """Delete all statements and their child records for a document (for re-ingestion)."""
+    stmt_result = await session.execute(
+        select(StatementModel.id).where(StatementModel.document_id == doc_id)
+    )
+    stmt_ids = [r[0] for r in stmt_result.fetchall()]
+
+    if stmt_ids:
+        for model in [TransactionModel, FeeModel, HoldingModel, BalanceSnapshotModel]:
+            for sid in stmt_ids:
+                await session.execute(
+                    text(f"DELETE FROM {model.__tablename__} WHERE statement_id = :sid"),
+                    {"sid": sid}
+                )
+        for model in [MorganStanleyDetailModel, ChaseDetailModel, EtradeDetailModel,
+                      AmexDetailModel, DiscoverDetailModel]:
+            for sid in stmt_ids:
+                await session.execute(
+                    text(f"DELETE FROM {model.__tablename__} WHERE statement_id = :sid"),
+                    {"sid": sid}
+                )
+        await session.execute(
+            text("DELETE FROM statements WHERE document_id = :doc_id"),
+            {"doc_id": doc_id}
+        )
+
+
 async def create_statement(session: AsyncSession, **kwargs: Any) -> StatementModel:
     stmt = StatementModel(**kwargs)
     session.add(stmt)

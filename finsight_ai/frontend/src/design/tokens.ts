@@ -39,14 +39,33 @@ export const INSTITUTION_LABELS: Record<string, string> = {
   etrade: "E*TRADE",
   amex: "Amex",
   discover: "Discover",
+  bofa: "Bank of America",
+  marcus: "Marcus",
   unknown: "Unknown",
 };
 
 export const INSTITUTION_COLORS: Record<string, string> = {
   morgan_stanley: "bg-ocean-50 text-ocean border-ocean-200",
-  chase: "bg-ocean-50 text-ocean border-ocean-100",
-  etrade: "bg-ocean-50 text-positive border-ocean-100",
-  amex: "bg-sand-50 text-ocean border-sand-100",
-  discover: "bg-coral-50 text-coral border-coral-100",
-  unknown: "bg-ocean-50 text-ocean border-ocean-100",
+  chase:          "bg-ocean-50 text-ocean border-ocean-100",
+  etrade:         "bg-ocean-50 text-positive border-ocean-100",
+  amex:           "bg-sand-50 text-ocean border-sand-100",
+  discover:       "bg-coral-50 text-coral border-coral-100",
+  bofa:           "bg-ocean-50 text-ocean-deep border-ocean-200",
+  marcus:         "bg-positive/10 text-positive border-positive/20",
+  unknown:        "bg-ocean-50 text-ocean border-ocean-100",
+};
+
+// Maps source_id to a display label for the source cards
+export const SOURCE_LABELS: Record<string, string> = {
+  chase_checking: "Chase Checking",
+  chase_freedom:  "Chase Freedom Unlimited",
+  chase_prime:    "Chase Prime",
+  chase_sapphire: "Chase Sapphire Preferred",
+  amex:           "American Express",
+  bofa:           "Bank of America",
+  discover:       "Discover",
+  marcus:         "Marcus Goldman Sachs",
+  etrade:         "E*TRADE",
+  morgan_stanley_ira:   "Morgan Stanley IRA",
+  morgan_stanley_joint: "Morgan Stanley Joint",
 };

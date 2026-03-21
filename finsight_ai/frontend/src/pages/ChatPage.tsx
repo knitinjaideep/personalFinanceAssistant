@@ -6,9 +6,8 @@ import { useAppStore } from "../store/appStore";
 import type { ChatMessage, ChatResponse } from "../types";
 import { ChatBubble } from "../components/chat/ChatBubble";
 import { AnswerCard } from "../components/chat/AnswerCard";
-import { OceanBackground } from "../components/ui/OceanBackground";
 import {
-  pageVariants, staggerContainer, staggerChild, fadeVariants,
+  contentPageVariants, staggerContainer, staggerChild, fadeVariants,
 } from "../design/motion";
 
 const EXAMPLE_QUESTIONS = [
@@ -34,8 +33,7 @@ function TypingIndicator() {
       <div
         className="flex items-center gap-1.5 px-4 py-3 rounded-3xl rounded-bl-lg"
         style={{
-          background: "rgba(255,255,255,0.88)",
-          backdropFilter: "blur(12px)",
+          background: "rgba(255,255,255,0.95)",
           border: "1px solid rgba(205,237,246,0.7)",
           boxShadow: "0 4px 16px rgba(11,60,93,0.08)",
         }}
@@ -54,7 +52,7 @@ function TypingIndicator() {
           />
         ))}
       </div>
-      <span className="text-xs text-white/40 font-medium">Analyzing…</span>
+      <span className="text-xs text-ocean/40 font-medium">Analyzing…</span>
     </motion.div>
   );
 }
@@ -64,23 +62,23 @@ function TypingIndicator() {
 function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
   return (
     <motion.div
-      variants={pageVariants}
+      variants={contentPageVariants}
       initial="hidden"
       animate="visible"
-      className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4"
+      className="flex flex-col items-center justify-center min-h-[55vh] text-center px-4"
     >
-      {/* Mascot with float animation */}
+      {/* Mascot */}
       <motion.div
         animate={{ y: [0, -10, 0] }}
         transition={{ duration: 4, ease: "easeInOut", repeat: Infinity }}
         className="mb-6"
       >
         <div
-          className="w-24 h-24 rounded-3xl flex items-center justify-center p-1.5"
+          className="w-20 h-20 rounded-3xl flex items-center justify-center p-1.5"
           style={{
-            background: "rgba(255,255,255,0.15)",
-            border: "1px solid rgba(255,255,255,0.20)",
-            boxShadow: "0 8px 32px rgba(11,60,93,0.25)",
+            background: "rgba(205,237,246,0.40)",
+            border: "1px solid rgba(205,237,246,0.60)",
+            boxShadow: "0 8px 32px rgba(11,60,93,0.12)",
           }}
         >
           <img
@@ -94,19 +92,19 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
 
       <motion.h2
         variants={staggerChild}
-        className="text-xl font-bold text-white mb-2 leading-tight"
+        className="text-xl font-bold text-ocean-deep mb-2 leading-tight"
       >
         Ask me anything about your finances
       </motion.h2>
 
       <motion.p
         variants={staggerChild}
-        className="text-sm text-white/45 mb-10 max-w-sm leading-relaxed"
+        className="text-sm text-ocean/45 mb-9 max-w-sm leading-relaxed"
       >
         Fees, balances, spending, portfolio — everything stays on your device.
       </motion.p>
 
-      {/* Example question pills */}
+      {/* Example pills */}
       <motion.div
         variants={staggerContainer}
         initial="hidden"
@@ -122,13 +120,13 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
             onClick={() => onQuestion(q)}
             className="px-4 py-3 text-left text-sm font-medium rounded-2xl transition-colors duration-150"
             style={{
-              background: "rgba(255,255,255,0.10)",
-              border: "1px solid rgba(255,255,255,0.15)",
-              color: "rgba(255,255,255,0.75)",
-              backdropFilter: "blur(8px)",
+              background: "rgba(255,255,255,0.85)",
+              border: "1px solid rgba(205,237,246,0.65)",
+              color: "rgba(11,60,93,0.75)",
+              boxShadow: "0 2px 8px rgba(11,60,93,0.06)",
             }}
           >
-            <Sparkles size={11} className="inline mb-0.5 mr-1.5 text-coral-light" />
+            <Sparkles size={11} className="inline mb-0.5 mr-1.5 text-coral" />
             {q}
           </motion.button>
         ))}
@@ -155,16 +153,15 @@ function MessageItem({
 
 export function ChatPage() {
   const { chatHistory, addChatMessage, clearChat } = useAppStore();
-  const [input, setInput] = useState("");
+  const [input, setInput]     = useState("");
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef        = useRef<HTMLDivElement>(null);
+  const textareaRef           = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, loading]);
 
-  // Auto-grow textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -208,26 +205,27 @@ export function ChatPage() {
   const canSend = input.trim().length > 0 && !loading;
 
   return (
-    <div className="relative flex flex-col h-full">
-      {/* Ocean background */}
-      <OceanBackground />
-
-      {/* Header */}
+    <div className="flex flex-col h-full">
+      {/* ── Top bar ────────────────────────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0, y: -8 }}
+        initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="relative z-10 px-6 py-4 flex items-center justify-between shrink-0"
+        className="shrink-0 px-7 py-4 flex items-center justify-between"
         style={{
-          background: "rgba(11,60,93,0.55)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          borderBottom: "1px solid rgba(205,237,246,0.55)",
+          background: "rgba(255,255,255,0.60)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
         }}
       >
         <div>
-          <h1 className="text-base font-bold text-white">Ask Coral</h1>
-          <p className="text-xs text-white/40 mt-0.5">Ask anything about your financial statements</p>
+          <h1 className="text-[17px] font-bold text-ocean-deep leading-tight tracking-tight">
+            Ask Coral
+          </h1>
+          <p className="text-[12px] text-ocean/45 mt-0.5 font-medium">
+            Ask anything about your financial statements
+          </p>
         </div>
 
         <AnimatePresence>
@@ -239,8 +237,11 @@ export function ChatPage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={clearChat}
-              className="flex items-center gap-1.5 text-xs text-white/35 hover:text-negative/80 transition-colors px-3 py-1.5 rounded-xl"
-              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.09)" }}
+              className="flex items-center gap-1.5 text-xs text-ocean/40 hover:text-negative/70 transition-colors px-3 py-1.5 rounded-xl"
+              style={{
+                background: "rgba(11,60,93,0.06)",
+                border: "1px solid rgba(11,60,93,0.10)",
+              }}
             >
               <Trash2 size={11} />
               Clear
@@ -249,8 +250,8 @@ export function ChatPage() {
         </AnimatePresence>
       </motion.div>
 
-      {/* Messages */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-6 py-6">
+      {/* ── Messages ───────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto px-7 py-6">
         <div className="max-w-3xl mx-auto space-y-5">
           {chatHistory.length === 0 ? (
             <ChatEmptyState onQuestion={send} />
@@ -268,26 +269,28 @@ export function ChatPage() {
         </div>
       </div>
 
-      {/* Input bar */}
+      {/* ── Input bar ──────────────────────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.35 }}
-        className="relative z-10 px-6 py-4 shrink-0"
+        className="shrink-0 px-7 py-4"
         style={{
-          background: "rgba(11,60,93,0.50)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
-          borderTop: "1px solid rgba(255,255,255,0.08)",
+          borderTop: "1px solid rgba(205,237,246,0.55)",
+          background: "rgba(255,255,255,0.60)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
         }}
       >
         <div className="flex gap-3 max-w-3xl mx-auto items-end">
           <div
-            className="flex-1 flex items-end rounded-2xl overflow-hidden"
+            className="flex-1 flex items-end rounded-2xl overflow-hidden transition-all duration-200"
             style={{
-              background: "rgba(255,255,255,0.10)",
-              border: `1px solid ${input.trim() ? "rgba(255,122,90,0.4)" : "rgba(255,255,255,0.12)"}`,
-              transition: "border-color 0.2s ease",
+              background: "rgba(255,255,255,0.95)",
+              border: `1px solid ${input.trim() ? "rgba(255,122,90,0.50)" : "rgba(205,237,246,0.70)"}`,
+              boxShadow: input.trim()
+                ? "0 0 0 3px rgba(255,122,90,0.10)"
+                : "0 2px 8px rgba(11,60,93,0.06)",
             }}
           >
             <textarea
@@ -297,7 +300,7 @@ export function ChatPage() {
               onKeyDown={handleKeyDown}
               placeholder="Ask about your finances…"
               rows={1}
-              className="flex-1 px-4 py-3 text-sm text-white bg-transparent placeholder:text-white/30 focus:outline-none resize-none leading-relaxed"
+              className="flex-1 px-4 py-3 text-sm text-ocean-deep bg-transparent placeholder:text-ocean/30 focus:outline-none resize-none leading-relaxed"
               style={{ minHeight: "44px", maxHeight: "120px" }}
               disabled={loading}
             />
@@ -308,23 +311,23 @@ export function ChatPage() {
             whileTap={canSend ? { scale: 0.94 } : undefined}
             onClick={() => send()}
             disabled={!canSend}
-            className="shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center font-medium transition-all duration-200 disabled:opacity-35 disabled:cursor-not-allowed"
+            className="shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center font-medium transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               background: canSend
                 ? "linear-gradient(135deg, #FF7A5A, #FFA38F)"
-                : "rgba(255,255,255,0.08)",
+                : "rgba(11,60,93,0.08)",
               boxShadow: canSend ? "0 4px 16px rgba(255,122,90,0.35)" : "none",
             }}
           >
             {loading ? (
               <Loader2 size={16} className="animate-spin text-white" />
             ) : (
-              <Send size={15} className={canSend ? "text-white" : "text-white/40"} />
+              <Send size={15} className={canSend ? "text-white" : "text-ocean/30"} />
             )}
           </motion.button>
         </div>
 
-        <p className="text-center text-[10px] text-white/20 mt-2.5 font-medium">
+        <p className="text-center text-[10px] text-ocean/25 mt-2.5 font-medium">
           Enter to send · Shift+Enter for new line
         </p>
       </motion.div>

@@ -50,11 +50,15 @@ def create_app() -> FastAPI:
     from app.api.documents import router as documents_router
     from app.api.chat import router as chat_router
     from app.api.analytics import router as analytics_router
+    from app.api.scan import router as scan_router
+    from app.api.dashboard import router as dashboard_router
     from app.api.health import router as health_router
 
     app.include_router(documents_router)
     app.include_router(chat_router)
     app.include_router(analytics_router)
+    app.include_router(scan_router)
+    app.include_router(dashboard_router)
     app.include_router(health_router)
 
     return app

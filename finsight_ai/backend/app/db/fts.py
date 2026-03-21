@@ -18,20 +18,28 @@ logger = structlog.get_logger(__name__)
 async def init_fts() -> None:
     """Create the FTS5 virtual table if it doesn't exist.
 
-    This is a content-sync table that references text_chunks.
-    After inserting into text_chunks, call sync_fts_for_chunk() to keep it in sync.
+    Standalone FTS5 table (not external-content) — content is stored directly
+    in the FTS index alongside UNINDEXED metadata columns for filtering.
+    This avoids sync issues with external content tables.
     """
     async with get_session() as session:
-        # External content FTS5 table — references text_chunks
+        # Check if we need to migrate from the broken external-content table
+        result = await session.execute(text(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='text_chunks_fts'"
+        ))
+        row = result.fetchone()
+        if row and "content='text_chunks'" in (row[0] or ""):
+            # Drop broken external-content FTS table and recreate as standalone
+            await session.execute(text("DROP TABLE IF EXISTS text_chunks_fts"))
+            logger.info("fts.dropped_external_content_table")
+
         await session.execute(text("""
             CREATE VIRTUAL TABLE IF NOT EXISTS text_chunks_fts USING fts5(
                 content,
                 document_id UNINDEXED,
                 chunk_id UNINDEXED,
                 institution_type UNINDEXED,
-                page_number UNINDEXED,
-                content='text_chunks',
-                content_rowid='rowid'
+                page_number UNINDEXED
             )
         """))
         await session.commit()
@@ -93,5 +101,11 @@ async def delete_fts_for_document(document_id: str) -> None:
     """Remove all FTS entries for a document."""
     async with get_session() as session:
         await session.execute(text("""
+            DELETE FROM text_chunks WHERE document_id = :document_id
+        """), {"document_id": document_id})
+        # For standalone FTS5 tables, delete matching rows directly
+        await session.execute(text("""
             DELETE FROM text_chunks_fts WHERE document_id = :document_id
         """), {"document_id": document_id})
+
+

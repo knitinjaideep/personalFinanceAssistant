@@ -58,6 +58,9 @@ export default {
         glass: "0 8px 32px rgba(11, 60, 93, 0.12), inset 0 1px 0 rgba(255,255,255,0.5)",
         "glass-hover": "0 12px 48px rgba(11, 60, 93, 0.18), inset 0 1px 0 rgba(255,255,255,0.6)",
         "inner-glow": "inset 0 1px 0 rgba(255,255,255,0.4)",
+        shell: "0 40px 120px rgba(4,14,26,0.65), 0 8px 32px rgba(4,14,26,0.40), 0 0 0 1px rgba(255,255,255,0.05)",
+        sidebar: "4px 0 32px rgba(4,14,26,0.35)",
+        "content-panel": "inset 0 1px 0 rgba(255,255,255,0.8), 0 4px 24px rgba(11,60,93,0.08)",
       },
       fontFamily: {
         sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
@@ -82,6 +85,10 @@ export default {
         "metric-highlight": "linear-gradient(135deg, rgba(255,209,102,0.12) 0%, rgba(255,209,102,0.06) 100%)",
         "sidebar-depth": "linear-gradient(180deg, #0B3C5D 0%, #1F6F8B 60%, #3D8FB5 100%)",
         "sun-rays": "radial-gradient(ellipse at 50% -20%, rgba(95,168,211,0.3) 0%, transparent 60%)",
+        "ocean-radial": "radial-gradient(ellipse at 50% 30%, #1a5e7a 0%, #0B3C5D 45%, #061e2f 100%)",
+        "shell-surface": "linear-gradient(160deg, rgba(15,45,70,0.80) 0%, rgba(8,25,44,0.90) 100%)",
+        "sidebar-panel": "linear-gradient(180deg, rgba(6,20,34,0.90) 0%, rgba(8,28,46,0.88) 100%)",
+        "content-panel": "linear-gradient(160deg, rgba(240,249,252,0.96) 0%, rgba(248,253,255,0.98) 100%)",
       },
       animation: {
         "float": "float 6s ease-in-out infinite",

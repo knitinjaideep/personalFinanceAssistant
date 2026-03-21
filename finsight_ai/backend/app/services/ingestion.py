@@ -30,6 +30,18 @@ from app.parsers.pdf import parse_pdf
 
 logger = structlog.get_logger(__name__)
 
+_RECURRING_KEYWORDS = [
+    "netflix", "spotify", "hulu", "apple.com", "google *", "amazon prime",
+    "youtube", "disney+", "sling", "adobe", "microsoft", "dropbox",
+    "icloud", "nytimes", "wsj", "gym", "subscription", "membership",
+    "verizon", "t-mobile", "at&t", "comcast", "xfinity",
+]
+
+
+def _is_likely_recurring(description: str) -> bool:
+    desc_lower = description.lower()
+    return any(kw in desc_lower for kw in _RECURRING_KEYWORDS)
+
 # Chunk size for FTS indexing (characters)
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
@@ -44,7 +56,14 @@ INSTITUTION_NAMES = {
 }
 
 
-async def ingest_document(file_path: Path, original_filename: str) -> str:
+async def ingest_document(
+    file_path: Path,
+    original_filename: str,
+    file_hash: str | None = None,
+    source_file_path: str | None = None,
+    account_product: str | None = None,
+    source_id: str | None = None,
+) -> str:
     """Full ingestion pipeline for a single document.
 
     Steps:
@@ -56,6 +75,9 @@ async def ingest_document(file_path: Path, original_filename: str) -> str:
     6. Save bank-specific details
     7. Chunk text and index in FTS5
     8. Optionally generate embeddings
+
+    Extra keyword args are populated when the file originates from the local scanner
+    (file_hash for dedup, source_file_path for provenance, account_product for UI labels).
 
     Returns:
         document_id
@@ -73,6 +95,10 @@ async def ingest_document(file_path: Path, original_filename: str) -> str:
             file_size_bytes=file_path.stat().st_size,
             mime_type="application/pdf",
             status="processing",
+            file_hash=file_hash,
+            source_file_path=source_file_path,
+            account_product=account_product,
+            source_id=source_id,
         )
         logger.info("ingest.registered", doc_id=doc_id, filename=original_filename)
 
@@ -192,6 +218,7 @@ async def _persist_canonical(doc_id: str, institution_type: str, stmt: ParsedSta
                     "quantity": str(t.quantity) if t.quantity else None,
                     "price_per_unit": str(t.price_per_unit) if t.price_per_unit else None,
                     "symbol": t.symbol,
+                    "is_recurring": _is_likely_recurring(t.description or ""),
                     "confidence": t.confidence,
                     "source_page": t.source_page,
                 }

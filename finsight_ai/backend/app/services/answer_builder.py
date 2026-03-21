@@ -82,8 +82,12 @@ async def build_answer(
             rows = sql_result["rows"]
             for row in rows[:5]:
                 for key, value in row.items():
-                    if value is not None and key not in ("earliest", "latest"):
-                        answer.highlights.append({"label": key.replace("_", " ").title(), "value": str(value)})
+                    if value is None or key in ("earliest", "latest", "id"):
+                        continue
+                    # Format monetary values with dollar sign + commas
+                    display_val = _format_value(key, value)
+                    label = _friendly_label(key)
+                    answer.highlights.append({"label": label, "value": display_val})
 
     # Add citations from text search
     for chunk in (text_results + vector_results)[:5]:
@@ -103,14 +107,19 @@ def _no_data_answer(question: str, intent: QueryIntent) -> StructuredAnswer:
     return StructuredAnswer(
         answer_type="no_data",
         title="No Data Available",
-        summary="I don't have data to answer this question yet. Upload some financial statements first, and I'll be able to help.",
+        summary=(
+            "I don't have data to answer this question yet. "
+            "Use 'Scan & Ingest' on the Dashboard to load your statements, "
+            "then ask again."
+        ),
         intent=intent.value,
         query_path="none",
         confidence=1.0,
-        caveats=["No financial documents have been uploaded or the data needed hasn't been extracted."],
+        caveats=["No statements have been ingested for this query."],
         suggested_followups=[
-            "What documents have I uploaded?",
+            "What documents have been ingested?",
             "Which institutions are covered?",
+            "Show me my account balances",
         ],
     )
 
@@ -152,23 +161,87 @@ async def _generate_narrative(question: str, intent: QueryIntent, context: str, 
     if not context:
         return "No data available to answer this question."
 
-    system_prompt = """You are a financial analyst assistant. Answer based ONLY on the provided data.
-Be concise, specific, and factual. Use dollar amounts with commas. Don't speculate beyond the data.
-If data is incomplete, say so. Never invent numbers."""
+    system_prompt = (
+        "You are a personal finance assistant. Answer in plain English using the data provided. "
+        "Rules:\n"
+        "- Format dollar amounts with $ and commas, e.g. $5,701\n"
+        "- Never show raw column names like fee_category or total_amount\n"
+        "- Never show SQL field names or underscores\n"
+        "- Be direct and concise — 1-3 sentences\n"
+        "- If there are multiple items, summarize them naturally\n"
+        "- Mention institution/account names when relevant\n"
+        "- Don't speculate beyond the data. Never invent numbers."
+    )
 
     prompt = f"""Question: {question}
 
 Data:
 {context}
 
-Provide a clear, concise answer in 1-3 paragraphs."""
+Answer concisely in plain English. No lists of raw field names."""
 
     try:
         response = await llm.generate(prompt, system=system_prompt)
         return response.strip()
     except Exception as exc:
         logger.warning("answer_builder.llm_failed", error=str(exc))
-        return context.split("\n")[0] if context else "Unable to generate answer."
+        # Fallback: return a clean first line from context (not raw SQL)
+        first_line = context.split("\n")[0] if context else ""
+        return first_line if first_line else "Unable to generate answer."
+
+
+# ── Formatting helpers ────────────────────────────────────────────────────────
+
+# Human-readable labels for common SQL column names
+_LABEL_MAP: dict[str, str] = {
+    "fee_category":        "Category",
+    "total_amount":        "Total",
+    "total":               "Total",
+    "amount":              "Amount",
+    "count":               "Count",
+    "fee_count":           "Fees",
+    "institution":         "Institution",
+    "institution_type":    "Institution",
+    "account_type":        "Account Type",
+    "account_name":        "Account",
+    "transaction_type":    "Type",
+    "merchant_name":       "Merchant",
+    "transaction_date":    "Date",
+    "description":         "Description",
+    "symbol":              "Symbol",
+    "market_value":        "Market Value",
+    "percent_of_portfolio": "Portfolio %",
+    "period_start":        "From",
+    "period_end":          "To",
+    "total_value":         "Total Value",
+    "unrealized_gain_loss": "Unrealized G/L",
+    "doc_count":           "Documents",
+}
+
+# Column names that contain monetary values — format with $
+_MONEY_COLS: frozenset[str] = frozenset({
+    "total_amount", "total", "amount", "market_value", "total_value",
+    "unrealized_gain_loss", "cash_value", "invested_value", "fee_total",
+})
+
+
+def _friendly_label(col: str) -> str:
+    """Convert a SQL column name to a human-readable label."""
+    return _LABEL_MAP.get(col, col.replace("_", " ").title())
+
+
+def _format_value(col: str, value: Any) -> str:
+    """Format a value for display, adding $ for monetary columns."""
+    if value is None:
+        return "—"
+    val_str = str(value)
+    if col in _MONEY_COLS:
+        try:
+            num = float(val_str)
+            return f"${num:,.2f}"
+        except (ValueError, TypeError):
+            pass
+    return val_str
 
 
 def _title_for_intent(intent: QueryIntent) -> str:

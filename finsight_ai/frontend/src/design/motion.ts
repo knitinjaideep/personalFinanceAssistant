@@ -152,3 +152,13 @@ export const dotVariants: Variants = {
     transition: { duration: 0.6, ease: "easeInOut", repeat: Infinity },
   },
 };
+
+/** Content panel page fade — used inside the light main area */
+export const contentPageVariants: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1], staggerChildren: 0.06 },
+  },
+};

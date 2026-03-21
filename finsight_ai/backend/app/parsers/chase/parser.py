@@ -29,8 +29,17 @@ _CHASE_RE = re.compile(
     re.IGNORECASE,
 )
 _PERIOD_RE = re.compile(
-    r"(?:statement\s+period|billing\s+period)\s*[:\-]?\s*(.+?)\s+(?:to|through|-)\s+(.+?)(?:\n|$)",
+    r"(?:statement\s+period|billing\s+period|opening/closing\s+date)\s*[:\-]?\s*(.+?)\s+(?:to|through|-)\s+(.+?)(?:\n|$)",
     re.IGNORECASE,
+)
+# Matches "January 16, 2026throughFebruary 13, 2026" (no space) or with spaces
+_PERIOD_RE2 = re.compile(
+    r"(\w+ \d{1,2},\s*\d{4})\s*through\s*(\w+ \d{1,2},\s*\d{4})",
+    re.IGNORECASE,
+)
+# Matches "12/03/25 - 01/02/26" style
+_PERIOD_RE3 = re.compile(
+    r"(\d{2}/\d{2}/\d{2,4})\s*[-–]\s*(\d{2}/\d{2}/\d{2,4})",
 )
 _ACCOUNT_RE = re.compile(r"(?:account\s+(?:number|ending)\s*[:\-]?\s*)(\d{4})", re.IGNORECASE)
 _AMOUNT_RE = re.compile(r"\$?([\d,]+\.\d{2})")
@@ -74,15 +83,17 @@ class ChaseParser(InstitutionParser):
         stmt_type = "credit_card" if is_credit else "bank"
         account_type = "credit_card" if is_credit else "checking"
 
-        # Period
+        # Period — try multiple regex patterns
         period_start, period_end = None, None
-        m = _PERIOD_RE.search(first_pages)
-        if m:
-            try:
-                period_start = dateparser.parse(m.group(1).strip()).date()
-                period_end = dateparser.parse(m.group(2).strip()).date()
-            except (ValueError, TypeError):
-                pass
+        for pattern in [_PERIOD_RE, _PERIOD_RE2, _PERIOD_RE3]:
+            m = pattern.search(first_pages)
+            if m:
+                try:
+                    period_start = dateparser.parse(m.group(1).strip()).date()
+                    period_end = dateparser.parse(m.group(2).strip()).date()
+                    break
+                except (ValueError, TypeError):
+                    continue
 
         # Account
         acct_match = _ACCOUNT_RE.search(first_pages)
@@ -129,7 +140,6 @@ class ChaseParser(InstitutionParser):
 
 def _extract_transactions(doc: ParsedDocument, is_credit: bool) -> list[ExtractedTransaction]:
     transactions = []
-    date_re = re.compile(r"(\d{2}/\d{2})")
 
     for page in doc.pages:
         # Try table extraction first
@@ -155,10 +165,7 @@ def _extract_transactions(doc: ParsedDocument, is_credit: bool) -> list[Extracte
                     amount = Decimal(raw_amt.replace("(", "-").replace(")", ""))
                     desc = str(row[desc_col]).strip() if desc_col < len(row) else ""
 
-                    txn_type = "purchase" if is_credit and amount < 0 else "deposit" if amount > 0 else "withdrawal"
-                    if "payment" in desc.lower():
-                        txn_type = "payment"
-
+                    txn_type = _classify_type(desc, amount, is_credit)
                     transactions.append(ExtractedTransaction(
                         transaction_date=txn_date,
                         description=desc,
@@ -170,7 +177,130 @@ def _extract_transactions(doc: ParsedDocument, is_credit: bool) -> list[Extracte
                     ))
                 except (ValueError, TypeError, InvalidOperation):
                     continue
+
+        # Text-based fallback (handles Chase PDFs without structured tables)
+        if not transactions:
+            txns = _extract_transactions_from_text(page.raw_text, page.page_number, is_credit)
+            transactions.extend(txns)
+
     return transactions
+
+
+# Matches: "01/16 Description -1,234.56 14,297.86" (checking: date desc amount balance)
+# Matches: "01/16 01/15 Description -1,234.56 14,297.86" (checking: date settle desc amount balance)
+# Matches: "12/01 MERCHANT NAME NJ 16.96" (credit: date desc amount)
+_CHECKING_TX_RE = re.compile(
+    r"^(\d{2}/\d{2})"            # transaction date
+    r"(?:\s+\d{2}/\d{2})?"       # optional settlement date
+    r"\s+(.+?)"                   # description (non-greedy)
+    r"\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})"  # amount
+    r"(?:\s+[\d,]+\.\d{2})?$",   # optional balance
+    re.MULTILINE,
+)
+
+_CREDIT_TX_RE = re.compile(
+    r"^(\d{2}/\d{2})"            # transaction date
+    r"\s+(.+?)"                   # description
+    r"\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})$",  # amount at end of line
+    re.MULTILINE,
+)
+
+
+def _extract_transactions_from_text(
+    text: str, page_number: int, is_credit: bool
+) -> list[ExtractedTransaction]:
+    """Extract transactions from raw PDF text using regex line matching."""
+    if not text:
+        return []
+
+    transactions = []
+    # Infer statement year from text — look for dates in "Month DD, YYYY" or "/YYYY" format
+    stmt_year = date.today().year
+    year_match = re.search(r"(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s*(20\d{2})", text, re.IGNORECASE)
+    if not year_match:
+        year_match = re.search(r"\d{2}/\d{2}/(20\d{2})", text)
+    if not year_match:
+        year_match = re.search(r"(?:through|to|-)\s*(?:\w+ \d+,\s*)?(20\d{2})", text, re.IGNORECASE)
+    if year_match:
+        stmt_year = int(year_match.group(1))
+
+    # Only process lines within transaction sections
+    in_transactions = False
+    pattern = _CREDIT_TX_RE if is_credit else _CHECKING_TX_RE
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        # Section markers (Chase uses *start*/*end* tags and section headers)
+        if re.search(
+            r"\*start\*transaction|TRANSACTION DETAIL|ACCOUNT ACTIVITY|"
+            r"PAYMENTS AND OTHER CREDITS|^PURCHASE$|^PURCHASES$|"
+            r"Date of\s*$|Merchant Name or Transaction",
+            line, re.IGNORECASE
+        ):
+            in_transactions = True
+            continue
+        if re.search(r"\*end\*transaction|Ending Balance\s*\$", line, re.IGNORECASE):
+            in_transactions = False
+            continue
+        # Skip pure header/label lines that aren't transactions
+        if re.match(r"^(DATE|DESCRIPTION|AMOUNT|BALANCE|Transaction\s*#:)", line, re.IGNORECASE):
+            continue
+
+        if not in_transactions:
+            continue
+
+        m = pattern.match(line)
+        if not m:
+            continue
+
+        try:
+            date_str = m.group(1)  # MM/DD
+            desc = m.group(2).strip()
+            raw_amt = m.group(3).replace(",", "")
+            amount = Decimal(raw_amt)
+
+            # Parse date — use stmt_year, watch for year rollover
+            month, day = int(date_str[:2]), int(date_str[3:5])
+            # Handle year rollover: if month is Dec but stmt_year ends in Jan+, use prior year
+            try:
+                txn_date = date(stmt_year, month, day)
+            except ValueError:
+                continue
+            # If date is in the future (>90 days), assume it's the prior year
+            from datetime import date as date_cls
+            if (txn_date - date_cls.today()).days > 90:
+                txn_date = date(stmt_year - 1, month, day)
+
+            txn_type = _classify_type(desc, amount, is_credit)
+            transactions.append(ExtractedTransaction(
+                transaction_date=txn_date,
+                description=desc,
+                merchant_name=_clean_merchant(desc),
+                amount=amount,
+                transaction_type=txn_type,
+                category=_categorize(desc),
+                source_page=page_number,
+            ))
+        except (ValueError, TypeError, InvalidOperation):
+            continue
+
+    return transactions
+
+
+def _classify_type(desc: str, amount: Decimal, is_credit: bool) -> str:
+    desc_lower = desc.lower()
+    if "payment" in desc_lower:
+        return "payment"
+    if re.search(r"transfer|zelle|venmo|paypal", desc_lower):
+        return "transfer"
+    if re.search(r"payroll|direct dep|dir dep|deposit", desc_lower):
+        return "deposit"
+    if is_credit:
+        return "purchase" if amount > 0 else "payment"
+    return "withdrawal" if amount < 0 else "deposit"
 
 
 def _extract_balances(doc: ParsedDocument, period_end: date | None) -> list[ExtractedBalance]:
