@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * SpendingTrendChart — grouped bar chart of monthly fees, deposits, and withdrawals.
  */

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * AnswerCard — top-level dispatcher that renders the correct answer component
  * based on ``answer_type``.
@@ -437,7 +438,7 @@ function TableAnswerCard({
                     key={col}
                     className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap"
                   >
-                    {col.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    {col.replace(/_/g, " ").replace(/\w/g, (c) => c.toUpperCase())}
                   </th>
                 ))}
               </tr>

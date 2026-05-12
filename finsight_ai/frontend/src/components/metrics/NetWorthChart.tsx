@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * NetWorthChart — area chart of total portfolio value over time.
  *

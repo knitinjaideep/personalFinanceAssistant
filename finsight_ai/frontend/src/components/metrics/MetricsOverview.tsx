@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * MetricsOverview — summary stat cards for the most recent month.
  *

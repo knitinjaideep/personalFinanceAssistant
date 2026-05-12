@@ -280,7 +280,3 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency for injecting a database session."""
-    async with get_session() as session:
-        yield session

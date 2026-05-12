@@ -26,7 +26,9 @@ export interface AccountBalance {
   cash_value: number;
   unrealized_gain_loss: number;
   unrealized_gain_loss_fmt: string;
-  snapshot_date: string;
+  gain_loss_pct: number | null;
+  snapshot_date: string | null;
+  latest_statement_date: string | null;
 }
 
 export interface PortfolioSummary {
@@ -34,6 +36,7 @@ export interface PortfolioSummary {
   total_portfolio_value_fmt: string;
   total_unrealized_gain_loss: number;
   total_unrealized_gain_loss_fmt: string;
+  last_updated: string | null;
   accounts: AccountBalance[];
 }
 
@@ -49,6 +52,7 @@ export interface Holding {
   asset_class: string | null;
   account_name: string;
   institution_type: string;
+  portfolio_weight: number | null;
 }
 
 export interface BalanceHistoryPoint {
@@ -62,6 +66,7 @@ export interface FeesSummary {
   total_fees: number;
   total_fees_fmt: string;
   by_category: Array<{ category: string; count: number; total: number; total_fmt: string }>;
+  recent_trend: Array<{ month: string; total: number }>;
 }
 
 export interface InstitutionCoverage {
@@ -70,6 +75,7 @@ export interface InstitutionCoverage {
   doc_count: number;
   earliest_statement: string | null;
   latest_statement: string | null;
+  missing_recent_data?: boolean;
 }
 
 export interface InvestmentsDashboard {
@@ -131,6 +137,7 @@ export interface Subscription {
   avg_monthly_amount_fmt: string;
   occurrences: number;
   last_seen: string | null;
+  confidence: "high" | "medium";
 }
 
 export interface BankingDashboard {

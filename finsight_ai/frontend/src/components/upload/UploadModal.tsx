@@ -1,50 +1,35 @@
 /**
- * UploadModal — drop a PDF, choose the Coral destination folder, confirm.
+ * UploadModal — structured upload with institution/account/year/month selection.
  *
  * Flow:
- *   1. User drops (or clicks to pick) a PDF file.
- *   2. Modal shows the chosen file + a destination selector (source_id + year).
- *   3. On confirm → POST /api/v1/documents/upload with source_id and year form fields.
- *   4. On success → callback fires so the parent can refresh data.
+ *   1. Drop or pick a PDF (or multiple PDFs).
+ *   2. Choose institution → account → year → month.
+ *   3. Preview the destination path.
+ *   4. Upload & ingest — shows live progress through ingestion stages.
+ *   5. Done — per-file results with status.
  */
 
 import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import {
-  X, Upload, FolderOpen, Loader2, CheckCircle2, ChevronDown,
+  X, Upload, Loader2, CheckCircle2, AlertCircle, FileText,
+  ChevronDown, FolderOpen, Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
-
-// ── Source definitions (mirrors statement_sources.py) ────────────────────────
-// Kept in sync with STATEMENT_SOURCES. source_id must match the backend slug.
-
-interface SourceOption {
-  source_id: string;
-  label: string;
-  bucket: "investments" | "banking";
-}
-
-const SOURCE_OPTIONS: SourceOption[] = [
-  // Banking
-  { source_id: "chase_checking", label: "Chase Checking",           bucket: "banking" },
-  { source_id: "chase_freedom",  label: "Chase Freedom Unlimited",  bucket: "banking" },
-  { source_id: "chase_prime",    label: "Chase Prime",              bucket: "banking" },
-  { source_id: "chase_sapphire", label: "Chase Sapphire Preferred", bucket: "banking" },
-  { source_id: "amex",           label: "American Express",         bucket: "banking" },
-  { source_id: "bofa",           label: "Bank of America",          bucket: "banking" },
-  { source_id: "discover",       label: "Discover",                 bucket: "banking" },
-  { source_id: "marcus",         label: "Marcus Goldman Sachs",     bucket: "banking" },
-  // Investments
-  { source_id: "etrade",             label: "E*TRADE",                      bucket: "investments" },
-  { source_id: "morgan_stanley_ira", label: "Morgan Stanley IRA",           bucket: "investments" },
-  { source_id: "morgan_stanley_joint", label: "Morgan Stanley Joint",       bucket: "investments" },
-];
+import { catalogApi } from "../../api/catalog";
+import type { InstitutionOption, MonthOption } from "../../api/catalog";
+import { useAppStore } from "../../store/appStore";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3];
 
-// ── Component ─────────────────────────────────────────────────────────────────
+interface FileResult {
+  filename: string;
+  status: "ok" | "duplicate" | "error";
+  message?: string;
+  document_id?: string;
+}
 
 interface UploadModalProps {
   open: boolean;
@@ -54,25 +39,83 @@ interface UploadModalProps {
 
 type Phase = "pick" | "configure" | "uploading" | "done";
 
-export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
-  const [phase, setPhase] = useState<Phase>("pick");
-  const [pickedFile, setPickedFile] = useState<File | null>(null);
-  const [sourceId, setSourceId] = useState<string>(SOURCE_OPTIONS[0].source_id);
-  const [year, setYear] = useState<number>(CURRENT_YEAR);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+const INGESTION_STAGES = [
+  "Saving file…",
+  "Parsing PDF…",
+  "Extracting data…",
+  "Saving to database…",
+  "Indexing text…",
+  "Generating embeddings…",
+  "Ready for chat ✓",
+];
 
-  // Reset state when modal opens
+function StageIndicator({ active }: { active: boolean }) {
+  const [stageIdx, setStageIdx] = useState(0);
+
+  useEffect(() => {
+    if (!active) return;
+    setStageIdx(0);
+    const id = setInterval(() => {
+      setStageIdx((i) => Math.min(i + 1, INGESTION_STAGES.length - 1));
+    }, 2200);
+    return () => clearInterval(id);
+  }, [active]);
+
+  if (!active) return null;
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.p
+        key={stageIdx}
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -4 }}
+        transition={{ duration: 0.25 }}
+        className="text-xs text-ocean/55 text-center font-medium py-1"
+      >
+        {INGESTION_STAGES[stageIdx]}
+      </motion.p>
+    </AnimatePresence>
+  );
+}
+
+export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
+  const { addIngestionJob } = useAppStore();
+
+  const [phase, setPhase] = useState<Phase>("pick");
+  const [files, setFiles] = useState<File[]>([]);
+  const [institutions, setInstitutions] = useState<InstitutionOption[]>([]);
+  const [months, setMonths] = useState<MonthOption[]>([]);
+  const [institutionSlug, setInstitutionSlug] = useState("");
+  const [accountSlug, setAccountSlug] = useState("");
+  const [year, setYear] = useState(CURRENT_YEAR);
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [destinationPreview, setDestinationPreview] = useState("");
+  const [results, setResults] = useState<FileResult[]>([]);
+  const [progress, setProgress] = useState(0);
+
+  // Load catalog on mount
+  useEffect(() => {
+    catalogApi.institutions().then(setInstitutions).catch(() => {});
+    catalogApi.months().then(setMonths).catch(() => {});
+  }, []);
+
+  // Reset when modal opens
   useEffect(() => {
     if (open) {
       setPhase("pick");
-      setPickedFile(null);
-      setSourceId(SOURCE_OPTIONS[0].source_id);
+      setFiles([]);
+      setInstitutionSlug("");
+      setAccountSlug("");
       setYear(CURRENT_YEAR);
-      setErrorMsg(null);
+      setMonth(new Date().getMonth() + 1);
+      setDestinationPreview("");
+      setResults([]);
+      setProgress(0);
     }
   }, [open]);
 
-  // Close on Escape
+  // Escape to close
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -80,9 +123,23 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
+  // Update destination preview when selections change
+  useEffect(() => {
+    if (!institutionSlug || !accountSlug || !year || !month) {
+      setDestinationPreview("");
+      return;
+    }
+    catalogApi.destinationPreview(institutionSlug, accountSlug, year, month)
+      .then((p) => setDestinationPreview(p.rel_path))
+      .catch(() => setDestinationPreview(""));
+  }, [institutionSlug, accountSlug, year, month]);
+
+  // Reset account when institution changes
+  useEffect(() => { setAccountSlug(""); }, [institutionSlug]);
+
   const onDrop = useCallback((accepted: File[]) => {
     if (accepted.length > 0) {
-      setPickedFile(accepted[0]);
+      setFiles(accepted);
       setPhase("configure");
     }
   }, []);
@@ -90,53 +147,76 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { "application/pdf": [".pdf"] },
-    multiple: false,
+    multiple: true,
     disabled: phase !== "pick",
   });
 
-  const selectedSource = SOURCE_OPTIONS.find(s => s.source_id === sourceId)!;
+  const selectedInstitution = institutions.find((i) => i.institution_slug === institutionSlug);
+  const accountOptions = selectedInstitution?.accounts ?? [];
+  const selectedAccount = accountOptions.find((a) => a.account_slug === accountSlug);
+  const yearOptions = selectedAccount
+    ? selectedAccount.supported_years
+    : YEAR_OPTIONS;
+
+  const canUpload = !!institutionSlug && !!accountSlug && !!year && !!month && files.length > 0;
 
   async function handleUpload() {
-    if (!pickedFile) return;
+    if (!canUpload) return;
     setPhase("uploading");
-    setErrorMsg(null);
+    setProgress(0);
 
-    const form = new FormData();
-    form.append("file", pickedFile);
-    form.append("source_id", sourceId);
-    form.append("year", String(year));
+    const collected: FileResult[] = [];
 
-    try {
-      const res = await fetch("/api/v1/documents/upload", { method: "POST", body: form });
-      const data = await res.json();
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("institution_slug", institutionSlug);
+      form.append("account_slug", accountSlug);
+      form.append("year", String(year));
+      form.append("month", String(month));
 
-      if (!res.ok) {
-        throw new Error(data.detail || "Upload failed");
+      try {
+        const res = await fetch("/api/v1/documents/upload-local", { method: "POST", body: form });
+        const data = await res.json();
+
+        if (!res.ok) {
+          collected.push({ filename: file.name, status: "error", message: data.detail || "Upload failed" });
+        } else if (data.message?.toLowerCase().includes("duplicate")) {
+          collected.push({ filename: file.name, status: "duplicate", document_id: data.document_id });
+        } else {
+          collected.push({ filename: file.name, status: "ok", document_id: data.document_id });
+          // Track ingestion in global store
+          addIngestionJob({
+            document_id: data.document_id,
+            filename: file.name,
+            status: "processing",
+            started_at: Date.now(),
+          });
+        }
+      } catch (err: any) {
+        collected.push({ filename: file.name, status: "error", message: err.message || "Network error" });
       }
 
-      if (data.message?.includes("duplicate")) {
-        toast("File already ingested — skipping.", { icon: "ℹ️" });
-      } else {
-        toast.success(`Saved to ${selectedSource.label} (${year}) — parsing in background`);
-      }
-
-      setPhase("done");
-      onUploaded();
-      setTimeout(onClose, 1200);
-    } catch (err: any) {
-      setErrorMsg(err.message || "Upload failed");
-      setPhase("configure");
+      setProgress((p) => p + 1);
     }
+
+    setResults(collected);
+    setPhase("done");
+    onUploaded();
+
+    const ok    = collected.filter((r) => r.status === "ok").length;
+    const dupes = collected.filter((r) => r.status === "duplicate").length;
+    const errs  = collected.filter((r) => r.status === "error").length;
+
+    if (ok > 0)    toast.success(`${ok} file${ok > 1 ? "s" : ""} saved — parsing in background`);
+    if (dupes > 0) toast(`${dupes} already ingested — skipped`, { icon: "ℹ️" });
+    if (errs > 0)  toast.error(`${errs} file${errs > 1 ? "s" : ""} failed`);
   }
 
   if (!open) return null;
 
-  // Group sources by bucket for the dropdown
-  const banking    = SOURCE_OPTIONS.filter(s => s.bucket === "banking");
-  const investment = SOURCE_OPTIONS.filter(s => s.bucket === "investments");
 
   return (
-    // Backdrop
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(11,60,93,0.55)", backdropFilter: "blur(6px)" }}
@@ -144,32 +224,32 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
     >
       <AnimatePresence>
         <motion.div
-          key="modal"
+          key="upload-modal"
           initial={{ opacity: 0, scale: 0.95, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 12 }}
           transition={{ type: "spring", stiffness: 320, damping: 28 }}
           className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl"
           style={{
-            background: "rgba(255,255,255,0.96)",
+            background: "rgba(255,255,255,0.97)",
             border: "1px solid rgba(205,237,246,0.7)",
           }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 pt-6 pb-4">
             <div>
-              <h2 className="text-lg font-bold text-ocean-900">Add Statement</h2>
-              <p className="text-xs text-ocean-400 mt-0.5">Save to your Coral folder structure</p>
+              <h2 className="text-lg font-bold text-ocean-900">Add Statement{files.length > 1 ? "s" : ""}</h2>
+              <p className="text-xs text-ocean/40 mt-0.5">Save to your Coral folder, parse &amp; index</p>
             </div>
             <button
               onClick={onClose}
-              className="rounded-full p-1.5 text-ocean-300 hover:text-ocean-600 hover:bg-ocean-50 transition-colors"
+              className="rounded-full p-1.5 text-ocean/30 hover:text-ocean/70 hover:bg-ocean-50 transition-colors"
             >
               <X size={18} />
             </button>
           </div>
 
-          <div className="px-6 pb-6 space-y-5">
+          <div className="px-6 pb-6 space-y-4">
 
             {/* Step 1 — Drop zone */}
             {phase === "pick" && (
@@ -183,84 +263,127 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
                 ].join(" ")}
               >
                 <input {...getInputProps()} />
-                <Upload size={28} className="mx-auto mb-3 text-ocean-300" />
+                <Upload size={28} className="mx-auto mb-3 text-ocean/30" />
                 <p className="text-sm font-semibold text-ocean-700">
-                  {isDragActive ? "Drop it here" : "Drop a PDF or click to browse"}
+                  {isDragActive ? "Drop here" : "Drop PDFs or click to browse"}
                 </p>
-                <p className="text-xs text-ocean-400 mt-1">Single PDF, up to 50 MB</p>
+                <p className="text-xs text-ocean/40 mt-1">Multiple files OK · up to 50 MB each</p>
               </div>
             )}
 
             {/* Step 2 — Configure destination */}
-            {(phase === "configure" || phase === "uploading") && pickedFile && (
+            {(phase === "configure" || phase === "uploading") && files.length > 0 && (
               <>
-                {/* Chosen file pill */}
-                <div className="flex items-center gap-3 rounded-xl px-4 py-3 bg-ocean-50 border border-ocean-100">
-                  <FolderOpen size={16} className="text-ocean shrink-0" />
-                  <span className="text-sm font-medium text-ocean-800 truncate flex-1">
-                    {pickedFile.name}
-                  </span>
-                  <span className="text-xs text-ocean-400 shrink-0">
-                    {(pickedFile.size / 1024 / 1024).toFixed(1)} MB
-                  </span>
+                {/* File list */}
+                <div className="rounded-xl border border-ocean-100 bg-ocean-50/60 divide-y divide-ocean-100 max-h-28 overflow-y-auto">
+                  {files.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2">
+                      <FileText size={13} className="text-ocean/40 shrink-0" />
+                      <span className="text-xs text-ocean-800 truncate flex-1">{f.name}</span>
+                      <span className="text-[10px] text-ocean/35 shrink-0 tabular-nums">
+                        {(f.size / 1024 / 1024).toFixed(1)} MB
+                      </span>
+                    </div>
+                  ))}
                 </div>
 
-                {/* Destination selector */}
-                <div className="space-y-3">
-                  <label className="text-xs font-semibold text-ocean-500 uppercase tracking-wide">
-                    Destination folder
+                {/* Selectors */}
+                <div className="space-y-2.5">
+                  <label className="text-[11px] font-semibold text-ocean/50 uppercase tracking-wide">
+                    Destination
+                    <span className="text-coral ml-0.5">*</span>
                   </label>
-                  <div className="relative">
-                    <select
-                      value={sourceId}
-                      onChange={e => setSourceId(e.target.value)}
-                      disabled={phase === "uploading"}
-                      className="w-full appearance-none rounded-xl border border-ocean-200 bg-white px-4 py-2.5 pr-9 text-sm text-ocean-800 focus:outline-none focus:ring-2 focus:ring-ocean/30 disabled:opacity-50"
-                    >
-                      <optgroup label="Banking">
-                        {banking.map(s => (
-                          <option key={s.source_id} value={s.source_id}>{s.label}</option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Investments">
-                        {investment.map(s => (
-                          <option key={s.source_id} value={s.source_id}>{s.label}</option>
-                        ))}
-                      </optgroup>
-                    </select>
-                    <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ocean-400" />
-                  </div>
 
-                  {/* Year */}
-                  <div className="relative">
-                    <select
-                      value={year}
-                      onChange={e => setYear(Number(e.target.value))}
+                  {/* Institution */}
+                  <SelectField
+                    value={institutionSlug}
+                    onChange={(v) => setInstitutionSlug(v)}
+                    disabled={phase === "uploading"}
+                    placeholder="— Institution —"
+                  >
+                    {institutions.map((inst) => (
+                      <option key={inst.institution_slug} value={inst.institution_slug}>
+                        {inst.institution_label}
+                      </option>
+                    ))}
+                  </SelectField>
+
+                  {/* Account */}
+                  <SelectField
+                    value={accountSlug}
+                    onChange={(v) => setAccountSlug(v)}
+                    disabled={phase === "uploading" || !institutionSlug}
+                    placeholder="— Account —"
+                  >
+                    {accountOptions.map((a) => (
+                      <option key={a.account_slug} value={a.account_slug}>
+                        {a.account_label}
+                        {!a.parseable ? " (text only)" : ""}
+                      </option>
+                    ))}
+                  </SelectField>
+
+                  {/* Year + Month row */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <SelectField
+                      value={String(year)}
+                      onChange={(v) => setYear(Number(v))}
                       disabled={phase === "uploading"}
-                      className="w-full appearance-none rounded-xl border border-ocean-200 bg-white px-4 py-2.5 pr-9 text-sm text-ocean-800 focus:outline-none focus:ring-2 focus:ring-ocean/30 disabled:opacity-50"
+                      placeholder="Year"
                     >
-                      {YEAR_OPTIONS.map(y => (
+                      {yearOptions.map((y) => (
                         <option key={y} value={y}>{y}</option>
                       ))}
-                    </select>
-                    <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ocean-400" />
+                    </SelectField>
+
+                    <SelectField
+                      value={String(month)}
+                      onChange={(v) => setMonth(Number(v))}
+                      disabled={phase === "uploading"}
+                      placeholder="Month"
+                    >
+                      {months.map((m) => (
+                        <option key={m.month} value={m.month}>{m.label}</option>
+                      ))}
+                    </SelectField>
                   </div>
 
                   {/* Destination preview */}
-                  <p className="text-xs text-ocean-400 font-mono bg-ocean-50 rounded-lg px-3 py-2 truncate">
-                    Coral/{selectedSource.label.replace(/\s/g, " ")}/{year}/{pickedFile.name}
-                  </p>
+                  {destinationPreview && (
+                    <div
+                      className="rounded-xl px-3 py-2.5 flex items-start gap-2"
+                      style={{ background: "rgba(205,237,246,0.25)", border: "1px solid rgba(205,237,246,0.5)" }}
+                    >
+                      <FolderOpen size={13} className="text-ocean/40 shrink-0 mt-0.5" />
+                      <p className="text-xs text-ocean/60 font-mono break-all leading-relaxed">
+                        {destinationPreview}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Error */}
-                {errorMsg && (
-                  <p className="text-xs text-red-600 rounded-lg bg-red-50 px-3 py-2">{errorMsg}</p>
+                {/* Uploading progress */}
+                {phase === "uploading" && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] text-ocean/40 mb-1">
+                      <span>Uploading &amp; processing…</span>
+                      <span>{progress}/{files.length}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-ocean-100 overflow-hidden">
+                      <motion.div
+                        className="h-full bg-ocean rounded-full"
+                        animate={{ width: `${files.length > 0 ? (progress / files.length) * 100 : 0}%` }}
+                        transition={{ duration: 0.4 }}
+                      />
+                    </div>
+                    <StageIndicator active={phase === "uploading"} />
+                  </div>
                 )}
 
                 {/* Actions */}
                 <div className="flex gap-3 pt-1">
                   <button
-                    onClick={() => { setPhase("pick"); setPickedFile(null); }}
+                    onClick={() => { setPhase("pick"); setFiles([]); setInstitutionSlug(""); setAccountSlug(""); }}
                     disabled={phase === "uploading"}
                     className="flex-1 rounded-xl border border-ocean-200 py-2.5 text-sm font-medium text-ocean-600 hover:bg-ocean-50 transition-colors disabled:opacity-40"
                   >
@@ -268,8 +391,13 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
                   </button>
                   <button
                     onClick={handleUpload}
-                    disabled={phase === "uploading"}
-                    className="flex-1 rounded-xl bg-ocean py-2.5 text-sm font-semibold text-white hover:bg-ocean-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    disabled={!canUpload || phase === "uploading"}
+                    className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    style={{
+                      background: canUpload && phase !== "uploading"
+                        ? "linear-gradient(135deg, #0B3C5D, #1F6F8B)"
+                        : undefined,
+                    }}
                   >
                     {phase === "uploading" ? (
                       <>
@@ -278,8 +406,8 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
                       </>
                     ) : (
                       <>
-                        <Upload size={15} />
-                        Save & Process
+                        <Sparkles size={14} />
+                        Save &amp; Process{files.length > 1 ? ` (${files.length})` : ""}
                       </>
                     )}
                   </button>
@@ -289,14 +417,81 @@ export function UploadModal({ open, onClose, onUploaded }: UploadModalProps) {
 
             {/* Step 3 — Done */}
             {phase === "done" && (
-              <div className="flex flex-col items-center gap-3 py-6">
-                <CheckCircle2 size={36} className="text-emerald-500" />
-                <p className="text-sm font-semibold text-ocean-800">File saved — parsing in background</p>
+              <div className="space-y-3">
+                <div className="flex flex-col items-center gap-2 py-2">
+                  <CheckCircle2 size={32} className="text-emerald-500" />
+                  <p className="text-sm font-semibold text-ocean-800">Upload complete</p>
+                  <p className="text-xs text-ocean/40 text-center">
+                    Parsing continues in background — ask a question anytime.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-ocean-100 divide-y divide-ocean-100 max-h-40 overflow-y-auto">
+                  {results.map((r, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2">
+                      {r.status === "ok"        && <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />}
+                      {r.status === "duplicate" && <span className="text-[13px] shrink-0">ℹ️</span>}
+                      {r.status === "error"     && <AlertCircle size={13} className="text-coral shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-ocean-800 truncate">{r.filename}</p>
+                        {r.status === "duplicate" && (
+                          <p className="text-[10px] text-ocean/40">Already ingested — skipped</p>
+                        )}
+                        {r.status === "error" && (
+                          <p className="text-[10px] text-coral">{r.message}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={onClose}
+                  className="w-full rounded-xl border border-ocean-200 py-2.5 text-sm font-medium text-ocean-600 hover:bg-ocean-50 transition-colors"
+                >
+                  Close
+                </button>
               </div>
             )}
           </div>
         </motion.div>
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ── SelectField ───────────────────────────────────────────────────────────────
+
+function SelectField({
+  value, onChange, disabled, placeholder, children,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  children: React.ReactNode;
+}) {
+  const isEmpty = !value;
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className={[
+          "w-full appearance-none rounded-xl border px-3.5 py-2.5 pr-9 text-sm",
+          "focus:outline-none focus:ring-2 focus:ring-ocean/30 disabled:opacity-50 disabled:cursor-not-allowed",
+          isEmpty
+            ? "border-ocean-200 text-ocean/40 bg-ocean-50/40"
+            : "border-ocean-200 text-ocean-800 bg-white",
+        ].join(" ")}
+      >
+        {placeholder && (
+          <option value="" disabled>{placeholder}</option>
+        )}
+        {children}
+      </select>
+      <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ocean/40" />
     </div>
   );
 }

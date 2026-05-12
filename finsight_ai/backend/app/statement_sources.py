@@ -1,17 +1,10 @@
 """
-Statement source configuration — maps local filesystem folders to institutions.
+Statement source configuration — derives from the statement catalog.
 
-This is the single source of truth for where statements live on disk.
-The local scanner reads from these definitions to discover, hash, and
-route PDFs into the ingestion pipeline.
+This module generates StatementSource entries (used by the local scanner)
+from the canonical AccountCatalogEntry definitions in config/statement_catalog.py.
 
-To add a new institution:
-  1. Add a StatementSource entry below.
-  2. Create a parser in app/parsers/<name>/parser.py.
-  3. Register the parser in app/parsers/base.py.
-
-To add a new product for an existing institution:
-  1. Add a new StatementSource with the correct root_path and filename_hints.
+Add new institutions/accounts to statement_catalog.py; do not edit here.
 """
 
 from __future__ import annotations
@@ -19,149 +12,66 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.config.statement_catalog import (
+    ACCOUNT_CATALOG,
+    get_statements_root,
+)
+
 
 @dataclass(frozen=True)
 class StatementSource:
     """Describes one logical statement source (folder on disk → institution/product).
 
     Attributes:
-        source_id:        Unique slug, used as a stable key across restarts.
-        institution_type: Matches InstitutionType enum value (used for parser routing).
-        account_family:   Institution brand (e.g. "chase", "amex").
-        account_product:  Human-readable product name shown in UI.
+        source_id:        Unique slug — stable key across restarts.
+        institution_type: Matches InstitutionType enum (used for parser routing).
+        account_family:   Institution brand slug.
+        account_product:  Human-readable product label shown in UI.
         bucket:           "investments" or "banking".
-        root_path:        Absolute path to the root folder for this source.
-        glob_pattern:     Pattern passed to Path.glob() — use "**/*.pdf" to recurse
-                          into YYYY subdirectories.
-        filename_hints:   Optional filename fragments to help the scanner label files.
-                          The parser's can_handle() is the authoritative router;
-                          hints are for display only.
+        root_path:        Absolute path to the folder root for this source.
+        glob_pattern:     Pattern passed to Path.glob() — recurses into YYYY/ by default.
+        filename_hints:   Optional fragments used for display labeling (not routing).
+        institution_slug: catalog institution slug.
+        account_slug:     catalog account slug.
     """
     source_id: str
     institution_type: str
     account_family: str
     account_product: str
-    bucket: str                             # "investments" | "banking"
+    bucket: str
     root_path: Path
-    glob_pattern: str = "**/*.pdf"          # recurse into YYYY/ subfolders by default
+    glob_pattern: str = "**/*.pdf"
     filename_hints: list[str] = field(default_factory=list)
+    institution_slug: str = ""
+    account_slug: str = ""
 
 
-# ── Banking sources ───────────────────────────────────────────────────────────
-
-_CORAL_ROOT = Path("/Users/nitinkotcherlakota/Documents/Personal/Coral")
-
-STATEMENT_SOURCES: list[StatementSource] = [
-    # ── Chase ──────────────────────────────────────────────────────────────
-    StatementSource(
-        source_id="chase_checking",
-        institution_type="chase",
-        account_family="chase",
-        account_product="Chase Checking",
-        bucket="banking",
-        root_path=_CORAL_ROOT / "Chase" / "Checking",
-        filename_hints=["Chase_Checking"],
-    ),
-    StatementSource(
-        source_id="chase_freedom",
-        institution_type="chase",
-        account_family="chase",
-        account_product="Chase Freedom Unlimited",
-        bucket="banking",
-        root_path=_CORAL_ROOT / "Chase" / "Checking",   # same folder, different filename
-        filename_hints=["Freedom"],
-    ),
-    StatementSource(
-        source_id="chase_prime",
-        institution_type="chase",
-        account_family="chase",
-        account_product="Chase Prime",
-        bucket="banking",
-        root_path=_CORAL_ROOT / "Chase" / "Checking",
-        filename_hints=["Prime"],
-    ),
-    StatementSource(
-        source_id="chase_sapphire",
-        institution_type="chase",
-        account_family="chase",
-        account_product="Chase Sapphire Preferred",
-        bucket="banking",
-        root_path=_CORAL_ROOT / "Chase" / "Checking",
-        filename_hints=["Sapphire_Preferred"],
-    ),
-
-    # ── American Express ───────────────────────────────────────────────────
-    StatementSource(
-        source_id="amex",
-        institution_type="amex",
-        account_family="amex",
-        account_product="American Express",
-        bucket="banking",
-        root_path=_CORAL_ROOT / "Amex",
-    ),
-
-    # ── Bank of America ────────────────────────────────────────────────────
-    StatementSource(
-        source_id="bofa",
-        institution_type="bofa",          # parser stub — scanned but not yet parsed
-        account_family="bofa",
-        account_product="Bank of America",
-        bucket="banking",
-        root_path=_CORAL_ROOT / "BOFA",
-    ),
-
-    # ── Discover ───────────────────────────────────────────────────────────
-    StatementSource(
-        source_id="discover",
-        institution_type="discover",
-        account_family="discover",
-        account_product="Discover",
-        bucket="banking",
-        root_path=_CORAL_ROOT / "Discover",
-    ),
-
-    # ── Marcus (Goldman Sachs) ─────────────────────────────────────────────
-    StatementSource(
-        source_id="marcus",
-        institution_type="marcus",        # parser stub — scanned but not yet parsed
-        account_family="marcus",
-        account_product="Marcus Goldman Sachs",
-        bucket="banking",
-        root_path=_CORAL_ROOT / "Marcus",
-    ),
-
-    # ── Investments ────────────────────────────────────────────────────────
-    StatementSource(
-        source_id="etrade",
-        institution_type="etrade",
-        account_family="etrade",
-        account_product="E*TRADE",
-        bucket="investments",
-        root_path=_CORAL_ROOT / "Etrade",
-    ),
-    StatementSource(
-        source_id="morgan_stanley_ira",
-        institution_type="morgan_stanley",
-        account_family="morgan_stanley",
-        account_product="Morgan Stanley IRA",
-        bucket="investments",
-        root_path=_CORAL_ROOT / "Morgan Stanley" / "IRA",
-    ),
-    StatementSource(
-        source_id="morgan_stanley_joint",
-        institution_type="morgan_stanley",
-        account_family="morgan_stanley",
-        account_product="Morgan Stanley Joint Investment",
-        bucket="investments",
-        root_path=_CORAL_ROOT / "Morgan Stanley" / "Joint Investment",
-    ),
-]
+def _build_sources() -> list[StatementSource]:
+    root = get_statements_root()
+    sources = []
+    for entry in ACCOUNT_CATALOG:
+        source_id = f"{entry.institution_slug}__{entry.account_slug}"
+        sources.append(StatementSource(
+            source_id=source_id,
+            institution_type=entry.parser_type,
+            account_family=entry.institution_slug,
+            account_product=f"{entry.institution_label} — {entry.account_label}",
+            bucket=entry.bucket,
+            root_path=root / entry.rel_path,
+            institution_slug=entry.institution_slug,
+            account_slug=entry.account_slug,
+        ))
+    return sources
 
 
-# Convenience: look up a source by its source_id
+STATEMENT_SOURCES: list[StatementSource] = _build_sources()
+
 SOURCES_BY_ID: dict[str, StatementSource] = {s.source_id: s for s in STATEMENT_SOURCES}
 
-# Institution types that have fully implemented parsers
+SOURCES_BY_SLUGS: dict[tuple[str, str], StatementSource] = {
+    (s.institution_slug, s.account_slug): s for s in STATEMENT_SOURCES
+}
+
 PARSEABLE_INSTITUTION_TYPES: frozenset[str] = frozenset({
     "morgan_stanley", "chase", "etrade", "amex", "discover"
 })

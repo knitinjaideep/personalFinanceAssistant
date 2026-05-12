@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
     from app.api.scan import router as scan_router
     from app.api.dashboard import router as dashboard_router
     from app.api.health import router as health_router
+    from app.api.catalog import router as catalog_router
 
     app.include_router(documents_router)
     app.include_router(chat_router)
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(scan_router)
     app.include_router(dashboard_router)
     app.include_router(health_router)
+    app.include_router(catalog_router)
 
     return app
 

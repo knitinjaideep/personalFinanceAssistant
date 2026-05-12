@@ -63,6 +63,12 @@ async def ingest_document(
     source_file_path: str | None = None,
     account_product: str | None = None,
     source_id: str | None = None,
+    institution_slug: str | None = None,
+    account_slug: str | None = None,
+    statement_year: int | None = None,
+    statement_month: int | None = None,
+    bucket: str | None = None,
+    document_id: str | None = None,
 ) -> str:
     """Full ingestion pipeline for a single document.
 
@@ -78,11 +84,12 @@ async def ingest_document(
 
     Extra keyword args are populated when the file originates from the local scanner
     (file_hash for dedup, source_file_path for provenance, account_product for UI labels).
+    Pass document_id to pre-assign the ID (used by bulk upload).
 
     Returns:
         document_id
     """
-    doc_id = str(uuid.uuid4())
+    doc_id = document_id or str(uuid.uuid4())
 
     async with get_session() as session:
         # Step 1: Register document
@@ -136,10 +143,10 @@ async def ingest_document(
                    balances=len(parsed_stmt.balances))
 
         # Step 5: Persist canonical records
-        await _persist_canonical(doc_id, institution_type, parsed_stmt)
+        await persist_canonical(doc_id, institution_type, parsed_stmt)
 
         # Step 6: Chunk and index text
-        await _chunk_and_index(doc_id, institution_type, parsed_doc)
+        await chunk_and_index(doc_id, institution_type, parsed_doc)
 
         # Step 7: Optionally generate embeddings
         if settings.search.vector_search_enabled:
@@ -166,7 +173,7 @@ async def ingest_document(
         raise DocumentIngestionError(f"Ingestion failed: {exc}") from exc
 
 
-async def _persist_canonical(doc_id: str, institution_type: str, stmt: ParsedStatement) -> None:
+async def persist_canonical(doc_id: str, institution_type: str, stmt: ParsedStatement) -> None:
     """Persist extracted data into canonical tables."""
     async with get_session() as session:
         # Get or create institution
@@ -289,7 +296,7 @@ async def _persist_canonical(doc_id: str, institution_type: str, stmt: ParsedSta
         logger.info("ingest.persisted", doc_id=doc_id, statement_id=statement.id)
 
 
-async def _chunk_and_index(doc_id: str, institution_type: str, parsed_doc) -> None:
+async def chunk_and_index(doc_id: str, institution_type: str, parsed_doc) -> None:
     """Chunk document text and index in FTS5."""
     chunks = []
     for page in parsed_doc.pages:

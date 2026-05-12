@@ -103,6 +103,11 @@ data/banking/chase/credit_cards/*
 data/banking/amex/*
 data/banking/discover/*
 
+# Backend data (collocated with source)
+backend/data/db/*
+backend/data/chroma/*
+backend/data/uploads/*
+
 # Keep folder structure in git
 !data/uploads/.gitkeep
 !data/db/.gitkeep
@@ -113,6 +118,9 @@ data/banking/discover/*
 !data/banking/chase/credit_cards/.gitkeep
 !data/banking/amex/.gitkeep
 !data/banking/discover/.gitkeep
+!backend/data/db/.gitkeep
+!backend/data/chroma/.gitkeep
+!backend/data/uploads/.gitkeep
 
 ############################
 

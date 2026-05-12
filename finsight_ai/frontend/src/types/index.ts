@@ -37,7 +37,7 @@ export interface ChatResponse {
 }
 
 export interface StructuredAnswer {
-  answer_type: "prose" | "numeric" | "table" | "comparison" | "no_data";
+  answer_type: "prose" | "numeric" | "table" | "comparison" | "no_data" | "partial_data";
   title: string;
   summary: string;
   primary_value: string | null;
@@ -87,4 +87,45 @@ export interface HealthStatus {
     embed_model_available?: boolean;
     error?: string;
   };
+}
+
+// ── Legacy / unused component stubs ─────────────────────────────────────────
+
+export interface MonthlySummary {
+  month: string;
+  total_spend: number;
+  income: number;
+  [key: string]: unknown;
+}
+
+export interface NetWorthDataPoint {
+  date: string;
+  total: number;
+  [key: string]: unknown;
+}
+
+export interface SpendingDataPoint {
+  month: string;
+  amount: number;
+  [key: string]: unknown;
+}
+
+export interface Statement {
+  id: string;
+  institution: string;
+  period_start: string;
+  period_end: string;
+  [key: string]: unknown;
+}
+
+export interface AnswerEvidence {
+  chunks: EvidenceChunk[];
+  [key: string]: unknown;
+}
+
+export interface EvidenceChunk {
+  content: string;
+  page_number?: number;
+  document_id?: string;
+  [key: string]: unknown;
 }

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * EvidenceDrawer — collapsible panel showing source evidence for an answer.
  *

@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Trash2, Loader2, Sparkles } from "lucide-react";
+import { Send, Trash2, Loader2, Sparkles, Upload, FileText, Lock, CheckCircle2, Layers } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../api/client";
 import { useAppStore } from "../store/appStore";
 import type { ChatMessage, ChatResponse } from "../types";
 import { ChatBubble } from "../components/chat/ChatBubble";
 import { AnswerCard } from "../components/chat/AnswerCard";
+import { UploadModal } from "../components/upload/UploadModal";
+import { BulkUploadModal } from "../components/upload/BulkUploadModal";
+import { DocumentsModal } from "../components/documents/DocumentsModal";
 import {
   contentPageVariants, staggerContainer, staggerChild, fadeVariants,
 } from "../design/motion";
@@ -13,10 +16,10 @@ import {
 const EXAMPLE_QUESTIONS = [
   "What fees have I been charged?",
   "Show me my account balances",
-  "List my recent transactions",
   "What's my portfolio worth?",
+  "List my recent Chase transactions",
   "Which institutions do I have data from?",
-  "Explain the fee section of my statement",
+  "Summarize my Morgan Stanley statement",
 ];
 
 // ── Typing indicator ──────────────────────────────────────────────────────────
@@ -43,12 +46,7 @@ function TypingIndicator() {
             key={i}
             className="w-1.5 h-1.5 rounded-full bg-ocean/40"
             animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
-            transition={{
-              duration: 0.8,
-              repeat: Infinity,
-              delay: i * 0.18,
-              ease: "easeInOut",
-            }}
+            transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.18, ease: "easeInOut" }}
           />
         ))}
       </div>
@@ -67,7 +65,6 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
       animate="visible"
       className="flex flex-col items-center justify-center min-h-[55vh] text-center px-4"
     >
-      {/* Mascot */}
       <motion.div
         animate={{ y: [0, -10, 0] }}
         transition={{ duration: 4, ease: "easeInOut", repeat: Infinity }}
@@ -104,7 +101,6 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
         Fees, balances, spending, portfolio — everything stays on your device.
       </motion.p>
 
-      {/* Example pills */}
       <motion.div
         variants={staggerContainer}
         initial="hidden"
@@ -137,26 +133,71 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
 
 // ── Message item ──────────────────────────────────────────────────────────────
 
-function MessageItem({
-  message,
-  onFollowup,
-}: {
-  message: ChatMessage;
-  onFollowup: (q: string) => void;
-}) {
+function MessageItem({ message, onFollowup }: { message: ChatMessage; onFollowup: (q: string) => void }) {
   if (message.role === "user") return <ChatBubble role="user" content={message.content} />;
   if (message.answer) return <AnswerCard answer={message.answer} onFollowup={onFollowup} />;
   return <ChatBubble role="assistant" content={message.content} />;
+}
+
+// ── Ingestion status badge ────────────────────────────────────────────────────
+
+function IngestionBadge() {
+  const { ingestionJobs } = useAppStore();
+  const processing = ingestionJobs.filter((j) => j.status === "processing");
+  const recentDone = ingestionJobs.filter(
+    (j) => j.status === "parsed" && Date.now() - j.started_at < 10_000
+  );
+
+  if (processing.length === 0 && recentDone.length === 0) return null;
+
+  if (processing.length > 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium"
+        style={{
+          background: "rgba(205,237,246,0.6)",
+          border: "1px solid rgba(205,237,246,0.8)",
+          color: "rgba(11,60,93,0.65)",
+        }}
+      >
+        <Loader2 size={11} className="animate-spin" />
+        {processing.length > 1 ? `${processing.length} ingesting…` : "Ingesting…"}
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium"
+      style={{
+        background: "rgba(220,252,230,0.6)",
+        border: "1px solid rgba(180,235,200,0.8)",
+        color: "rgba(20,100,40,0.7)",
+      }}
+    >
+      <CheckCircle2 size={11} />
+      Ready for chat
+    </motion.div>
+  );
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function ChatPage() {
   const { chatHistory, addChatMessage, clearChat } = useAppStore();
-  const [input, setInput]     = useState("");
-  const [loading, setLoading] = useState(false);
-  const messagesEndRef        = useRef<HTMLDivElement>(null);
-  const textareaRef           = useRef<HTMLTextAreaElement>(null);
+  const [input, setInput]         = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+  const [docsOpen, setDocsOpen]   = useState(false);
+  const messagesEndRef             = useRef<HTMLDivElement>(null);
+  const textareaRef                = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -173,7 +214,6 @@ export function ChatPage() {
     const q = (question || input).trim();
     if (!q || loading) return;
     setInput("");
-
     addChatMessage({ role: "user", content: q });
     setLoading(true);
 
@@ -206,12 +246,12 @@ export function ChatPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* ── Top bar ────────────────────────────────────────────────────────── */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="shrink-0 px-7 py-4 flex items-center justify-between"
+        className="shrink-0 px-6 py-4 flex items-center justify-between"
         style={{
           borderBottom: "1px solid rgba(205,237,246,0.55)",
           background: "rgba(255,255,255,0.60)",
@@ -219,40 +259,104 @@ export function ChatPage() {
           WebkitBackdropFilter: "blur(12px)",
         }}
       >
-        <div>
-          <h1 className="text-[17px] font-bold text-ocean-deep leading-tight tracking-tight">
-            Ask Coral
-          </h1>
-          <p className="text-[12px] text-ocean/45 mt-0.5 font-medium">
-            Ask anything about your financial statements
-          </p>
+        {/* Brand */}
+        <div className="flex items-center gap-3">
+          <div
+            className="w-9 h-9 rounded-2xl overflow-hidden shrink-0"
+            style={{
+              background: "rgba(205,237,246,0.40)",
+              border: "1px solid rgba(205,237,246,0.60)",
+              padding: "2px",
+            }}
+          >
+            <img
+              src="/mascot.png"
+              alt="Coral"
+              className="w-full h-full object-contain rounded-xl"
+              style={{ animation: "blink 5s ease-in-out infinite" }}
+            />
+          </div>
+          <div>
+            <h1 className="text-[16px] font-bold text-ocean-deep leading-tight tracking-tight">
+              Coral
+            </h1>
+            <p className="text-[11px] text-ocean/40 font-medium">
+              Chat with your financial life — locally.
+            </p>
+          </div>
         </div>
 
-        <AnimatePresence>
-          {chatHistory.length > 0 && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={clearChat}
-              className="flex items-center gap-1.5 text-xs text-ocean/40 hover:text-negative/70 transition-colors px-3 py-1.5 rounded-xl"
-              style={{
-                background: "rgba(11,60,93,0.06)",
-                border: "1px solid rgba(11,60,93,0.10)",
-              }}
-            >
-              <Trash2 size={11} />
-              Clear
-            </motion.button>
-          )}
-        </AnimatePresence>
+        {/* Right actions */}
+        <div className="flex items-center gap-2">
+          <AnimatePresence>
+            <IngestionBadge />
+          </AnimatePresence>
+
+          {/* Documents button */}
+          <button
+            onClick={() => setDocsOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-ocean/50 hover:text-ocean/80 transition-colors"
+            style={{
+              background: "rgba(11,60,93,0.05)",
+              border: "1px solid rgba(11,60,93,0.08)",
+            }}
+          >
+            <FileText size={12} />
+            Docs
+          </button>
+
+          {/* Bulk Upload button */}
+          <button
+            onClick={() => setBulkUploadOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-ocean/60 hover:text-ocean/80 transition-colors"
+            style={{
+              background: "rgba(11,60,93,0.05)",
+              border: "1px solid rgba(11,60,93,0.08)",
+            }}
+          >
+            <Layers size={12} />
+            Bulk
+          </button>
+
+          {/* Upload button */}
+          <button
+            onClick={() => setUploadOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all"
+            style={{
+              background: "linear-gradient(135deg, #FF7A5A, #FFA38F)",
+              boxShadow: "0 4px 12px rgba(255,122,90,0.30)",
+            }}
+          >
+            <Upload size={12} />
+            Upload
+          </button>
+
+          {/* Clear chat */}
+          <AnimatePresence>
+            {chatHistory.length > 0 && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={clearChat}
+                className="flex items-center gap-1.5 text-xs text-ocean/35 hover:text-negative/70 transition-colors px-2.5 py-1.5 rounded-xl"
+                style={{
+                  background: "rgba(11,60,93,0.05)",
+                  border: "1px solid rgba(11,60,93,0.08)",
+                }}
+              >
+                <Trash2 size={11} />
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
       </motion.div>
 
       {/* ── Messages ───────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-7 py-6">
-        <div className="max-w-3xl mx-auto space-y-5">
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="max-w-2xl mx-auto space-y-5">
           {chatHistory.length === 0 ? (
             <ChatEmptyState onQuestion={send} />
           ) : (
@@ -274,7 +378,7 @@ export function ChatPage() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2, duration: 0.35 }}
-        className="shrink-0 px-7 py-4"
+        className="shrink-0 px-6 py-4"
         style={{
           borderTop: "1px solid rgba(205,237,246,0.55)",
           background: "rgba(255,255,255,0.60)",
@@ -282,7 +386,7 @@ export function ChatPage() {
           WebkitBackdropFilter: "blur(12px)",
         }}
       >
-        <div className="flex gap-3 max-w-3xl mx-auto items-end">
+        <div className="flex gap-3 max-w-2xl mx-auto items-end">
           <div
             className="flex-1 flex items-end rounded-2xl overflow-hidden transition-all duration-200"
             style={{
@@ -327,10 +431,30 @@ export function ChatPage() {
           </motion.button>
         </div>
 
-        <p className="text-center text-[10px] text-ocean/25 mt-2.5 font-medium">
-          Enter to send · Shift+Enter for new line
-        </p>
+        {/* Privacy footer */}
+        <div className="flex items-center justify-center gap-1.5 mt-2.5">
+          <Lock size={9} className="text-ocean/20" />
+          <p className="text-[10px] text-ocean/25 font-medium">
+            All data stays on your device · Enter to send · Shift+Enter for new line
+          </p>
+        </div>
       </motion.div>
+
+      {/* ── Modals ─────────────────────────────────────────────────────────── */}
+      <UploadModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={() => {}}
+      />
+      <BulkUploadModal
+        open={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onUploaded={() => {}}
+      />
+      <DocumentsModal
+        open={docsOpen}
+        onClose={() => setDocsOpen(false)}
+      />
     </div>
   );
 }

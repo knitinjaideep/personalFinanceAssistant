@@ -7,7 +7,9 @@ No LLM calls. No inference. Pure SQL + simple Python aggregation.
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from collections import defaultdict
+import math
+from decimal import Decimal
 
 from sqlalchemy import func, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,7 @@ from app.db.models import (
     StatementModel,
     TransactionModel,
 )
+from app.services.dashboard.utils import dec as _dec, fmt as _fmt, normalize_merchant as _normalize_merchant
 
 # Banking institution types
 _BANKING_TYPES = ["chase", "amex", "discover", "bofa", "marcus"]
@@ -31,19 +34,6 @@ SPEND_CATEGORIES = [
     "shopping", "gas", "utilities", "healthcare", "entertainment",
     "education", "insurance", "transfers", "fees", "atm_cash", "other",
 ]
-
-
-def _dec(value: str | None) -> Decimal:
-    if not value:
-        return Decimal("0")
-    try:
-        return Decimal(value)
-    except InvalidOperation:
-        return Decimal("0")
-
-
-def _fmt(value: Decimal) -> str:
-    return f"{value:,.2f}"
 
 
 # ── Monthly spend ─────────────────────────────────────────────────────────────
@@ -248,35 +238,89 @@ async def banking_cash_flow(
 
 async def banking_subscriptions(session: AsyncSession) -> list[dict]:
     """
-    Transactions flagged as recurring (is_recurring=True) grouped by merchant.
+    Detect recurring charges by finding merchants that appear in ≥ 2 distinct
+    calendar months with a stable amount (coefficient of variation < 25%).
+
+    This is intentionally conservative:
+    - Ignores the is_recurring flag (unreliable across parsers).
+    - Requires appearance in at least 2 distinct months (avoids one-off charges).
+    - Requires amount stability (CV < 25%) to exclude irregular merchants.
+    - Normalizes merchant names to collapse minor description variants.
+
+    Returns list ordered by average monthly amount descending.
+    Each entry includes a confidence field: 'high' (≥3 months, stable) or
+    'medium' (2 months, stable) or omitted if below threshold.
     """
     rows = await session.execute(
         text("""
             SELECT
-                COALESCE(t.merchant_name, t.description) AS merchant,
+                COALESCE(t.merchant_name, t.description)      AS merchant_raw,
                 t.category,
-                AVG(CAST(t.amount AS REAL))               AS avg_amount,
-                COUNT(t.id)                               AS occurrences,
-                MAX(t.transaction_date)                   AS last_seen
+                strftime('%Y-%m', t.transaction_date)         AS txn_month,
+                AVG(CAST(t.amount AS REAL))                   AS month_avg,
+                COUNT(t.id)                                   AS month_count
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
-              AND t.is_recurring = 1
-            GROUP BY merchant
-            ORDER BY avg_amount DESC
+              AND t.transaction_type NOT IN ('deposit','payment','transfer','refund')
+              AND CAST(t.amount AS REAL) > 0
+              AND t.transaction_date >= date('now', '-18 months')
+            GROUP BY merchant_raw, txn_month
         """),
     )
-    return [
-        {
-            "merchant": r[0],
-            "category": r[1],
-            "avg_monthly_amount": round(float(r[2] or 0), 2),
-            "avg_monthly_amount_fmt": _fmt(Decimal(str(r[2] or 0))),
-            "occurrences": r[3],
-            "last_seen": str(r[4]) if r[4] else None,
-        }
-        for r in rows.fetchall()
-    ]
+    raw_rows = rows.fetchall()
+
+    # Aggregate by normalized merchant name
+    merchant_months: dict[str, list[tuple[str, float, str | None]]] = defaultdict(list)
+    for r in raw_rows:
+        key = _normalize_merchant(r[0])
+        category = r[1]
+        month = r[2]
+        avg_amt = float(r[3] or 0)
+        merchant_months[key].append((month, avg_amt, category))
+
+    results = []
+    for merchant, entries in merchant_months.items():
+        if merchant == "UNKNOWN":
+            continue
+        # Distinct months
+        distinct_months = sorted({e[0] for e in entries})
+        if len(distinct_months) < 2:
+            continue
+
+        amounts = [e[1] for e in entries]
+        mean_amt = sum(amounts) / len(amounts)
+        if mean_amt <= 0:
+            continue
+
+        # Coefficient of variation: stddev / mean
+        variance = sum((a - mean_amt) ** 2 for a in amounts) / len(amounts)
+        cv = math.sqrt(variance) / mean_amt
+
+        # Only stable recurring charges (CV < 25%)
+        if cv >= 0.25:
+            continue
+
+        # Last seen date
+        last_seen = max(e[0] for e in entries)
+
+        # Category: most common non-null
+        cats = [e[2] for e in entries if e[2]]
+        category = max(set(cats), key=cats.count) if cats else None
+
+        confidence = "high" if len(distinct_months) >= 3 else "medium"
+
+        results.append({
+            "merchant": merchant.title(),   # Title-case for display
+            "category": category,
+            "avg_monthly_amount": round(mean_amt, 2),
+            "avg_monthly_amount_fmt": _fmt(Decimal(str(round(mean_amt, 2)))),
+            "occurrences": len(distinct_months),
+            "last_seen": last_seen,
+            "confidence": confidence,
+        })
+
+    return sorted(results, key=lambda x: x["avg_monthly_amount"], reverse=True)
 
 
 # ── Document coverage ─────────────────────────────────────────────────────────

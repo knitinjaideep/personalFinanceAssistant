@@ -164,3 +164,23 @@ class AnalyticsSummary(BaseModel):
     total_holdings: int = 0
     institutions: list[str] = Field(default_factory=list)
     date_range: dict[str, str | None] = Field(default_factory=dict)
+
+
+class BulkUploadFileResult(BaseModel):
+    """Per-file result from the bulk upload endpoint."""
+    filename: str
+    outcome: str  # saved | duplicate_skipped | failed
+    document_id: str | None = None
+    destination_path: str | None = None
+    parsed: bool = False
+    partial_parse: bool = False
+    error_message: str | None = None
+
+
+class BulkUploadSummary(BaseModel):
+    uploaded: int = 0
+    duplicates_skipped: int = 0
+    successfully_ingested: int = 0
+    failed: int = 0
+    partial_parses: int = 0
+    results: list[BulkUploadFileResult] = Field(default_factory=list)

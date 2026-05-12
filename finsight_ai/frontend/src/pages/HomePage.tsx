@@ -225,7 +225,7 @@ function InvestmentsDashboard({ data }: { data: InvestmentsDashboard | null }) {
     );
   }
 
-  const { portfolio_summary, top_holdings, fees, balance_history } = data;
+  const { portfolio_summary, allocation, top_holdings, top_gainers, top_losers, fees, balance_history, coverage } = data;
   const gl = portfolio_summary.total_unrealized_gain_loss;
   const glPositive = gl >= 0;
 
@@ -238,8 +238,33 @@ function InvestmentsDashboard({ data }: { data: InvestmentsDashboard | null }) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, value]) => ({ date: date.slice(0, 7), value: Math.round(value) }));
 
+  // Allocation pie data by account
+  const allocationPieData = allocation.map((a, i) => ({
+    name: a.account_name,
+    value: a.total_value,
+    pct: a.pct_of_portfolio,
+    color: CHART_COLORS[i % CHART_COLORS.length],
+  }));
+
+  // Missing data warnings
+  const missingDataWarnings = coverage.filter(c => c.missing_recent_data);
+
   return (
     <div className="space-y-5">
+      {/* Coverage warnings */}
+      {missingDataWarnings.length > 0 && (
+        <div className="rounded-2xl px-4 py-3 text-xs flex items-start gap-2"
+          style={{ background: "rgba(255,166,77,0.10)", border: "1px solid rgba(255,166,77,0.30)" }}
+        >
+          <span className="shrink-0 mt-0.5">⚠</span>
+          <span className="text-ocean-deep/70">
+            No recent statement (last 60 days) for:{" "}
+            <span className="font-semibold">{missingDataWarnings.map(w => w.institution).join(", ")}</span>.
+            Portfolio value may be stale.
+          </span>
+        </div>
+      )}
+
       {/* Summary metrics */}
       <motion.div
         variants={staggerContainer}
@@ -273,10 +298,59 @@ function InvestmentsDashboard({ data }: { data: InvestmentsDashboard | null }) {
         />
       </motion.div>
 
+      {/* Last updated */}
+      {portfolio_summary.last_updated && (
+        <p className="text-[11px] text-ocean/35 flex items-center gap-1">
+          <Calendar size={9} />
+          Portfolio data as of {portfolio_summary.last_updated}
+        </p>
+      )}
+
+      {/* Account cards */}
+      {portfolio_summary.accounts.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {portfolio_summary.accounts.map((acct, i) => {
+            const glPos = acct.unrealized_gain_loss >= 0;
+            return (
+              <div
+                key={i}
+                className="rounded-2xl p-4"
+                style={{
+                  background: "rgba(255,255,255,0.88)",
+                  border: "1px solid rgba(205,237,246,0.55)",
+                }}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-ocean-deep truncate">{acct.account_name}</p>
+                    <p className="text-[10px] text-ocean/40 capitalize">{acct.institution_type}</p>
+                  </div>
+                  <p className="text-sm font-bold text-ocean-deep shrink-0 ml-2">${acct.total_value_fmt}</p>
+                </div>
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className={`font-semibold ${glPos ? "text-positive" : "text-coral"}`}>
+                    {glPos ? "+" : ""}${acct.unrealized_gain_loss_fmt} G/L
+                    {acct.gain_loss_pct !== null && (
+                      <span className="ml-1 opacity-70">({acct.gain_loss_pct > 0 ? "+" : ""}{acct.gain_loss_pct}%)</span>
+                    )}
+                  </span>
+                  {acct.latest_statement_date && (
+                    <span className="text-ocean/30 flex items-center gap-1">
+                      <Calendar size={8} />
+                      {acct.latest_statement_date}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Balance history chart */}
       {historyData.length > 1 && (
         <SectionCard>
-          <SectionHeader title="Portfolio Value Over Time" />
+          <SectionHeader title="Portfolio History" subtitle="Total across all accounts" />
           <div className="mt-4">
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={historyData} barSize={16}>
@@ -304,40 +378,151 @@ function InvestmentsDashboard({ data }: { data: InvestmentsDashboard | null }) {
         </SectionCard>
       )}
 
-      {/* Top holdings table */}
-      {top_holdings.length > 0 && (
-        <SectionCard>
-          <SectionHeader title="Top Holdings by Value" />
-          <div className="mt-3 space-y-2">
-            {top_holdings.slice(0, 8).map((h, i) => {
-              const glPos = h.unrealized_gain_loss >= 0;
-              return (
-                <div
-                  key={i}
-                  className="flex items-center justify-between py-2 border-b border-ocean-50/60 last:border-0"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-[10px] font-bold text-ocean/30 w-5 shrink-0">{i + 1}</span>
+      {/* Allocation by account + Top positions side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {allocationPieData.length > 1 && (
+          <SectionCard>
+            <SectionHeader title="Allocation by Account" />
+            <div className="mt-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={allocationPieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={48}
+                    outerRadius={72}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {allocationPieData.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: number, _: string, props: any) => [
+                      `$${v.toLocaleString()} (${props.payload.pct}%)`,
+                      props.payload.name,
+                    ]}
+                    contentStyle={{ borderRadius: 12, fontSize: 12 }}
+                  />
+                  <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </SectionCard>
+        )}
+
+        {/* Top positions (by value) */}
+        {top_holdings.length > 0 && (
+          <SectionCard>
+            <SectionHeader title="Top Positions" subtitle="By market value" />
+            <div className="mt-3 space-y-2">
+              {top_holdings.slice(0, 6).map((h, i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-bold text-ocean/25 w-4 shrink-0">{i + 1}</span>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-ocean-deep truncate">
-                        {h.symbol ?? h.description.slice(0, 30)}
+                        {h.symbol ?? h.description.slice(0, 22)}
                       </p>
                       {h.symbol && (
-                        <p className="text-[10px] text-ocean/35 truncate">{h.description.slice(0, 35)}</p>
+                        <p className="text-[10px] text-ocean/35 truncate">{h.description.slice(0, 22)}</p>
                       )}
                     </div>
                   </div>
-                  <div className="text-right shrink-0 ml-3">
+                  <div className="text-right shrink-0 ml-2">
                     <p className="text-xs font-bold text-ocean-deep">${h.market_value_fmt}</p>
-                    <p className={`text-[10px] font-semibold ${glPos ? "text-positive" : "text-coral"}`}>
-                      {glPos ? "+" : ""}${h.unrealized_gain_loss_fmt}
-                    </p>
+                    {h.portfolio_weight !== null && (
+                      <p className="text-[10px] text-ocean/35">{h.portfolio_weight}%</p>
+                    )}
                   </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+          </SectionCard>
+        )}
+      </div>
+
+      {/* Full holdings table */}
+      {top_holdings.length > 0 && (
+        <SectionCard>
+          <SectionHeader title="Holdings" subtitle={`${top_holdings.length} positions (latest statements)`} />
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-ocean/35 border-b border-ocean-50/60">
+                  <th className="text-left py-1.5 pr-3 font-semibold">Symbol</th>
+                  <th className="text-right py-1.5 px-2 font-semibold">Qty</th>
+                  <th className="text-right py-1.5 px-2 font-semibold">Value</th>
+                  <th className="text-right py-1.5 px-2 font-semibold">G/L</th>
+                  <th className="text-right py-1.5 pl-2 font-semibold">Wt%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {top_holdings.map((h, i) => {
+                  const glPos = h.unrealized_gain_loss >= 0;
+                  return (
+                    <tr key={i} className="border-b border-ocean-50/40 last:border-0">
+                      <td className="py-1.5 pr-3">
+                        <span className="font-semibold text-ocean-deep">{h.symbol ?? "–"}</span>
+                        {h.symbol && (
+                          <span className="block text-[10px] text-ocean/35 truncate max-w-[120px]">
+                            {h.description.slice(0, 20)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-right py-1.5 px-2 text-ocean/50 tabular">
+                        {h.quantity !== null ? h.quantity.toFixed(2) : "–"}
+                      </td>
+                      <td className="text-right py-1.5 px-2 font-semibold text-ocean-deep tabular">
+                        ${h.market_value_fmt}
+                      </td>
+                      <td className={`text-right py-1.5 px-2 font-semibold tabular ${glPos ? "text-positive" : "text-coral"}`}>
+                        {glPos ? "+" : ""}${h.unrealized_gain_loss_fmt}
+                      </td>
+                      <td className="text-right py-1.5 pl-2 text-ocean/40 tabular">
+                        {h.portfolio_weight !== null ? `${h.portfolio_weight}%` : "–"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </SectionCard>
+      )}
+
+      {/* Top gainers and losers */}
+      {(top_gainers.length > 0 || top_losers.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {top_gainers.length > 0 && (
+            <SectionCard>
+              <SectionHeader title="Top Gainers" />
+              <div className="mt-3 space-y-2">
+                {top_gainers.slice(0, 5).map((h, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="text-ocean-deep font-medium truncate">{h.symbol ?? h.description.slice(0, 20)}</span>
+                    <span className="font-semibold text-positive shrink-0 ml-2">+${h.unrealized_gain_loss_fmt}</span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+          {top_losers.length > 0 && (
+            <SectionCard>
+              <SectionHeader title="Top Losers" />
+              <div className="mt-3 space-y-2">
+                {top_losers.slice(0, 5).map((h, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="text-ocean-deep font-medium truncate">{h.symbol ?? h.description.slice(0, 20)}</span>
+                    <span className="font-semibold text-coral shrink-0 ml-2">${h.unrealized_gain_loss_fmt}</span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+        </div>
       )}
 
       {/* Fee breakdown */}
@@ -348,10 +533,28 @@ function InvestmentsDashboard({ data }: { data: InvestmentsDashboard | null }) {
             {fees.by_category.map((f, i) => (
               <div key={i} className="flex items-center justify-between text-xs">
                 <span className="capitalize text-ocean/60">{f.category}</span>
-                <span className="font-semibold text-ocean-deep">${f.total_fmt}</span>
+                <div className="text-right">
+                  <span className="font-semibold text-ocean-deep">${f.total_fmt}</span>
+                  <span className="text-ocean/30 ml-1">({f.count}x)</span>
+                </div>
               </div>
             ))}
           </div>
+          {fees.recent_trend.length > 1 && (
+            <div className="mt-4">
+              <p className="text-[10px] text-ocean/40 mb-2">Recent fee trend (6 months)</p>
+              <ResponsiveContainer width="100%" height={80}>
+                <BarChart data={fees.recent_trend} barSize={10}>
+                  <XAxis dataKey="month" tick={{ fontSize: 9, fill: "rgba(11,60,93,0.35)" }} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    formatter={(v: number) => [`$${v.toLocaleString()}`, "Fees"]}
+                    contentStyle={{ borderRadius: 10, fontSize: 11 }}
+                  />
+                  <Bar dataKey="total" fill="#FF7A5A" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </SectionCard>
       )}
     </div>
@@ -576,22 +779,36 @@ function BankingDashboard({ data }: { data: BankingDashboard | null }) {
       )}
 
       {/* Subscriptions */}
-      {subscriptions.length > 0 && (
-        <SectionCard>
-          <SectionHeader title="Recurring / Subscriptions" />
+      <SectionCard>
+        <SectionHeader
+          title="Recurring / Subscriptions"
+          subtitle="Merchants with stable charges in ≥ 2 months"
+        />
+        {subscriptions.length === 0 ? (
+          <p className="mt-3 text-xs text-ocean/35">
+            Not enough data to confidently identify recurring charges. More months of statements will improve accuracy.
+          </p>
+        ) : (
           <div className="mt-3 space-y-2">
-            {subscriptions.slice(0, 8).map((s, i) => (
+            {subscriptions.slice(0, 10).map((s, i) => (
               <div key={i} className="flex items-center justify-between text-xs">
-                <span className="text-ocean-deep font-medium">{s.merchant}</span>
-                <div className="text-right">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-ocean-deep font-medium truncate">{s.merchant}</span>
+                  {s.confidence === "high" && (
+                    <span className="shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-positive/15 text-positive">
+                      confirmed
+                    </span>
+                  )}
+                </div>
+                <div className="text-right shrink-0 ml-2">
                   <span className="font-semibold text-ocean">${s.avg_monthly_amount_fmt}/mo</span>
-                  <span className="text-ocean/30 ml-1.5 text-[10px]">×{s.occurrences}</span>
+                  <span className="text-ocean/30 ml-1.5 text-[10px]">×{s.occurrences} mo</span>
                 </div>
               </div>
             ))}
           </div>
-        </SectionCard>
-      )}
+        )}
+      </SectionCard>
     </div>
   );
 }
