@@ -24,6 +24,7 @@ export interface ChatMessage {
   content: string;
   answer?: StructuredAnswer;
   timestamp?: string;
+  error_request_id?: string;
 }
 
 export interface ChatRequest {

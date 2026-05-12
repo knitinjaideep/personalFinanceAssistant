@@ -7,7 +7,8 @@ const BASE_URL = "/api/v1";
 export class ApiError extends Error {
   constructor(
     public status: number,
-    public detail: string
+    public detail: string,
+    public request_id?: string
   ) {
     super(`API ${status}: ${detail}`);
     this.name = "ApiError";
@@ -17,13 +18,20 @@ export class ApiError extends Error {
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = response.statusText;
+    let request_id: string | undefined;
     try {
       const body = await response.json();
-      detail = body.detail || JSON.stringify(body);
+      if (typeof body.detail === "object" && body.detail !== null) {
+        detail = body.detail.detail || JSON.stringify(body.detail);
+        request_id = body.detail.request_id;
+      } else {
+        detail = body.detail || JSON.stringify(body);
+        request_id = body.request_id;
+      }
     } catch {
       // ignore parse errors
     }
-    throw new ApiError(response.status, detail);
+    throw new ApiError(response.status, detail, request_id);
   }
   return response.json() as Promise<T>;
 }

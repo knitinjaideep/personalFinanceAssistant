@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Trash2, Loader2, Sparkles, Upload, FileText, Lock, CheckCircle2, Layers, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { useAppStore } from "../store/appStore";
 import type { ChatMessage, ChatResponse } from "../types";
 import { ChatBubble } from "../components/chat/ChatBubble";
@@ -136,7 +136,7 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
 function MessageItem({ message, onFollowup }: { message: ChatMessage; onFollowup: (q: string) => void }) {
   if (message.role === "user") return <ChatBubble role="user" content={message.content} timestamp={message.timestamp} />;
   if (message.answer) return <AnswerCard answer={message.answer} onFollowup={onFollowup} timestamp={message.timestamp} />;
-  return <ChatBubble role="assistant" content={message.content} timestamp={message.timestamp} />;
+  return <ChatBubble role="assistant" content={message.content} timestamp={message.timestamp} errorRequestId={message.error_request_id} />;
 }
 
 // ── Ingestion status badge ────────────────────────────────────────────────────
@@ -250,10 +250,12 @@ export function ChatPage() {
         content: resp.raw_text || resp.answer.summary,
         answer: resp.answer,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const apiErr = err instanceof ApiError ? err : null;
       addChatMessage({
         role: "assistant",
-        content: `Sorry, something went wrong: ${err.detail || err.message}`,
+        content: `Sorry, something went wrong: ${apiErr?.detail ?? (err instanceof Error ? err.message : "Unknown error")}`,
+        error_request_id: apiErr?.request_id,
       });
     } finally {
       setLoading(false);

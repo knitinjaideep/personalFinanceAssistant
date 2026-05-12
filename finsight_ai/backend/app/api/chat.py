@@ -119,7 +119,7 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
                 "duration_ms": duration_ms,
             },
         )
-        raise HTTPException(500, f"Query failed: {exc.message}")
+        raise HTTPException(500, {"detail": f"Query failed: {exc.message}", "request_id": req_id})
     except Exception as exc:
         duration_ms = round((time.perf_counter() - total_start) * 1000, 1)
         logger.error(
@@ -132,4 +132,4 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
             },
             exc_info=True,
         )
-        raise HTTPException(500, "An unexpected error occurred processing your question")
+        raise HTTPException(500, {"detail": "An unexpected error occurred processing your question", "request_id": req_id})

@@ -1,11 +1,4 @@
 /// <reference types="vite/client" />
-/**
- * DebugPanel — collapsible observability panel shown under each assistant answer.
- *
- * Only rendered when import.meta.env.VITE_DEBUG === "true".
- * Shows request_id, intent, route, confidence, SQL, timings, sources, chart summary.
- */
-
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Bug } from "lucide-react";
 import type { StructuredAnswer } from "../../types";
@@ -37,59 +30,69 @@ export function DebugPanel({ answer }: DebugPanelProps) {
 
   return (
     <div
-      className="mt-2 rounded-xl text-[10px] font-mono overflow-hidden"
+      className="mt-2 max-w-2xl rounded-xl text-[10px] font-mono overflow-hidden"
       style={{
-        background: "rgba(11,60,93,0.04)",
-        border: "1px solid rgba(11,60,93,0.12)",
+        background: "rgba(240,249,252,0.70)",
+        border: "1px solid rgba(205,237,246,0.65)",
       }}
     >
       {/* Toggle */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-black/5 transition-colors"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left transition-colors hover:bg-ocean-50/40"
       >
-        <Bug size={10} className="text-ocean/50 flex-shrink-0" />
-        <span className="text-ocean/50 flex-1">
-          Debug
-          {request_id ? ` · ${request_id.slice(0, 8)}…` : ""}
-          {intent ? ` · ${intent}` : ""}
-          {query_path ? ` → ${query_path}` : ""}
+        <Bug size={10} className="text-ocean/40 shrink-0" />
+        <span className="flex-1 text-ocean/40">
+          Show Debug Info
+          {request_id && <span className="text-ocean/30"> · {request_id.slice(0, 8)}…</span>}
+          {intent && <span className="text-ocean/30"> · {intent}</span>}
+          {query_path && <span className="text-ocean/25"> → {query_path}</span>}
         </span>
-        {open ? <ChevronUp size={10} className="text-ocean/40" /> : <ChevronDown size={10} className="text-ocean/40" />}
+        {open
+          ? <ChevronUp size={10} className="text-ocean/35" />
+          : <ChevronDown size={10} className="text-ocean/35" />}
       </button>
 
-      {/* Detail */}
+      {/* Detail — scrollable */}
       {open && (
-        <div className="px-3 pb-3 pt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-ocean/60">
-
+        <div
+          className="px-3 pb-3 pt-1 grid grid-cols-2 gap-x-6 gap-y-0.5 overflow-y-auto border-t border-ocean-50/60"
+          style={{ maxHeight: "320px" }}
+        >
           {/* Identity */}
+          <SectionHeader label="Identity" />
           <Row label="request_id" value={request_id || "—"} full />
           <Row label="intent"     value={intent || "—"} />
           <Row label="route"      value={query_path || "—"} />
           <Row label="confidence" value={pct(confidence)} />
 
           {/* Data */}
-          <Row label="rows_used"  value={String(rows_used ?? "—")} />
-          <Row label="sources"    value={sources.length ? sources.join(", ") : "—"} />
+          <SectionHeader label="Data" />
+          <Row label="rows_used" value={String(rows_used ?? "—")} />
+          <Row label="sources"   value={sources.length ? sources.join(", ") : "—"} />
 
           {/* Timings */}
-          <div className="col-span-2 mt-1 mb-0.5 font-semibold text-ocean/40 uppercase tracking-wide text-[9px]">
-            Timings
-          </div>
-          <Row label="intent"  value={ms(timings?.intent_ms)} />
-          <Row label="sql"     value={ms(timings?.sql_ms)} />
-          <Row label="rag"     value={ms(timings?.rag_ms)} />
-          <Row label="llm"     value={ms(timings?.llm_ms)} />
-          <Row label="total"   value={ms(timings?.total_ms)} />
+          <SectionHeader label="Timings" />
+          <Row label="intent" value={ms(timings?.intent_ms)} />
+          <Row label="parse"  value={ms(timings?.parse_ms)} />
+          <Row label="sql"    value={ms(timings?.sql_ms)} />
+          <Row label="rag"    value={ms(timings?.rag_ms)} />
+          <Row label="llm"    value={ms(timings?.llm_ms)} />
+          <Row label="total"  value={ms(timings?.total_ms)} bold />
 
           {/* SQL */}
           {sql_used && sql_used.length > 0 && (
             <>
-              <div className="col-span-2 mt-1 mb-0.5 font-semibold text-ocean/40 uppercase tracking-wide text-[9px]">
-                SQL used
-              </div>
+              <SectionHeader label="SQL used" />
               {sql_used.map((s, i) => (
-                <pre key={i} className="col-span-2 text-[9px] whitespace-pre-wrap break-all text-ocean/50 bg-black/5 rounded px-2 py-1">
+                <pre
+                  key={i}
+                  className="col-span-2 text-[9px] whitespace-pre-wrap break-all rounded-lg px-2 py-1.5 text-ocean/55"
+                  style={{
+                    background: "rgba(11,60,93,0.04)",
+                    border: "1px solid rgba(205,237,246,0.6)",
+                  }}
+                >
                   {s}
                 </pre>
               ))}
@@ -99,9 +102,7 @@ export function DebugPanel({ answer }: DebugPanelProps) {
           {/* Chart */}
           {chart_payload && (
             <>
-              <div className="col-span-2 mt-1 mb-0.5 font-semibold text-ocean/40 uppercase tracking-wide text-[9px]">
-                Chart payload
-              </div>
+              <SectionHeader label="Chart payload" />
               <Row label="type"   value={chart_payload.type} />
               <Row label="labels" value={`${chart_payload.labels?.length ?? 0} items`} />
             </>
@@ -112,19 +113,28 @@ export function DebugPanel({ answer }: DebugPanelProps) {
   );
 }
 
-function Row({ label, value, full }: { label: string; value: string; full?: boolean }) {
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <div className="col-span-2 mt-2 mb-0.5 uppercase tracking-widest text-[8px] font-semibold text-ocean/30">
+      {label}
+    </div>
+  );
+}
+
+function Row({ label, value, full, bold }: {
+  label: string;
+  value: string;
+  full?: boolean;
+  bold?: boolean;
+}) {
   return (
     <>
-      <span className={`text-ocean/40 ${full ? "col-span-2" : ""}`}>
-        {label}
-        {full ? "" : ":"}
+      <span className={`text-ocean/35 ${full ? "col-span-2" : ""}`}>
+        {label}:
       </span>
-      {!full && (
-        <span className="text-ocean/70 break-all">{value}</span>
-      )}
-      {full && (
-        <span className="col-span-2 -mt-1 text-ocean/70 break-all">{value}</span>
-      )}
+      <span className={`break-all ${full ? "col-span-2 -mt-0.5" : ""} ${bold ? "font-semibold text-ocean/70" : "text-ocean/55"}`}>
+        {value}
+      </span>
     </>
   );
 }
