@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
     cors_origins: list[str] = Field(default=["http://localhost:3000"])
 
+
     # __file__ here is the package __init__.py; parent.parent.parent goes to project root
     base_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parent.parent.parent)
 

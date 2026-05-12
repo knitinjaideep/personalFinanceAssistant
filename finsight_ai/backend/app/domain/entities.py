@@ -124,6 +124,34 @@ class ChatRequest(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list)
 
 
+class QueryContext(BaseModel):
+    """Structured parameters extracted from the user's natural-language question."""
+    # Timeframe
+    date_from: date | None = None
+    date_to: date | None = None
+    timeframe_label: str = ""          # e.g. "last month", "2024", "Q1 2025"
+
+    # Filters extracted from question text
+    category: str | None = None        # TransactionCategory value or None
+    merchant: str | None = None        # raw merchant keyword (lowercased)
+    institution: str | None = None     # institution name keyword (lowercased)
+    account_type: str | None = None    # AccountType value or None
+
+    # Flags
+    is_recurring_only: bool = False
+    limit: int = 50
+
+
+class AnswerTimings(BaseModel):
+    """Per-stage duration breakdown (all values in milliseconds, None = stage not run)."""
+    intent_ms: float | None = None
+    parse_ms: float | None = None
+    sql_ms: float | None = None
+    rag_ms: float | None = None
+    llm_ms: float | None = None
+    total_ms: float | None = None
+
+
 class StructuredAnswer(BaseModel):
     """The standard answer format returned by the query system."""
     answer_type: str = "prose"  # prose, numeric, table, comparison, no_data
@@ -139,10 +167,21 @@ class StructuredAnswer(BaseModel):
     intent: str = ""
     confidence: float = 0.0
 
+    # Transparency / debugging
+    sql_used: list[str] = Field(default_factory=list)   # parameterized SQL strings shown to user
+    rows_used: int = 0
+    chart_payload: dict[str, Any] | None = None         # {type, labels, datasets} for frontend chart
+
+    # Observability — surfaced to frontend
+    request_id: str = ""
+    timings: AnswerTimings = Field(default_factory=AnswerTimings)
+    follow_up_suggestions: list[str] = Field(default_factory=list)  # alias kept for API compat
+
 
 class ChatResponse(BaseModel):
     answer: StructuredAnswer
     raw_text: str = ""
+    request_id: str = ""
 
 
 class DocumentSummary(BaseModel):

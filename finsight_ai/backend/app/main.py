@@ -6,26 +6,64 @@ Simple, clean, no LangGraph, no Chroma, no MCP.
 
 from __future__ import annotations
 
-import structlog
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Configure logging before any other app imports that might log at import time.
+from app.core.logger import configure_logging, get_logger
+
+configure_logging()
+
 from app.config import settings
+from app.core.middleware import RequestTracingMiddleware
 from app.db.engine import init_db
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
+
+
+def _log_startup_diagnostics(app: FastAPI) -> None:
+    """Emit a structured startup summary."""
+    try:
+        import langgraph  # noqa: F401
+        langgraph_installed = True
+    except ImportError:
+        langgraph_installed = False
+
+    routes = [f"{m} {r.path}" for r in app.routes for m in getattr(r, "methods", []) or []]  # type: ignore[attr-defined]
+
+    logger.info(
+        "app_started",
+        extra={
+            "stage": "app_started",
+            "environment": settings.environment,
+            "debug": settings.debug,
+            "log_level": settings.log_level,
+            "database_path": str(settings.get_db_path()),
+            "ollama_model": settings.ollama.chat_model,
+            "embedding_model": settings.ollama.embedding_model,
+            "langgraph_installed": langgraph_installed,
+            "langgraph_wired_to_chat": False,
+            "registered_routes": len(routes),
+        },
+    )
+
+    if langgraph_installed:
+        logger.warning(
+            "langgraph_not_wired — LangGraph components exist but are not connected to chat route",
+            extra={"stage": "startup_check"},
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    logger.info("coral.startup", version=settings.app_version, env=settings.environment)
     await init_db()
-    logger.info("db.initialized")
+    logger.info("db.initialized", extra={"stage": "db_initialized"})
+    _log_startup_diagnostics(app)
     yield
-    logger.info("coral.shutdown")
+    logger.info("coral.shutdown", extra={"stage": "app_shutdown"})
 
 
 def create_app() -> FastAPI:
@@ -38,12 +76,16 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Request tracing must be outermost so req_id is available to all handlers.
+    app.add_middleware(RequestTracingMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["*"],
+        allow_headers=["*", "X-Request-ID"],
+        expose_headers=["X-Request-ID"],
     )
 
     # Register routers

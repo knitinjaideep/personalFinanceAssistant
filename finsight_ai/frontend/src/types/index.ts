@@ -34,6 +34,29 @@ export interface ChatRequest {
 export interface ChatResponse {
   answer: StructuredAnswer;
   raw_text: string;
+  request_id?: string;
+}
+
+export interface ChartDataset {
+  label: string;
+  data: number[];
+}
+
+export interface ChartPayload {
+  type: "bar" | "pie" | "line" | "horizontal_bar";
+  title: string;
+  labels: string[];
+  datasets: ChartDataset[];
+  currency: boolean;
+}
+
+export interface AnswerTimings {
+  intent_ms: number | null;
+  parse_ms: number | null;
+  sql_ms: number | null;
+  rag_ms: number | null;
+  llm_ms: number | null;
+  total_ms: number | null;
 }
 
 export interface StructuredAnswer {
@@ -49,6 +72,13 @@ export interface StructuredAnswer {
   query_path: string;
   intent: string;
   confidence: number;
+  sql_used: string[];
+  rows_used: number;
+  chart_payload: ChartPayload | null;
+  // Observability
+  request_id?: string;
+  timings?: AnswerTimings;
+  follow_up_suggestions?: string[];
 }
 
 export interface AnswerSection {

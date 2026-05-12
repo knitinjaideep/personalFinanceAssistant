@@ -10,11 +10,16 @@
  */
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, FileText, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText, ArrowRight, Code2, BarChart3 } from "lucide-react";
 import { clsx } from "clsx";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, Legend,
+} from "recharts";
 import { assistantBubbleVariants, staggerContainer, staggerChild } from "../../design/motion";
-import type { StructuredAnswer } from "../../types";
+import type { StructuredAnswer, ChartPayload } from "../../types";
+import { DebugPanel } from "./DebugPanel";
 
 // ── Column label map ─────────────────────────────────────────────────────────
 
@@ -29,6 +34,159 @@ const FRIENDLY_LABELS: Record<string, string> = {
 
 function friendlyLabel(col: string): string {
   return FRIENDLY_LABELS[col] || col.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function fmtUSD(v: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
+}
+
+// ── Chart colors ──────────────────────────────────────────────────────────────
+
+const CHART_COLORS = [
+  "#5FA8D3", "#FF7A5A", "#4CAF93", "#F2C94C", "#9B59B6",
+  "#E67E22", "#2ECC71", "#E74C3C", "#3498DB", "#1ABC9C",
+];
+
+// ── AnswerChart ───────────────────────────────────────────────────────────────
+
+function AnswerChart({ payload }: { payload: ChartPayload }) {
+  const { type, title, labels, datasets, currency } = payload;
+  const fmt = currency ? fmtUSD : (v: number) => String(v);
+
+  if (type === "pie") {
+    const data = labels.map((name, i) => ({
+      name,
+      value: datasets[0]?.data[i] ?? 0,
+    }));
+    return (
+      <div className="px-5 py-4 border-t border-ocean-50/70">
+        <p className="text-xs font-semibold text-ocean/40 mb-3 flex items-center gap-1.5">
+          <BarChart3 size={11} />
+          {title}
+        </p>
+        <ResponsiveContainer width="100%" height={200}>
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius={80}
+              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              labelLine={false}
+            >
+              {data.map((_, i) => (
+                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(v: number) => fmt(v)} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  if (type === "horizontal_bar") {
+    const data = labels.map((name, i) => ({
+      name: name.length > 20 ? name.slice(0, 20) + "…" : name,
+      value: datasets[0]?.data[i] ?? 0,
+    }));
+    return (
+      <div className="px-5 py-4 border-t border-ocean-50/70">
+        <p className="text-xs font-semibold text-ocean/40 mb-3 flex items-center gap-1.5">
+          <BarChart3 size={11} />
+          {title}
+        </p>
+        <ResponsiveContainer width="100%" height={Math.max(180, data.length * 32)}>
+          <BarChart layout="vertical" data={data} margin={{ left: 8, right: 24, top: 4, bottom: 4 }}>
+            <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 10 }} />
+            <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10 }} />
+            <Tooltip formatter={(v: number) => fmt(v)} />
+            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+              {data.map((_, i) => (
+                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  }
+
+  // Vertical bar (bar / line)
+  const data = labels.map((name, i) => {
+    const entry: Record<string, unknown> = { name };
+    datasets.forEach((ds) => { entry[ds.label] = ds.data[i] ?? 0; });
+    return entry;
+  });
+  return (
+    <div className="px-5 py-4 border-t border-ocean-50/70">
+      <p className="text-xs font-semibold text-ocean/40 mb-3 flex items-center gap-1.5">
+        <BarChart3 size={11} />
+        {title}
+      </p>
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={data} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
+          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+          <YAxis tickFormatter={fmt} tick={{ fontSize: 10 }} />
+          <Tooltip formatter={(v: number) => fmt(v)} />
+          {datasets.length > 1 && <Legend />}
+          {datasets.map((ds, i) => (
+            <Bar key={ds.label} dataKey={ds.label} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ── SqlDisclosure ─────────────────────────────────────────────────────────────
+
+function SqlDisclosure({ sql, rowCount }: { sql: string[]; rowCount: number }) {
+  const [open, setOpen] = useState(false);
+  if (!sql.length) return null;
+
+  return (
+    <div className="border-t border-ocean-50/60">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-5 py-2 flex items-center justify-between text-[10px] text-ocean/25 hover:text-ocean/45 transition-colors"
+      >
+        <span className="flex items-center gap-1.5">
+          <Code2 size={9} />
+          SQL · {rowCount} row{rowCount !== 1 ? "s" : ""}
+        </span>
+        {open ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <pre
+              className="mx-5 mb-4 px-3 py-2.5 rounded-xl text-[10px] leading-relaxed overflow-x-auto"
+              style={{
+                background: "rgba(11,60,93,0.04)",
+                border: "1px solid rgba(205,237,246,0.6)",
+                color: "rgba(11,60,93,0.55)",
+                fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {sql[0]}
+            </pre>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 // ── Shared subcomponents ─────────────────────────────────────────────────────
@@ -118,7 +276,15 @@ function CaveatBar({ caveats }: { caveats: string[] }) {
   );
 }
 
-function CardShell({ children, className }: { children: React.ReactNode; className?: string }) {
+interface CardShellProps {
+  children: React.ReactNode;
+  className?: string;
+  chartPayload?: ChartPayload | null;
+  sqlUsed?: string[];
+  rowsUsed?: number;
+}
+
+function CardShell({ children, className, chartPayload, sqlUsed, rowsUsed }: CardShellProps) {
   return (
     <motion.div
       variants={assistantBubbleVariants}
@@ -134,16 +300,27 @@ function CardShell({ children, className }: { children: React.ReactNode; classNa
       }}
     >
       {children}
+      {chartPayload && <AnswerChart payload={chartPayload} />}
+      {sqlUsed && sqlUsed.length > 0 && (
+        <SqlDisclosure sql={sqlUsed} rowCount={rowsUsed ?? 0} />
+      )}
     </motion.div>
   );
 }
 
+// ── Shared extra-props type ───────────────────────────────────────────────────
+
+interface CardExtraProps {
+  answer: StructuredAnswer;
+  onFollowup: (q: string) => void;
+}
+
 // ── MetricAnswer ─────────────────────────────────────────────────────────────
 
-function MetricAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFollowup: (q: string) => void }) {
+function MetricAnswer({ answer, onFollowup }: CardExtraProps) {
   const bullets = answer.highlights.slice(0, 4);
   return (
-    <CardShell>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
       <div className="px-5 py-4 border-b border-ocean-50/70">
         <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
       </div>
@@ -193,9 +370,9 @@ function MetricAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFoll
 
 // ── SummaryAnswer ─────────────────────────────────────────────────────────────
 
-function SummaryAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFollowup: (q: string) => void }) {
+function SummaryAnswer({ answer, onFollowup }: CardExtraProps) {
   return (
-    <CardShell>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
       <div className="px-5 py-4 border-b border-ocean-50/70">
         <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
       </div>
@@ -225,7 +402,7 @@ function SummaryAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFol
 
 // ── RankedListAnswer ──────────────────────────────────────────────────────────
 
-function RankedListAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFollowup: (q: string) => void }) {
+function RankedListAnswer({ answer, onFollowup }: CardExtraProps) {
   const section = answer.sections.find((s) => s.type === "table" && s.rows && s.columns);
 
   const renderRows = () => {
@@ -269,7 +446,7 @@ function RankedListAnswer({ answer, onFollowup }: { answer: StructuredAnswer; on
   const totalRows = section?.rows ? (section.rows as unknown[]).length : answer.highlights.length;
 
   return (
-    <CardShell>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
       <div className="px-5 py-4 border-b border-ocean-50/70">
         <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
         {answer.summary && <p className="text-xs text-slate/45 mt-1">{answer.summary}</p>}
@@ -297,11 +474,11 @@ function RankedListAnswer({ answer, onFollowup }: { answer: StructuredAnswer; on
 
 // ── TableAnswer ───────────────────────────────────────────────────────────────
 
-function TableAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFollowup: (q: string) => void }) {
+function TableAnswer({ answer, onFollowup }: CardExtraProps) {
   const section = answer.sections.find((s) => s.type === "table" && s.rows && s.columns);
 
   return (
-    <CardShell>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
       <div className="px-5 py-4 border-b border-ocean-50/70">
         <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
         {answer.summary && <p className="text-xs text-slate/45 mt-1">{answer.summary}</p>}
@@ -364,9 +541,9 @@ function TableAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFollo
 
 // ── ComparisonAnswer ──────────────────────────────────────────────────────────
 
-function ComparisonAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFollowup: (q: string) => void }) {
+function ComparisonAnswer({ answer, onFollowup }: CardExtraProps) {
   return (
-    <CardShell>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
       <div className="px-5 py-4 border-b border-ocean-50/70">
         <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
       </div>
@@ -402,7 +579,7 @@ function ComparisonAnswer({ answer, onFollowup }: { answer: StructuredAnswer; on
 
 // ── NoDataAnswer ──────────────────────────────────────────────────────────────
 
-function NoDataAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFollowup: (q: string) => void }) {
+function NoDataAnswer({ answer, onFollowup }: CardExtraProps) {
   return (
     <CardShell>
       <div className="px-5 py-8 text-center">
@@ -455,8 +632,9 @@ export function AnswerCard({ answer, onFollowup, timestamp }: AnswerCardProps) {
   }
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="flex flex-col items-start gap-1 w-full">
       {card}
+      <DebugPanel answer={answer} />
       {timestamp && (
         <span className="text-[10px] text-ocean/25 ml-1">{formatTime(timestamp)}</span>
       )}

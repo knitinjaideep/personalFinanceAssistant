@@ -93,8 +93,11 @@ class QueryIntent(str, Enum):
     """Explicit query intents for the query router."""
     FEE_SUMMARY = "fee_summary"
     TRANSACTION_LOOKUP = "transaction_lookup"
+    SPENDING_BY_CATEGORY = "spending_by_category"   # "how much on groceries last month"
+    SUBSCRIPTION_LOOKUP = "subscription_lookup"     # "what subscriptions am I paying"
     BALANCE_LOOKUP = "balance_lookup"
     HOLDINGS_LOOKUP = "holdings_lookup"
+    HOLDINGS_TOTAL = "holdings_total"               # "what is my total invested amount"
     CASH_FLOW_SUMMARY = "cash_flow_summary"
     DOCUMENT_AVAILABILITY = "document_availability"
     INSTITUTION_COVERAGE = "institution_coverage"
@@ -137,8 +140,11 @@ BANKING_ACCOUNT_TYPES: frozenset[AccountType] = frozenset({
 INTENT_QUERY_PATH: dict[QueryIntent, QueryPath] = {
     QueryIntent.FEE_SUMMARY: QueryPath.SQL,
     QueryIntent.TRANSACTION_LOOKUP: QueryPath.SQL,
+    QueryIntent.SPENDING_BY_CATEGORY: QueryPath.SQL,
+    QueryIntent.SUBSCRIPTION_LOOKUP: QueryPath.SQL,
     QueryIntent.BALANCE_LOOKUP: QueryPath.SQL,
     QueryIntent.HOLDINGS_LOOKUP: QueryPath.SQL,
+    QueryIntent.HOLDINGS_TOTAL: QueryPath.SQL,
     QueryIntent.CASH_FLOW_SUMMARY: QueryPath.SQL,
     QueryIntent.DOCUMENT_AVAILABILITY: QueryPath.SQL,
     QueryIntent.INSTITUTION_COVERAGE: QueryPath.SQL,
