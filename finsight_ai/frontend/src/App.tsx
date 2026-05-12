@@ -1,39 +1,89 @@
 import { Toaster } from "react-hot-toast";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { useAppStore } from "./store/appStore";
+import { Sidebar } from "./components/layout/Sidebar";
+import { OverviewPage } from "./pages/OverviewPage";
+import { BankingPage } from "./pages/BankingPage";
+import { InvestmentsPage } from "./pages/InvestmentsPage";
+import { SubscriptionsPage } from "./pages/SubscriptionsPage";
+import { FeesPage } from "./pages/FeesPage";
+import { DocumentsPage } from "./pages/DocumentsPage";
 import { ChatPage } from "./pages/ChatPage";
+
+const pageVariants = {
+  hidden: { opacity: 0, y: 8 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.28, ease: "easeOut" as const } },
+  exit:   { opacity: 0, y: -4, transition: { duration: 0.18, ease: "easeIn" as const } },
+};
+
+function PageContent() {
+  const { activePage } = useAppStore();
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={activePage}
+        variants={pageVariants}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
+        className="flex-1 min-h-0 flex flex-col"
+      >
+        {activePage === "overview"       && <OverviewPage />}
+        {activePage === "banking"        && <BankingPage />}
+        {activePage === "investments"    && <InvestmentsPage />}
+        {activePage === "subscriptions"  && <SubscriptionsPage />}
+        {activePage === "fees"           && <FeesPage />}
+        {activePage === "documents"      && <DocumentsPage />}
+        {activePage === "chat"           && <ChatPage />}
+      </motion.div>
+    </AnimatePresence>
+  );
+}
 
 export default function App() {
   return (
     <div
-      className="min-h-screen w-full flex items-center justify-center p-4 lg:p-6 overflow-hidden"
+      className="min-h-screen w-full flex items-center justify-center overflow-hidden"
       style={{
-        background: "radial-gradient(ellipse at 50% 30%, #1a5e7a 0%, #0B3C5D 45%, #061e2f 100%)",
+        background: "radial-gradient(ellipse at 40% 20%, #0f3d55 0%, #071826 55%, #040e18 100%)",
+        padding: "20px",
       }}
     >
+      {/* Outer shell — fills viewport with slight margin */}
       <motion.div
         initial={{ opacity: 0, scale: 0.985, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full flex flex-col"
+        className="w-full flex"
         style={{
-          maxWidth: "860px",
-          height: "calc(100vh - 48px)",
-          borderRadius: "28px",
+          height: "calc(100vh - 40px)",
+          maxWidth: "1400px",
+          borderRadius: "20px",
           overflow: "hidden",
-          background: "linear-gradient(160deg, rgba(240,249,252,0.97) 0%, rgba(248,253,255,0.99) 100%)",
-          border: "1px solid rgba(255,255,255,0.07)",
           boxShadow:
-            "0 40px 120px rgba(4,14,26,0.65), 0 8px 32px rgba(4,14,26,0.40), 0 0 0 1px rgba(255,255,255,0.04)",
+            "0 48px 140px rgba(2,8,18,0.75), 0 8px 32px rgba(2,8,18,0.50), 0 0 0 1px rgba(255,255,255,0.05)",
         }}
       >
-        <ChatPage />
+        {/* Left sidebar — dark navy panel */}
+        <Sidebar />
+
+        {/* Right content — light glass panel */}
+        <div
+          className="flex-1 flex flex-col min-w-0"
+          style={{
+            background: "linear-gradient(160deg, rgba(240,249,252,0.97) 0%, rgba(248,253,255,0.99) 100%)",
+            borderLeft: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <PageContent />
+        </div>
       </motion.div>
 
       <Toaster
         position="top-right"
         toastOptions={{
           style: {
-            borderRadius: "16px",
+            borderRadius: "14px",
             background: "rgba(255,255,255,0.96)",
             backdropFilter: "blur(16px)",
             color: "#0B3C5D",

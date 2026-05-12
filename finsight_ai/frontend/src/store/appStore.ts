@@ -14,10 +14,18 @@ export interface IngestionJob {
   started_at: number;
 }
 
+export type ActivePage =
+  | "overview"
+  | "banking"
+  | "investments"
+  | "subscriptions"
+  | "fees"
+  | "documents"
+  | "chat";
+
 interface AppState {
-  // Kept for backward compat with Sidebar component
-  activePage: "home" | "chat";
-  setActivePage: (page: "home" | "chat") => void;
+  activePage: ActivePage;
+  setActivePage: (page: ActivePage) => void;
 
   chatHistory: ChatMessage[];
   addChatMessage: (message: ChatMessage) => void;
@@ -30,7 +38,7 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  activePage: "chat",
+  activePage: "overview",
   setActivePage: (page) => set({ activePage: page }),
 
   chatHistory: [],
