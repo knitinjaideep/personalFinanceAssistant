@@ -17,8 +17,7 @@ export default function App() {
         className="w-full flex flex-col"
         style={{
           maxWidth: "860px",
-          minHeight: "calc(100vh - 48px)",
-          maxHeight: "calc(100vh - 48px)",
+          height: "calc(100vh - 48px)",
           borderRadius: "28px",
           overflow: "hidden",
           background: "linear-gradient(160deg, rgba(240,249,252,0.97) 0%, rgba(248,253,255,0.99) 100%)",

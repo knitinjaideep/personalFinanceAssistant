@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Send, Trash2, Loader2, Sparkles, Upload, FileText, Lock, CheckCircle2, Layers } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Send, Trash2, Loader2, Sparkles, Upload, FileText, Lock, CheckCircle2, Layers, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../api/client";
 import { useAppStore } from "../store/appStore";
@@ -134,9 +134,9 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
 // ── Message item ──────────────────────────────────────────────────────────────
 
 function MessageItem({ message, onFollowup }: { message: ChatMessage; onFollowup: (q: string) => void }) {
-  if (message.role === "user") return <ChatBubble role="user" content={message.content} />;
-  if (message.answer) return <AnswerCard answer={message.answer} onFollowup={onFollowup} />;
-  return <ChatBubble role="assistant" content={message.content} />;
+  if (message.role === "user") return <ChatBubble role="user" content={message.content} timestamp={message.timestamp} />;
+  if (message.answer) return <AnswerCard answer={message.answer} onFollowup={onFollowup} timestamp={message.timestamp} />;
+  return <ChatBubble role="assistant" content={message.content} timestamp={message.timestamp} />;
 }
 
 // ── Ingestion status badge ────────────────────────────────────────────────────
@@ -189,19 +189,44 @@ function IngestionBadge() {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+// How close to the bottom (px) before we consider the user "at the bottom"
+const SCROLL_THRESHOLD = 80;
+
 export function ChatPage() {
   const { chatHistory, addChatMessage, clearChat } = useAppStore();
-  const [input, setInput]         = useState("");
-  const [loading, setLoading]     = useState(false);
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const [input, setInput]               = useState("");
+  const [loading, setLoading]           = useState(false);
+  const [uploadOpen, setUploadOpen]     = useState(false);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
-  const [docsOpen, setDocsOpen]   = useState(false);
-  const messagesEndRef             = useRef<HTMLDivElement>(null);
-  const textareaRef                = useRef<HTMLTextAreaElement>(null);
+  const [docsOpen, setDocsOpen]         = useState(false);
+  const [showJumpBtn, setShowJumpBtn]   = useState(false);
+  const messagesEndRef                  = useRef<HTMLDivElement>(null);
+  const scrollContainerRef             = useRef<HTMLDivElement>(null);
+  const textareaRef                    = useRef<HTMLTextAreaElement>(null);
 
+  const isNearBottom = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
+  // Auto-scroll only when already near the bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatHistory, loading]);
+    if (isNearBottom()) scrollToBottom();
+  }, [chatHistory, loading, isNearBottom, scrollToBottom]);
+
+  // Track scroll position to show/hide "Jump to latest"
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const onScroll = () => setShowJumpBtn(!isNearBottom());
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [isNearBottom]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -245,7 +270,7 @@ export function ChatPage() {
   const canSend = input.trim().length > 0 && !loading;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: -6 }}
@@ -355,22 +380,48 @@ export function ChatPage() {
       </motion.div>
 
       {/* ── Messages ───────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="max-w-2xl mx-auto space-y-5">
-          {chatHistory.length === 0 ? (
-            <ChatEmptyState onQuestion={send} />
-          ) : (
-            chatHistory.map((msg, i) => (
-              <MessageItem key={i} message={msg} onFollowup={send} />
-            ))
-          )}
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={scrollContainerRef}
+          className="h-full overflow-y-auto px-6 py-6"
+        >
+          <div className="max-w-2xl mx-auto space-y-5">
+            {chatHistory.length === 0 ? (
+              <ChatEmptyState onQuestion={send} />
+            ) : (
+              chatHistory.map((msg, i) => (
+                <MessageItem key={i} message={msg} onFollowup={send} />
+              ))
+            )}
 
-          <AnimatePresence>
-            {loading && <TypingIndicator />}
-          </AnimatePresence>
+            <AnimatePresence>
+              {loading && <TypingIndicator />}
+            </AnimatePresence>
 
-          <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} />
+          </div>
         </div>
+
+        {/* Jump to latest */}
+        <AnimatePresence>
+          {showJumpBtn && (
+            <motion.button
+              initial={{ opacity: 0, y: 8, scale: 0.92 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.92 }}
+              transition={{ duration: 0.18 }}
+              onClick={() => scrollToBottom()}
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold text-white shadow-lg"
+              style={{
+                background: "linear-gradient(135deg, #FF7A5A, #FFA38F)",
+                boxShadow: "0 4px 16px rgba(255,122,90,0.40)",
+              }}
+            >
+              <ChevronDown size={13} />
+              Jump to latest
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* ── Input bar ──────────────────────────────────────────────────────── */}

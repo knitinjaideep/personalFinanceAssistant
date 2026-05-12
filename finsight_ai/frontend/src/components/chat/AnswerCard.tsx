@@ -425,20 +425,41 @@ function NoDataAnswer({ answer, onFollowup }: { answer: StructuredAnswer; onFoll
 
 // ── Router ────────────────────────────────────────────────────────────────────
 
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 export interface AnswerCardProps {
   answer: StructuredAnswer;
   onFollowup: (q: string) => void;
+  timestamp?: string;
 }
 
-export function AnswerCard({ answer, onFollowup }: AnswerCardProps) {
-  if (answer.answer_type === "no_data")   return <NoDataAnswer   answer={answer} onFollowup={onFollowup} />;
-  if (answer.answer_type === "numeric")   return <MetricAnswer   answer={answer} onFollowup={onFollowup} />;
-  if (answer.answer_type === "comparison") return <ComparisonAnswer answer={answer} onFollowup={onFollowup} />;
-  if (answer.answer_type === "table") {
+export function AnswerCard({ answer, onFollowup, timestamp }: AnswerCardProps) {
+  let card: React.ReactNode;
+
+  if (answer.answer_type === "no_data") {
+    card = <NoDataAnswer answer={answer} onFollowup={onFollowup} />;
+  } else if (answer.answer_type === "numeric") {
+    card = <MetricAnswer answer={answer} onFollowup={onFollowup} />;
+  } else if (answer.answer_type === "comparison") {
+    card = <ComparisonAnswer answer={answer} onFollowup={onFollowup} />;
+  } else if (answer.answer_type === "table") {
     const section = answer.sections.find((s) => s.type === "table" && s.columns && s.rows);
     const colCount = (section?.columns as string[] | undefined)?.length ?? 0;
-    if (colCount <= 3) return <RankedListAnswer answer={answer} onFollowup={onFollowup} />;
-    return <TableAnswer answer={answer} onFollowup={onFollowup} />;
+    card = colCount <= 3
+      ? <RankedListAnswer answer={answer} onFollowup={onFollowup} />
+      : <TableAnswer answer={answer} onFollowup={onFollowup} />;
+  } else {
+    card = <SummaryAnswer answer={answer} onFollowup={onFollowup} />;
   }
-  return <SummaryAnswer answer={answer} onFollowup={onFollowup} />;
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      {card}
+      {timestamp && (
+        <span className="text-[10px] text-ocean/25 ml-1">{formatTime(timestamp)}</span>
+      )}
+    </div>
+  );
 }

@@ -4,16 +4,21 @@ import { userBubbleVariants, assistantBubbleVariants } from "../../design/motion
 interface ChatBubbleProps {
   role: "user" | "assistant";
   content: string;
+  timestamp?: string;
 }
 
-export function ChatBubble({ role, content }: ChatBubbleProps) {
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function ChatBubble({ role, content, timestamp }: ChatBubbleProps) {
   if (role === "user") {
     return (
       <motion.div
         variants={userBubbleVariants}
         initial="hidden"
         animate="visible"
-        className="flex justify-end"
+        className="flex flex-col items-end gap-1"
       >
         <div
           className="max-w-lg px-4 py-3 rounded-3xl rounded-br-lg text-white text-sm leading-relaxed"
@@ -24,6 +29,9 @@ export function ChatBubble({ role, content }: ChatBubbleProps) {
         >
           {content}
         </div>
+        {timestamp && (
+          <span className="text-[10px] text-ocean/25 mr-1">{formatTime(timestamp)}</span>
+        )}
       </motion.div>
     );
   }
@@ -33,7 +41,7 @@ export function ChatBubble({ role, content }: ChatBubbleProps) {
       variants={assistantBubbleVariants}
       initial="hidden"
       animate="visible"
-      className="flex justify-start"
+      className="flex flex-col items-start gap-1"
     >
       <div
         className="max-w-2xl px-4 py-3 rounded-3xl rounded-bl-lg text-sm text-ocean-deep leading-relaxed"
@@ -47,6 +55,9 @@ export function ChatBubble({ role, content }: ChatBubbleProps) {
       >
         {content}
       </div>
+      {timestamp && (
+        <span className="text-[10px] text-ocean/25 ml-1">{formatTime(timestamp)}</span>
+      )}
     </motion.div>
   );
 }

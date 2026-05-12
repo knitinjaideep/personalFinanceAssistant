@@ -35,7 +35,12 @@ export const useAppStore = create<AppState>((set) => ({
 
   chatHistory: [],
   addChatMessage: (message) =>
-    set((state) => ({ chatHistory: [...state.chatHistory, message] })),
+    set((state) => ({
+      chatHistory: [
+        ...state.chatHistory,
+        { timestamp: new Date().toISOString(), ...message },
+      ],
+    })),
   clearChat: () => set({ chatHistory: [] }),
 
   ingestionJobs: [],
