@@ -21,6 +21,7 @@ from app.domain.entities import (
     ParsedStatement,
 )
 from app.parsers.base import InstitutionParser, ParsedDocument
+from app.parsers.categorize import categorize
 
 logger = structlog.get_logger(__name__)
 
@@ -165,12 +166,13 @@ def _extract_transactions(doc: ParsedDocument, is_credit: bool) -> list[Extracte
                     amount = Decimal(raw_amt.replace("(", "-").replace(")", ""))
                     desc = str(row[desc_col]).strip() if desc_col < len(row) else ""
 
+                    # Classify on the raw statement sign, then store canonical sign.
                     txn_type = _classify_type(desc, amount, is_credit)
                     transactions.append(ExtractedTransaction(
                         transaction_date=txn_date,
                         description=desc,
                         merchant_name=_clean_merchant(desc),
-                        amount=amount,
+                        amount=_canonical_amount(amount, is_credit),
                         transaction_type=txn_type,
                         category=_categorize(desc),
                         source_page=page.page_number,
@@ -279,7 +281,7 @@ def _extract_transactions_from_text(
                 transaction_date=txn_date,
                 description=desc,
                 merchant_name=_clean_merchant(desc),
-                amount=amount,
+                amount=_canonical_amount(amount, is_credit),
                 transaction_type=txn_type,
                 category=_categorize(desc),
                 source_page=page_number,
@@ -301,6 +303,18 @@ def _classify_type(desc: str, amount: Decimal, is_credit: bool) -> str:
     if is_credit:
         return "purchase" if amount > 0 else "payment"
     return "withdrawal" if amount < 0 else "deposit"
+
+
+def _canonical_amount(amount: Decimal, is_credit: bool) -> Decimal:
+    """Normalize to the app's canonical sign convention: negative = money out.
+
+    On a Chase CREDIT-CARD statement a purchase prints as a positive number and a
+    payment/credit as negative — the opposite of the canonical convention used by
+    the spending/cash-flow SQL (which treats negative amounts as spending, matching
+    the Amex parser). So for credit cards we flip the sign. Checking/bank rows
+    already follow the canonical convention (debits negative) and are left as-is.
+    """
+    return -amount if is_credit else amount
 
 
 def _extract_balances(doc: ParsedDocument, period_end: date | None) -> list[ExtractedBalance]:
@@ -333,8 +347,6 @@ def _clean_merchant(description: str) -> str:
 
 
 def _categorize(description: str) -> str | None:
-    desc_lower = description.lower()
-    for category, keywords in _CATEGORY_KEYWORDS.items():
-        if any(kw in desc_lower for kw in keywords):
-            return category
-    return "other"
+    # Shared, comprehensive categorizer (groceries/dining/gas-aware). The local
+    # _CATEGORY_KEYWORDS map is kept for reference/back-compat but no longer used.
+    return categorize(description)

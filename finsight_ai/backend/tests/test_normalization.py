@@ -106,3 +106,18 @@ class TestTimeRange:
     def test_empty(self):
         assert normalize_timerange(None) == (None, None, "")
         assert normalize_timerange("whatever") == (None, None, "")
+
+
+# ── Account normalization ─────────────────────────────────────────────────────
+
+def test_normalize_account_aliases_and_filler():
+    from app.services.normalization import normalize_account
+    assert normalize_account("amazon prime card") == "prime"
+    assert normalize_account("amazon") == "prime"
+    assert normalize_account("prime visa") == "prime"
+    assert normalize_account("blue cash") == "blue cash"
+    assert normalize_account("sapphire preferred") == "sapphire"
+    assert normalize_account("my chase card") == "chase"
+    assert normalize_account("the account") is None
+    assert normalize_account(None) is None
+    assert normalize_account("") is None

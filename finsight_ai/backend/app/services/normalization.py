@@ -120,6 +120,53 @@ def category_display_name(canonical: str | None) -> str | None:
     return _CATEGORY_DISPLAY.get(canonical.lower(), canonical.title())
 
 
+# ── Account-name normalization ────────────────────────────────────────────────
+# Account/card names are data-driven (set at upload via account_product), so we
+# can't enumerate them. Instead we produce a clean search token that the SQL
+# layer matches against accounts.account_name with LIKE. We strip generic filler
+# words ("card", "account") and resolve a few well-known aliases.
+
+_ACCOUNT_FILLER = {
+    "card", "cards", "account", "acct", "the", "my", "credit", "statement",
+    "visa", "mastercard", "amex",
+}
+
+# Known aliases → the canonical token most likely to appear in account_name.
+_ACCOUNT_ALIASES: dict[str, str] = {
+    "amazon prime": "prime",
+    "amazon": "prime",          # the Amazon card is the Prime Visa
+    "prime visa": "prime",
+    "blue cash everyday": "blue cash",
+    "sapphire preferred": "sapphire",
+    "sapphire reserve": "sapphire",
+    "freedom unlimited": "freedom",
+}
+
+
+def normalize_account(value: str | None) -> str | None:
+    """Return a lowercased search token for an account/card name, or None.
+
+    The token is matched with LIKE against accounts.account_name, so partial
+    names work ("prime" matches "Prime Visa").
+    """
+    if not value:
+        return None
+    text = value.strip().lower()
+    if not text:
+        return None
+
+    # Resolve a known alias first (longest match wins).
+    for alias in sorted(_ACCOUNT_ALIASES, key=len, reverse=True):
+        if alias in text:
+            return _ACCOUNT_ALIASES[alias]
+
+    # Otherwise strip filler words and keep the distinctive remainder.
+    tokens = [t for t in re.split(r"[\s_-]+", text) if t and t not in _ACCOUNT_FILLER]
+    if not tokens:
+        return None
+    return " ".join(tokens)
+
+
 # ── Time-range normalization ──────────────────────────────────────────────────
 
 _MONTHS: dict[str, int] = {

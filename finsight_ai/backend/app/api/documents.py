@@ -559,6 +559,95 @@ async def document_stats():
     return stats
 
 
+# ── Ingestion health & reprocessing ──────────────────────────────────────────
+# NOTE: these literal paths are declared BEFORE the `/{doc_id}` route so they are
+# not captured as a document id.
+
+@router.get("/ingestion-health")
+async def ingestion_health_report():
+    """Validation report: aggregate completeness metrics + per-document issues."""
+    from app.services.reprocess_service import ingestion_health
+    return await ingestion_health()
+
+
+# In-memory reprocess-job tracker (single process). Lets the UI poll progress.
+_REPROCESS_JOBS: dict[str, dict[str, Any]] = {}
+
+
+def _new_job(scope: str, doc_ids: list[str]) -> str:
+    job_id = str(uuid.uuid4())
+    _REPROCESS_JOBS[job_id] = {
+        "job_id": job_id,
+        "scope": scope,
+        "total": len(doc_ids),
+        "completed": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "status": "running" if doc_ids else "done",
+        "results": [],
+        "started_at": datetime.utcnow().isoformat(),
+    }
+    return job_id
+
+
+async def _run_reprocess_job(job_id: str, doc_ids: list[str]) -> None:
+    from app.services.reprocess_service import reprocess_document
+
+    job = _REPROCESS_JOBS[job_id]
+    for doc_id in doc_ids:
+        try:
+            result = await reprocess_document(doc_id)
+            job["results"].append(result.to_dict())
+            job["succeeded" if result.ok else "failed"] += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.error("reprocess_job.doc_failed", job_id=job_id, doc_id=doc_id, error=str(exc))
+            job["failed"] += 1
+        finally:
+            job["completed"] += 1
+    job["status"] = "done"
+    job["finished_at"] = datetime.utcnow().isoformat()
+    logger.info("reprocess_job.done", job_id=job_id, scope=job["scope"],
+                succeeded=job["succeeded"], failed=job["failed"])
+
+
+@router.get("/reprocess-jobs/{job_id}")
+async def reprocess_job_status(job_id: str):
+    """Poll the progress of a batch reprocess job."""
+    job = _REPROCESS_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, f"Reprocess job {job_id} not found")
+    return job
+
+
+async def _start_batch(scope: str, doc_ids: list[str]) -> dict[str, Any]:
+    job_id = _new_job(scope, doc_ids)
+    if doc_ids:
+        asyncio.create_task(_run_reprocess_job(job_id, doc_ids))
+    logger.info("reprocess.batch_started", scope=scope, count=len(doc_ids), job_id=job_id)
+    return {"job_id": job_id, "scope": scope, "count": len(doc_ids), "document_ids": doc_ids}
+
+
+@router.post("/reprocess-all")
+async def reprocess_all():
+    """Reprocess every document (background job; poll /reprocess-jobs/{id})."""
+    from app.services.reprocess_service import all_document_ids
+    return await _start_batch("all", await all_document_ids())
+
+
+@router.post("/reprocess-failed")
+async def reprocess_failed():
+    """Reprocess only documents whose status is failed."""
+    from app.services.reprocess_service import failed_document_ids
+    return await _start_batch("failed", await failed_document_ids())
+
+
+@router.post("/reprocess-missing-data")
+async def reprocess_missing_data():
+    """Reprocess parsed-but-incomplete documents (missing transactions/chunks/etc.)."""
+    from app.services.reprocess_service import missing_data_document_ids
+    return await _start_batch("missing-data", await missing_data_document_ids())
+
+
 @router.get("/{doc_id}", response_model=DocumentSummary)
 async def get_document(doc_id: str):
     """Get a specific document by ID."""
@@ -568,6 +657,25 @@ async def get_document(doc_id: str):
         except Exception:
             raise HTTPException(404, f"Document {doc_id} not found")
         return await _build_summary(session, doc)
+
+
+@router.post("/{doc_id}/reprocess")
+async def reprocess_single_document(doc_id: str):
+    """Reprocess one existing document inline and return the result.
+
+    Clears this document's stale child rows, re-runs extraction/persistence, and
+    updates status to parsed (or failed). The PDF and document row are preserved.
+    """
+    from app.services.reprocess_service import reprocess_document
+
+    async with get_session() as session:
+        try:
+            await repo.get_document(session, doc_id)
+        except Exception:
+            raise HTTPException(404, f"Document {doc_id} not found")
+
+    result = await reprocess_document(doc_id)
+    return result.to_dict()
 
 
 @router.delete("/{doc_id}")

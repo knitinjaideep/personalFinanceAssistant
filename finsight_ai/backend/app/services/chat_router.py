@@ -36,6 +36,7 @@ from app.services.intent_mapping import to_query_intent
 from app.services.normalization import (
     category_display_name,
     institution_display_name,
+    normalize_account,
     normalize_category,
     normalize_institution,
     normalize_timerange,
@@ -75,6 +76,7 @@ def _build_context(result: IntentClassificationResult, today: date | None = None
 
     inst_slug, _ = normalize_institution(ents.institution)
     category = normalize_category(ents.category)
+    account_name = normalize_account(ents.account)
 
     tr = ents.time_range
     date_from = date_to = None
@@ -86,14 +88,22 @@ def _build_context(result: IntentClassificationResult, today: date | None = None
     elif tr.value:
         date_from, date_to, label = normalize_timerange(tr.value, today=today)
 
+    # When the user names a specific card (e.g. "amazon prime card") the merchant
+    # field sometimes captures it instead of `account`. If we resolved an account
+    # name, don't also treat that same token as a spending merchant.
+    merchant = ents.merchant.lower() if ents.merchant else None
+    if account_name and merchant and account_name in merchant:
+        merchant = None
+
     return QueryContext(
         date_from=date_from,
         date_to=date_to,
         timeframe_label=label,
         category=category,
-        merchant=ents.merchant.lower() if ents.merchant else None,
+        merchant=merchant,
         institution=inst_slug,
         account_type=None,
+        account_name=account_name,
     )
 
 

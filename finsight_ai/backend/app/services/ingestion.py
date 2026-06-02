@@ -7,6 +7,7 @@ Simple, reliable, sequential pipeline. No LangGraph, no MCP.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -110,8 +111,18 @@ async def ingest_document(
         logger.info("ingest.registered", doc_id=doc_id, filename=original_filename)
 
     try:
+        log = logger.bind(
+            doc_id=doc_id,
+            filename=original_filename,
+            statement_year=statement_year,
+            statement_month=statement_month,
+            account_slug=account_slug,
+            status_before="processing",
+        )
+
         # Step 2: Parse PDF
         parsed_doc = await parse_pdf(file_path)
+        log.info("ingest.parsed", pages=parsed_doc.page_count)
 
         async with get_session() as session:
             await repo.update_document(session, doc_id, page_count=parsed_doc.page_count)
@@ -125,39 +136,57 @@ async def ingest_document(
             async with get_session() as session:
                 await repo.update_document(session, doc_id,
                     status="failed", error_message="Could not identify institution")
+            log.warning("ingest.classify_failed", status_after="failed")
             raise ClassificationError("No parser matched the document")
 
         institution_type = parser.institution_type
-        logger.info("ingest.classified", doc_id=doc_id,
-                   institution=institution_type, confidence=confidence)
+        log = log.bind(institution=institution_type, parser=type(parser).__name__)
+        log.info("ingest.classified", confidence=confidence)
 
         async with get_session() as session:
             await repo.update_document(session, doc_id, institution_type=institution_type)
 
         # Step 4: Extract structured data
         parsed_stmt = await parser.extract(parsed_doc)
-        logger.info("ingest.extracted", doc_id=doc_id,
-                   transactions=len(parsed_stmt.transactions),
-                   fees=len(parsed_stmt.fees),
-                   holdings=len(parsed_stmt.holdings),
-                   balances=len(parsed_stmt.balances))
+        log.info("ingest.extracted",
+                 account_type=parsed_stmt.account_type,
+                 account_masked=parsed_stmt.account_number_masked,
+                 period_start=str(parsed_stmt.period_start) if parsed_stmt.period_start else None,
+                 period_end=str(parsed_stmt.period_end) if parsed_stmt.period_end else None,
+                 transactions=len(parsed_stmt.transactions),
+                 fees=len(parsed_stmt.fees),
+                 holdings=len(parsed_stmt.holdings),
+                 balances=len(parsed_stmt.balances))
 
         # Step 5: Persist canonical records
         await persist_canonical(doc_id, institution_type, parsed_stmt)
+        log.info("ingest.persisted_canonical",
+                 transactions=len(parsed_stmt.transactions),
+                 fees=len(parsed_stmt.fees),
+                 balances=len(parsed_stmt.balances),
+                 holdings=len(parsed_stmt.holdings))
 
         # Step 6: Chunk and index text
-        await chunk_and_index(doc_id, institution_type, parsed_doc)
+        chunk_count = await chunk_and_index(doc_id, institution_type, parsed_doc)
+        log.info("ingest.chunked", chunks=chunk_count)
 
         # Step 7: Optionally generate embeddings
+        embedded = 0
         if settings.search.vector_search_enabled:
-            await _generate_embeddings(doc_id)
+            embedded = await _generate_embeddings(doc_id)
+        log.info("ingest.embedded_count", embeddings=embedded)
 
         # Mark complete
         async with get_session() as session:
             await repo.update_document(session, doc_id,
                 status="parsed", processed_time=datetime.utcnow())
 
-        logger.info("ingest.complete", doc_id=doc_id)
+        log.info("ingest.complete", status_after="parsed",
+                 transactions=len(parsed_stmt.transactions),
+                 fees=len(parsed_stmt.fees),
+                 balances=len(parsed_stmt.balances),
+                 holdings=len(parsed_stmt.holdings),
+                 chunks=chunk_count, embeddings=embedded)
         return doc_id
 
     except (DocumentParseError, ClassificationError, ExtractionError) as exc:
@@ -173,6 +202,20 @@ async def ingest_document(
         raise DocumentIngestionError(f"Ingestion failed: {exc}") from exc
 
 
+def _account_name_from_product(account_product: str | None) -> str | None:
+    """Derive a card/account name from a document's account_product label.
+
+    "Chase — Prime Visa" → "Prime Visa"; "American Express — Blue Cash" → "Blue Cash".
+    Returns None when there's nothing usable.
+    """
+    if not account_product:
+        return None
+    # Split on em/en dash or hyphen-with-spaces; take the trailing product segment.
+    parts = re.split(r"\s*[—–]\s*|\s+-\s+", account_product)
+    tail = parts[-1].strip() if parts else account_product.strip()
+    return tail or None
+
+
 async def persist_canonical(doc_id: str, institution_type: str, stmt: ParsedStatement) -> None:
     """Persist extracted data into canonical tables."""
     async with get_session() as session:
@@ -182,6 +225,13 @@ async def persist_canonical(doc_id: str, institution_type: str, stmt: ParsedStat
             INSTITUTION_NAMES.get(institution_type, institution_type.title())
         )
 
+        # Resolve a stable account name. The parser rarely reads a masked card
+        # number for credit cards, so fall back to the document's account_product
+        # (set at upload time) — this keeps Prime / Freedom / Sapphire as distinct
+        # accounts instead of collapsing into one "unknown" Chase account.
+        doc = await repo.get_document(session, doc_id)
+        account_name = stmt.account_name or _account_name_from_product(doc.account_product)
+
         # Get or create account
         acct = await repo.get_or_create_account(
             session,
@@ -189,7 +239,7 @@ async def persist_canonical(doc_id: str, institution_type: str, stmt: ParsedStat
             institution_type=institution_type,
             account_number_masked=stmt.account_number_masked or "unknown",
             account_type=stmt.account_type,
-            account_name=stmt.account_name,
+            account_name=account_name,
         )
 
         # Create statement
@@ -296,8 +346,8 @@ async def persist_canonical(doc_id: str, institution_type: str, stmt: ParsedStat
         logger.info("ingest.persisted", doc_id=doc_id, statement_id=statement.id)
 
 
-async def chunk_and_index(doc_id: str, institution_type: str, parsed_doc) -> None:
-    """Chunk document text and index in FTS5."""
+async def chunk_and_index(doc_id: str, institution_type: str, parsed_doc) -> int:
+    """Chunk document text and index in FTS5. Returns number of chunks created."""
     chunks = []
     for page in parsed_doc.pages:
         text = page.raw_text
@@ -322,7 +372,7 @@ async def chunk_and_index(doc_id: str, institution_type: str, parsed_doc) -> Non
             start += CHUNK_SIZE - CHUNK_OVERLAP
 
     if not chunks:
-        return
+        return 0
 
     # Save chunks to DB
     async with get_session() as session:
@@ -339,10 +389,15 @@ async def chunk_and_index(doc_id: str, institution_type: str, parsed_doc) -> Non
         )
 
     logger.info("ingest.indexed", doc_id=doc_id, chunks=len(chunks))
+    return len(chunks)
 
 
-async def _generate_embeddings(doc_id: str) -> None:
-    """Generate vector embeddings for document chunks (optional)."""
+async def _generate_embeddings(doc_id: str) -> int:
+    """Generate vector embeddings for document chunks (optional).
+
+    Returns the number of chunks embedded. Embedding failure is non-fatal and
+    returns 0 — the document is still considered parsed (FTS search still works).
+    """
     try:
         from app.services.llm import embed as embed_texts
 
@@ -350,7 +405,7 @@ async def _generate_embeddings(doc_id: str) -> None:
             chunks = await repo.get_chunks_for_document(session, doc_id)
 
         if not chunks:
-            return
+            return 0
 
         # Batch embed
         texts = [c.content for c in chunks]
@@ -362,14 +417,18 @@ async def _generate_embeddings(doc_id: str) -> None:
             all_embeddings.extend(embeddings)
 
         # Store embeddings
+        embedded = 0
         async with get_session() as session:
             for chunk, emb in zip(chunks, all_embeddings):
                 chunk.embedding = json.dumps(emb)
                 session.add(chunk)
+                embedded += 1
             await session.flush()
 
-        logger.info("ingest.embedded", doc_id=doc_id, chunks=len(chunks))
+        logger.info("ingest.embedded", doc_id=doc_id, chunks=embedded)
+        return embedded
 
     except Exception as exc:
         # Embedding failure is non-fatal
         logger.warning("ingest.embedding_failed", doc_id=doc_id, error=str(exc))
+        return 0

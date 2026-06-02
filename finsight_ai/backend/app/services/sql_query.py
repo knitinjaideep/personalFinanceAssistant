@@ -114,6 +114,19 @@ def _and(clause: str) -> str:
     return f" AND {clause}" if clause else ""
 
 
+def _account_clause(ctx: QueryContext, params: dict, alias: str = "a") -> str:
+    """Return an account-name WHERE fragment (with leading AND), or ''.
+
+    Matches accounts.account_name with LIKE so a partial name from the user
+    ("prime") scopes results to that card ("Prime Visa"). Requires the query to
+    join the accounts table as `alias`.
+    """
+    if not ctx.account_name:
+        return ""
+    params["account_name"] = f"%{ctx.account_name.lower()}%"
+    return f" AND LOWER({alias}.account_name) LIKE :account_name"
+
+
 # ── Handler: spending_by_category ────────────────────────────────────────────
 
 async def _spending_by_category(question: str, ctx: QueryContext) -> SQLResult:
@@ -135,10 +148,13 @@ async def _spending_by_category(question: str, ctx: QueryContext) -> SQLResult:
         institution_frag = " AND LOWER(i.institution_type) = :institution"
         params["institution"] = ctx.institution.lower()
 
+    account_frag = _account_clause(ctx, params)
+
     sql = f"""
         SELECT
             COALESCE(t.category, 'other') AS category,
             i.name                        AS institution,
+            a.account_name                AS account_name,
             COUNT(*)                      AS transaction_count,
             ROUND(SUM(ABS(CAST(t.amount AS REAL))), 2) AS total_spent,
             ROUND(AVG(ABS(CAST(t.amount AS REAL))), 2) AS avg_per_txn,
@@ -149,8 +165,8 @@ async def _spending_by_category(question: str, ctx: QueryContext) -> SQLResult:
         JOIN institutions  i ON a.institution_id = i.id
         WHERE CAST(t.amount AS REAL) < 0
           AND t.transaction_type NOT IN ('transfer', 'payment', 'refund')
-          {_and(date_frag)}{category_frag}{merchant_frag}{institution_frag}
-        GROUP BY t.category, i.name
+          {_and(date_frag)}{category_frag}{merchant_frag}{institution_frag}{account_frag}
+        GROUP BY t.category, i.name, a.account_name
         ORDER BY total_spent DESC
         LIMIT 30
     """
@@ -162,10 +178,11 @@ async def _spending_by_category(question: str, ctx: QueryContext) -> SQLResult:
     total = sum(float(r.get("total_spent") or 0) for r in rows)
     period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
     cat_label = f" on {ctx.category}" if ctx.category else ""
+    acct_label = f" with {ctx.account_name.title()}" if ctx.account_name else ""
     return {
         "rows": rows,
-        "columns": ["category", "institution", "transaction_count", "total_spent", "avg_per_txn", "earliest", "latest"],
-        "summary": f"Total spending{cat_label}{period}: ${total:,.2f} across {len(rows)} categories.",
+        "columns": ["category", "institution", "account_name", "transaction_count", "total_spent", "avg_per_txn", "earliest", "latest"],
+        "summary": f"Total spending{cat_label}{acct_label}{period}: ${total:,.2f} across {len(rows)} categories.",
         "sql_used": sql.strip(),
     }
 
@@ -279,6 +296,7 @@ async def _transaction_lookup(question: str, ctx: QueryContext) -> SQLResult:
         params["institution"] = ctx.institution.lower()
 
     recurring_frag = " AND t.is_recurring = 1" if ctx.is_recurring_only else ""
+    account_frag = _account_clause(ctx, params)
 
     params["limit"] = ctx.limit
 
@@ -291,12 +309,13 @@ async def _transaction_lookup(question: str, ctx: QueryContext) -> SQLResult:
             t.transaction_type,
             COALESCE(t.category, 'other')            AS category,
             i.name                                   AS institution,
+            a.account_name,
             a.account_type
         FROM transactions t
         JOIN accounts     a ON t.account_id     = a.id
         JOIN institutions i ON a.institution_id = i.id
         WHERE 1=1
-          {_and(date_frag)}{category_frag}{merchant_frag}{institution_frag}{recurring_frag}
+          {_and(date_frag)}{category_frag}{merchant_frag}{institution_frag}{recurring_frag}{account_frag}
         ORDER BY t.transaction_date DESC
         LIMIT :limit
     """
@@ -306,10 +325,11 @@ async def _transaction_lookup(question: str, ctx: QueryContext) -> SQLResult:
         rows = [dict(r._mapping) for r in result.fetchall()]
 
     period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
+    acct_label = f" on {ctx.account_name.title()}" if ctx.account_name else ""
     return {
         "rows": rows,
-        "columns": ["transaction_date", "merchant", "description", "amount", "transaction_type", "category", "institution", "account_type"],
-        "summary": f"Found {len(rows)} transactions{period}.",
+        "columns": ["transaction_date", "merchant", "description", "amount", "transaction_type", "category", "institution", "account_name", "account_type"],
+        "summary": f"Found {len(rows)} transactions{acct_label}{period}.",
         "sql_used": sql.strip(),
     }
 
@@ -330,6 +350,8 @@ async def _balance_lookup(question: str, ctx: QueryContext) -> SQLResult:
         account_type_frag = " AND LOWER(a.account_type) = :account_type"
         params["account_type"] = ctx.account_type.lower()
 
+    account_frag = _account_clause(ctx, params)
+
     sql = f"""
         SELECT
             a.account_name,
@@ -343,7 +365,7 @@ async def _balance_lookup(question: str, ctx: QueryContext) -> SQLResult:
         JOIN accounts     a ON bs.account_id    = a.id
         JOIN institutions i ON a.institution_id = i.id
         WHERE 1=1
-          {_and(date_frag)}{institution_frag}{account_type_frag}
+          {_and(date_frag)}{institution_frag}{account_type_frag}{account_frag}
         ORDER BY bs.snapshot_date DESC
         LIMIT 30
     """
@@ -495,6 +517,8 @@ async def _cash_flow_summary(question: str, ctx: QueryContext) -> SQLResult:
         institution_frag = " AND LOWER(i.institution_type) = :institution"
         params["institution"] = ctx.institution.lower()
 
+    account_frag = _account_clause(ctx, params)
+
     sql = f"""
         SELECT
             i.name       AS institution,
@@ -507,7 +531,7 @@ async def _cash_flow_summary(question: str, ctx: QueryContext) -> SQLResult:
         JOIN accounts     a ON t.account_id     = a.id
         JOIN institutions i ON a.institution_id = i.id
         WHERE 1=1
-          {_and(date_frag)}{institution_frag}
+          {_and(date_frag)}{institution_frag}{account_frag}
         GROUP BY i.name, a.account_type
         ORDER BY ABS(net_flow) DESC
     """

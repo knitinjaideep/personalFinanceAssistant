@@ -136,6 +136,7 @@ class QueryContext(BaseModel):
     merchant: str | None = None        # raw merchant keyword (lowercased)
     institution: str | None = None     # institution name keyword (lowercased)
     account_type: str | None = None    # AccountType value or None
+    account_name: str | None = None    # specific account/card name, e.g. "Prime Visa" (matched LIKE)
 
     # Flags
     is_recurring_only: bool = False

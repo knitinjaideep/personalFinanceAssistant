@@ -206,3 +206,32 @@ async def _fake_build_answer(question, intent, path, confidence, ctx, *, req_id=
         answer_type="prose", title="t", summary="generated answer",
         intent=intent.value, query_path=path.value, confidence=confidence,
     )
+
+
+def test_build_context_resolves_account_name():
+    from datetime import date
+    from app.domain.classification import (
+        ChatIntent, DataSource, ExtractedEntities, IntentClassificationResult, TimeRange,
+    )
+    cls = IntentClassificationResult(
+        intent=ChatIntent.SPENDING_SUMMARY, confidence=0.9,
+        entities=ExtractedEntities(account="amazon prime card",
+                                   time_range=TimeRange(type="absolute", value="2026")),
+        data_source=DataSource.SQL,
+    )
+    ctx = chat_router._build_context(cls, today=date(2026, 6, 2))
+    assert ctx.account_name == "prime"
+
+
+def test_build_context_account_token_not_duplicated_as_merchant():
+    from app.domain.classification import (
+        ChatIntent, DataSource, ExtractedEntities, IntentClassificationResult,
+    )
+    cls = IntentClassificationResult(
+        intent=ChatIntent.SPENDING_SUMMARY, confidence=0.9,
+        entities=ExtractedEntities(account="prime", merchant="prime"),
+        data_source=DataSource.SQL,
+    )
+    ctx = chat_router._build_context(cls)
+    assert ctx.account_name == "prime"
+    assert ctx.merchant is None  # don't also filter by merchant=prime

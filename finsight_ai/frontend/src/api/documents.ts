@@ -1,8 +1,33 @@
 import { api } from "./client";
-import type { DocumentStats, DocumentSummary, DocumentUploadResponse } from "../types";
+import type {
+  DocumentStats,
+  DocumentSummary,
+  DocumentUploadResponse,
+  IngestionHealth,
+  ReprocessBatchStart,
+  ReprocessJob,
+  ReprocessResult,
+} from "../types";
 
 export const documentsApi = {
   stats: (): Promise<DocumentStats> => api.get<DocumentStats>("/documents/stats"),
+
+  ingestionHealth: (): Promise<IngestionHealth> =>
+    api.get<IngestionHealth>("/documents/ingestion-health"),
+
+  // Single-document reprocess (runs inline, returns the result).
+  reprocess: (documentId: string): Promise<ReprocessResult> =>
+    api.post<ReprocessResult>(`/documents/${documentId}/reprocess`, {}),
+
+  // Batch reprocess — returns a job to poll via reprocessJob().
+  reprocessAll: (): Promise<ReprocessBatchStart> =>
+    api.post<ReprocessBatchStart>("/documents/reprocess-all", {}),
+  reprocessFailed: (): Promise<ReprocessBatchStart> =>
+    api.post<ReprocessBatchStart>("/documents/reprocess-failed", {}),
+  reprocessMissingData: (): Promise<ReprocessBatchStart> =>
+    api.post<ReprocessBatchStart>("/documents/reprocess-missing-data", {}),
+  reprocessJob: (jobId: string): Promise<ReprocessJob> =>
+    api.get<ReprocessJob>(`/documents/reprocess-jobs/${jobId}`),
 
   upload: (file: File, sourceId?: string, year?: number): Promise<DocumentUploadResponse> => {
     const formData = new FormData();

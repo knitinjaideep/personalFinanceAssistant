@@ -30,6 +30,66 @@ export interface DocumentStats {
   failed: number;
 }
 
+export interface IngestionHealthSummary {
+  total_documents: number;
+  complete_documents: number;
+  missing_transactions: number;
+  missing_chunks: number;
+  missing_embeddings: number;
+  missing_metadata: number;
+  stuck_processing: number;
+  failed: number;
+  incomplete_documents: number;
+}
+
+export interface DocumentIssue {
+  document_id: string;
+  filename: string;
+  status: string;
+  issues: string[];
+  recommended_action: string;
+}
+
+export interface IngestionHealth {
+  summary: IngestionHealthSummary;
+  documents: DocumentIssue[];
+}
+
+export interface ReprocessResult {
+  document_id: string;
+  filename: string;
+  status_before: string;
+  status_after: string;
+  ok: boolean;
+  transactions: number;
+  fees: number;
+  balances: number;
+  holdings: number;
+  chunks: number;
+  embeddings: number;
+  error: string | null;
+}
+
+export interface ReprocessJob {
+  job_id: string;
+  scope: string;
+  total: number;
+  completed: number;
+  succeeded: number;
+  failed: number;
+  status: "running" | "done";
+  results: ReprocessResult[];
+  started_at: string;
+  finished_at?: string;
+}
+
+export interface ReprocessBatchStart {
+  job_id: string;
+  scope: string;
+  count: number;
+  document_ids: string[];
+}
+
 export interface DocumentUploadResponse {
   document_id: string;
   filename: string;

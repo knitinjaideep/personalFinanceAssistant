@@ -1,6 +1,6 @@
 import { ChevronRight, Landmark, CreditCard, Calendar } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { DocumentSummary } from "../../types";
+import type { DocumentIssue, DocumentSummary } from "../../types";
 import type {
   AccountGroup,
   InstitutionGroup,
@@ -19,6 +19,8 @@ interface Props {
   expanded: Set<string>;
   toggle: (key: string) => void;
   onChanged: () => void;
+  /** document_id → ingestion issues, for per-row "incomplete" badges. */
+  issuesByDoc?: Record<string, DocumentIssue>;
 }
 
 function Caret({ open }: { open: boolean }) {
@@ -54,6 +56,7 @@ function YearSection({
   expanded,
   toggle,
   onChanged,
+  issuesByDoc,
 }: {
   slug: string;
   account: string;
@@ -61,6 +64,7 @@ function YearSection({
   expanded: Set<string>;
   toggle: (k: string) => void;
   onChanged: () => void;
+  issuesByDoc?: Record<string, DocumentIssue>;
 }) {
   const key = yearKey(slug, account, group.year);
   const open = expanded.has(key);
@@ -77,7 +81,7 @@ function YearSection({
       </button>
       <Collapse open={open}>
         {group.docs.map((doc: DocumentSummary) => (
-          <DocumentRow key={doc.id} doc={doc} onChanged={onChanged} />
+          <DocumentRow key={doc.id} doc={doc} onChanged={onChanged} issue={issuesByDoc?.[doc.id]} />
         ))}
       </Collapse>
     </div>
@@ -90,12 +94,14 @@ function AccountSection({
   expanded,
   toggle,
   onChanged,
+  issuesByDoc,
 }: {
   slug: string;
   group: AccountGroup;
   expanded: Set<string>;
   toggle: (k: string) => void;
   onChanged: () => void;
+  issuesByDoc?: Record<string, DocumentIssue>;
 }) {
   const key = acctKey(slug, group.account);
   const open = expanded.has(key);
@@ -120,6 +126,7 @@ function AccountSection({
             expanded={expanded}
             toggle={toggle}
             onChanged={onChanged}
+            issuesByDoc={issuesByDoc}
           />
         ))}
       </Collapse>
@@ -127,7 +134,7 @@ function AccountSection({
   );
 }
 
-export function DocumentBucketAccordion({ groups, expanded, toggle, onChanged }: Props) {
+export function DocumentBucketAccordion({ groups, expanded, toggle, onChanged, issuesByDoc }: Props) {
   return (
     <div className="space-y-3">
       {groups.map((inst) => {
@@ -165,6 +172,7 @@ export function DocumentBucketAccordion({ groups, expanded, toggle, onChanged }:
                   expanded={expanded}
                   toggle={toggle}
                   onChanged={onChanged}
+                  issuesByDoc={issuesByDoc}
                 />
               ))}
             </Collapse>

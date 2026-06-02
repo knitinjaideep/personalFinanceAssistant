@@ -435,3 +435,22 @@ export function yearOptions(docs: DocumentSummary[]): number[] {
   }
   return [...years].sort((a, b) => b - a);
 }
+
+// ── Ingestion-issue labels ────────────────────────────────────────────────────
+
+const ISSUE_LABELS: Record<string, string> = {
+  zero_transactions: "No transactions extracted",
+  zero_chunks: "No text chunks",
+  missing_embeddings: "Missing embeddings",
+  missing_institution: "Unknown institution",
+  missing_month: "Missing month",
+  missing_year: "Missing year",
+  no_statement_persisted: "No statement saved",
+  stuck_processing: "Stuck processing",
+  failed: "Parsing failed",
+};
+
+/** Human-readable label for an ingestion issue code. */
+export function issueLabel(code: string): string {
+  return ISSUE_LABELS[code] ?? code.replace(/_/g, " ");
+}

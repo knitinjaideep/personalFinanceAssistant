@@ -99,7 +99,7 @@ class MorganStanleyParser(InstitutionParser):
 
         # Extract financial data from all pages
         transactions = _extract_transactions(document)
-        fees = _extract_fees(document)
+        fees = _extract_fees(document, period_end)
         holdings = _extract_holdings(document)
         balances = _extract_balances(document, period_end)
 
@@ -195,8 +195,69 @@ def _extract_transactions(doc: ParsedDocument) -> list[ExtractedTransaction]:
     return transactions
 
 
-def _extract_fees(doc: ParsedDocument) -> list[ExtractedFee]:
-    """Extract fees from fee-related sections."""
+def _extract_fees(doc: ParsedDocument, period_end: date | None = None) -> list[ExtractedFee]:
+    """Extract fees. Morgan Stanley prints fees as TEXT lines (e.g.
+    "5/7 Service Fee ADV FEE 05/01-05/31 (166.15)"), so text parsing is primary;
+    table parsing is a fallback for statements that export fee tables.
+    """
+    fees = _extract_fees_from_text(doc, period_end)
+    if fees:
+        return fees
+    return _extract_fees_from_tables(doc, period_end)
+
+
+# Fee text line: optional leading date, a description containing "fee", then a
+# trailing amount that may be parenthesized (a debit/charge) or plain.
+_FEE_TEXT_RE = re.compile(
+    r"^(?:(?P<date>\d{1,2}/\d{1,2}(?:/\d{2,4})?)\s+)?"
+    r"(?P<desc>.*?\b(?:fee|advisory|commission|charge)\b.*?)\s+"
+    r"\(?\$?(?P<amount>[\d,]+\.\d{2})\)?\s*$",
+    re.IGNORECASE,
+)
+# Skip explanatory / disclosure lines that mention fees but aren't a charge.
+_FEE_SKIP_RE = re.compile(
+    r"\b(may|could|up to|if you|waived|no fee|fee schedule|annual percentage|rate)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_fees_from_text(doc: ParsedDocument, period_end: date | None) -> list[ExtractedFee]:
+    fees: list[ExtractedFee] = []
+    seen: set[str] = set()
+    fee_date = period_end or date.today()
+
+    for page in doc.pages:
+        for raw_line in page.raw_text.splitlines():
+            line = raw_line.strip()
+            if "fee" not in line.lower() and "advisory" not in line.lower():
+                continue
+            if _FEE_SKIP_RE.search(line):
+                continue
+            m = _FEE_TEXT_RE.match(line)
+            if not m:
+                continue
+            try:
+                amount = Decimal(m.group("amount").replace(",", ""))
+            except (ValueError, TypeError):
+                continue
+            if amount <= 0:
+                continue
+            desc = m.group("desc").strip()
+            key = f"{desc.lower()}|{amount}"
+            if key in seen:
+                continue
+            seen.add(key)
+            fees.append(ExtractedFee(
+                fee_date=fee_date,
+                description=desc,
+                amount=amount,
+                fee_category="advisory_fee" if "adv" in desc.lower() else "fee",
+                source_page=page.page_number,
+            ))
+    return fees
+
+
+def _extract_fees_from_tables(doc: ParsedDocument, period_end: date | None) -> list[ExtractedFee]:
     fees = []
     fee_section_re = re.compile(r"(?:fee|charge|commission)", re.IGNORECASE)
 
@@ -215,7 +276,7 @@ def _extract_fees(doc: ParsedDocument) -> list[ExtractedFee]:
                 if amount and amount > 0:
                     desc = str(row[0]) if row[0] else "Fee"
                     fees.append(ExtractedFee(
-                        fee_date=date.today(),  # Will be refined by period
+                        fee_date=period_end or date.today(),
                         description=desc.strip(),
                         amount=amount,
                         source_page=page.page_number,

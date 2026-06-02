@@ -132,6 +132,9 @@ async def get_or_create_institution(
 
 # ── Accounts ─────────────────────────────────────────────────────────────────
 
+_UNKNOWN_MASKS = {"", "unknown", "none", "n/a"}
+
+
 async def get_or_create_account(
     session: AsyncSession,
     institution_id: str,
@@ -140,14 +143,51 @@ async def get_or_create_account(
     account_type: str = "unknown",
     account_name: str | None = None,
 ) -> AccountModel:
-    result = await session.execute(
-        select(AccountModel)
-        .where(
-            AccountModel.institution_id == institution_id,
-            AccountModel.account_number_masked == account_number_masked,
+    """Find or create an account for an institution.
+
+    Matching key:
+      - Normally `(institution_id, account_number_masked)` — a real masked card/
+        account number uniquely identifies the account.
+      - When the masked number is unknown/blank (the parser couldn't read it, e.g.
+        Chase credit cards), fall back to `(institution_id, account_name)` so that
+        distinct products (Prime Visa vs Freedom vs Sapphire) don't all collapse
+        into a single "unknown" account. Without a name we keep the legacy single
+        "unknown" bucket.
+    """
+    mask_known = account_number_masked.strip().lower() not in _UNKNOWN_MASKS
+
+    if mask_known:
+        stmt = (
+            select(AccountModel)
+            .where(
+                AccountModel.institution_id == institution_id,
+                AccountModel.account_number_masked == account_number_masked,
+            )
+            .order_by(AccountModel.created_at)
         )
-        .order_by(AccountModel.created_at)
-    )
+    elif account_name:
+        # Disambiguate unknown-masked accounts by their product name.
+        stmt = (
+            select(AccountModel)
+            .where(
+                AccountModel.institution_id == institution_id,
+                AccountModel.account_number_masked == account_number_masked,
+                AccountModel.account_name == account_name,
+            )
+            .order_by(AccountModel.created_at)
+        )
+    else:
+        stmt = (
+            select(AccountModel)
+            .where(
+                AccountModel.institution_id == institution_id,
+                AccountModel.account_number_masked == account_number_masked,
+                AccountModel.account_name.is_(None),
+            )
+            .order_by(AccountModel.created_at)
+        )
+
+    result = await session.execute(stmt)
     # Tolerate pre-existing duplicates: deterministically reuse the oldest match
     # rather than raising MultipleResultsFound.
     acct = result.scalars().first()
@@ -261,6 +301,68 @@ async def get_chunks_for_document(session: AsyncSession, doc_id: str) -> list[Te
         .order_by(TextChunkModel.chunk_index)
     )
     return list(result.scalars().all())
+
+
+async def delete_chunks_for_document(session: AsyncSession, doc_id: str) -> int:
+    """Delete all text chunks (and their stored embeddings) for a document.
+
+    Returns the number of chunk rows removed. FTS rows are removed separately via
+    app.db.fts.delete_fts_for_document.
+    """
+    count_result = await session.execute(
+        select(TextChunkModel.id).where(TextChunkModel.document_id == doc_id)
+    )
+    n = len(count_result.fetchall())
+    await session.execute(
+        text("DELETE FROM text_chunks WHERE document_id = :doc_id"),
+        {"doc_id": doc_id},
+    )
+    return n
+
+
+async def count_transactions_for_document(session: AsyncSession, doc_id: str) -> int:
+    result = await session.execute(
+        text("""
+            SELECT COUNT(*) FROM transactions t
+            JOIN statements s ON t.statement_id = s.id
+            WHERE s.document_id = :doc_id
+        """),
+        {"doc_id": doc_id},
+    )
+    return int(result.scalar() or 0)
+
+
+async def count_chunks_for_document(session: AsyncSession, doc_id: str, *, with_embedding: bool = False) -> int:
+    sql = "SELECT COUNT(*) FROM text_chunks WHERE document_id = :doc_id"
+    if with_embedding:
+        sql += " AND embedding IS NOT NULL"
+    result = await session.execute(text(sql), {"doc_id": doc_id})
+    return int(result.scalar() or 0)
+
+
+async def _count_child_for_document(session: AsyncSession, table: str, doc_id: str) -> int:
+    """Count rows in a statement-child table (holdings/fees/balance_snapshots) for a doc."""
+    result = await session.execute(
+        text(f"""
+            SELECT COUNT(*) FROM {table} x
+            JOIN statements s ON x.statement_id = s.id
+            WHERE s.document_id = :doc_id
+        """),
+        {"doc_id": doc_id},
+    )
+    return int(result.scalar() or 0)
+
+
+async def count_holdings_for_document(session: AsyncSession, doc_id: str) -> int:
+    return await _count_child_for_document(session, "holdings", doc_id)
+
+
+async def count_fees_for_document(session: AsyncSession, doc_id: str) -> int:
+    return await _count_child_for_document(session, "fees", doc_id)
+
+
+async def count_balances_for_document(session: AsyncSession, doc_id: str) -> int:
+    return await _count_child_for_document(session, "balance_snapshots", doc_id)
 
 
 # ── Bank-specific details ────────────────────────────────────────────────────
