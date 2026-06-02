@@ -9,6 +9,8 @@ import { SubscriptionsPage } from "./pages/SubscriptionsPage";
 import { FeesPage } from "./pages/FeesPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { ChatPage } from "./pages/ChatPage";
+import { CoralFloatingButton } from "./components/CoralFloatingButton";
+import { CoralAppBackground } from "./components/CoralAppBackground";
 
 const pageVariants = {
   hidden: { opacity: 0, y: 8 },
@@ -43,12 +45,17 @@ function PageContent() {
 export default function App() {
   return (
     <div
-      className="min-h-screen w-full flex items-center justify-center overflow-hidden"
+      className="relative min-h-screen w-full flex items-center justify-center overflow-hidden"
       style={{
         background: "radial-gradient(ellipse at 40% 20%, #0f3d55 0%, #071826 55%, #040e18 100%)",
         padding: "20px",
       }}
     >
+      {/* Global full-viewport watermark — outside the clipped shell so it spans
+          the entire screen. Uses position:fixed internally and sits at z-0
+          behind everything. pointer-events-none so it never blocks clicks. */}
+      <CoralAppBackground />
+
       {/* Outer shell — fills viewport with slight margin */}
       <motion.div
         initial={{ opacity: 0, scale: 0.985, y: 16 }}
@@ -56,6 +63,8 @@ export default function App() {
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         className="w-full flex"
         style={{
+          position: "relative",
+          zIndex: 10,
           height: "calc(100vh - 40px)",
           maxWidth: "1400px",
           borderRadius: "20px",
@@ -69,15 +78,21 @@ export default function App() {
 
         {/* Right content — light glass panel */}
         <div
-          className="flex-1 flex flex-col min-w-0"
+          className="relative flex-1 flex flex-col min-w-0"
           style={{
             background: "linear-gradient(160deg, rgba(240,249,252,0.97) 0%, rgba(248,253,255,0.99) 100%)",
             borderLeft: "1px solid rgba(255,255,255,0.06)",
           }}
         >
-          <PageContent />
+          {/* Page content */}
+          <div className="relative z-10 flex-1 flex flex-col min-h-0">
+            <PageContent />
+          </div>
         </div>
       </motion.div>
+
+      {/* Floating "Ask Coral" launcher (hidden on chat page) */}
+      <CoralFloatingButton />
 
       <Toaster
         position="top-right"

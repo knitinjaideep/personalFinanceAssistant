@@ -6,6 +6,8 @@ import {
 import { dashboardApi } from "../api/dashboard";
 import type { InvestmentsDashboard } from "../api/dashboard";
 import { staggerChild, contentPageVariants } from "../design/motion";
+import { CoralMascot } from "../components/CoralMascot";
+import { CoralEmptyState } from "../components/CoralEmptyState";
 
 function PageHeader() {
   return (
@@ -18,8 +20,13 @@ function PageHeader() {
         WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Fees</h1>
-      <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">Investment management & advisory fees</p>
+      <div className="flex items-center gap-3">
+        <CoralMascot variant="investments" size="sm" className="shrink-0" />
+        <div>
+          <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Fees</h1>
+          <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">Investment management & advisory fees</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -76,13 +83,13 @@ export function FeesPage() {
           </div>
         ) : !hasFees ? (
           <motion.div variants={staggerChild}>
-            <div className="rounded-2xl px-6 py-12 text-center"
+            <div className="rounded-2xl"
               style={{ background: "rgba(255,255,255,0.65)", border: "1px dashed rgba(205,237,246,0.70)" }}>
-              <div className="text-3xl mb-3">🧾</div>
-              <p className="text-[14px] font-semibold text-ocean-deep mb-1.5">No fees found</p>
-              <p className="text-[12px] text-ocean/40 max-w-xs mx-auto leading-relaxed">
-                Upload Morgan Stanley or E*TRADE statements. Fees are extracted from advisory fee, management fee, and expense ratio line items.
-              </p>
+              <CoralEmptyState
+                variant="investments"
+                title="No fees found"
+                description="Upload Morgan Stanley or E*TRADE statements. Fees are extracted from advisory fee, management fee, and expense ratio line items."
+              />
             </div>
           </motion.div>
         ) : (

@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { CoralMascot } from "../CoralMascot";
 
 interface EmptyStateProps {
   title: string;
@@ -18,11 +19,9 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
       {showMascot ? (
-        <img
-          src="/mascot.png"
-          alt="Coral mascot"
-          className="w-28 h-28 object-contain mb-5 opacity-90 drop-shadow-md"
-        />
+        <div className="mb-5">
+          <CoralMascot size="lg" />
+        </div>
       ) : icon ? (
         <div className="mb-4 text-ocean-aqua opacity-60">{icon}</div>
       ) : null}

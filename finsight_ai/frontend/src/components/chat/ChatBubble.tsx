@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { motion } from "framer-motion";
 import { userBubbleVariants, assistantBubbleVariants } from "../../design/motion";
+import { CoralMascot } from "../CoralMascot";
 
 const VITE_DEBUG = import.meta.env.VITE_DEBUG === "true";
 
@@ -45,8 +46,10 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
       variants={assistantBubbleVariants}
       initial="hidden"
       animate="visible"
-      className="flex flex-col items-start gap-1"
+      className="flex items-start gap-2.5"
     >
+      <CoralMascot variant="main" size="xs" animated={false} className="mt-0.5 shrink-0" />
+      <div className="flex flex-col items-start gap-1 min-w-0">
       <div
         className="max-w-2xl px-4 py-3 rounded-3xl rounded-bl-lg text-sm text-ocean-deep leading-relaxed"
         style={{
@@ -74,6 +77,7 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
       {timestamp && (
         <span className="text-[10px] text-ocean/25 ml-1">{formatTime(timestamp)}</span>
       )}
+      </div>
     </motion.div>
   );
 }

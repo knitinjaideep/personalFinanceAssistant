@@ -25,6 +25,9 @@ import {
   type InstitutionGroup,
 } from "../utils/documentUtils";
 import { contentPageVariants, staggerChild } from "../design/motion";
+import { CoralMascot } from "../components/CoralMascot";
+import { CoralEmptyState } from "../components/CoralEmptyState";
+import { CoralLoadingState } from "../components/CoralLoadingState";
 
 function PageHeader({
   onUpload,
@@ -56,11 +59,14 @@ function PageHeader({
         WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <div>
-        <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Documents</h1>
-        <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">
-          {count > 0 ? `${count} statement${count !== 1 ? "s" : ""}` : "No documents yet"}
-        </p>
+      <div className="flex items-center gap-3">
+        <CoralMascot variant="documents" size="sm" className="shrink-0" />
+        <div>
+          <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Documents</h1>
+          <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">
+            {count > 0 ? `${count} statement${count !== 1 ? "s" : ""}` : "No documents yet"}
+          </p>
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <button
@@ -244,16 +250,34 @@ export function DocumentsPage() {
           </motion.div>
         )}
 
+        {/* Mascot-driven processing banner — shown while ingestion is live */}
+        {!loading && docs.length > 0 && polling && (
+          <motion.div variants={staggerChild}>
+            <CoralLoadingState
+              variant="documents"
+              message="Coral is reading your statements…"
+              submessage="Extracting transactions, chunks, and financial details."
+            />
+          </motion.div>
+        )}
+
         {/* Body */}
         {loading ? (
-          <div className="space-y-2.5">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-2xl h-16 animate-pulse"
-                style={{ background: "rgba(205,237,246,0.20)" }}
-              />
-            ))}
+          <div className="space-y-3">
+            <CoralLoadingState
+              variant="documents"
+              message="Rebuilding your financial memory…"
+              submessage="Loading your statements and ingestion health."
+            />
+            <div className="space-y-2.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-2xl h-16 animate-pulse"
+                  style={{ background: "rgba(205,237,246,0.20)" }}
+                />
+              ))}
+            </div>
           </div>
         ) : docs.length === 0 ? (
           <EmptyAll onUpload={() => setUploadOpen(true)} />
@@ -299,22 +323,16 @@ function EmptyAll({ onUpload }: { onUpload: () => void }) {
   return (
     <motion.div variants={staggerChild}>
       <div
-        className="rounded-2xl px-6 py-12 text-center"
+        className="rounded-2xl"
         style={{ background: "rgba(255,255,255,0.65)", border: "1px dashed rgba(205,237,246,0.70)" }}
       >
-        <div className="text-3xl mb-3">📄</div>
-        <p className="text-[14px] font-semibold text-ocean-deep mb-1.5">No documents yet</p>
-        <p className="text-[12px] text-ocean/40 max-w-xs mx-auto leading-relaxed mb-4">
-          Upload your first PDF statement to get started. Coral parses it locally — nothing leaves your device.
-        </p>
-        <button
-          onClick={onUpload}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-semibold text-white"
-          style={{ background: "linear-gradient(135deg, #FF7A5A, #FFA38F)" }}
-        >
-          <Upload size={13} />
-          Upload a statement
-        </button>
+        <CoralEmptyState
+          variant="documents"
+          title="No statements uploaded yet"
+          description="Drop your PDFs here and Coral will turn them into searchable financial data."
+          actionLabel="Upload a statement"
+          onAction={onUpload}
+        />
       </div>
     </motion.div>
   );

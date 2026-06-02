@@ -8,6 +8,8 @@ import { CreditCard, AlertCircle } from "lucide-react";
 import { dashboardApi } from "../api/dashboard";
 import type { BankingDashboard } from "../api/dashboard";
 import { staggerContainer, staggerChild, contentPageVariants } from "../design/motion";
+import { CoralMascot } from "../components/CoralMascot";
+import { CoralEmptyState } from "../components/CoralEmptyState";
 
 const CHART_COLORS = [
   "#FF7A5A", "#1F6F8B", "#4CAF93", "#FFD166",
@@ -34,8 +36,13 @@ function PageHeader() {
         WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Banking</h1>
-      <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">Spending, cash flow & card activity</p>
+      <div className="flex items-center gap-3">
+        <CoralMascot variant="banking" size="sm" className="shrink-0" />
+        <div>
+          <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Banking</h1>
+          <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">Spending, cash flow & card activity</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -252,13 +259,13 @@ export function BankingPage() {
 
         {!loading && !hasData && (
           <motion.div variants={staggerChild}>
-            <div className="rounded-2xl px-6 py-12 text-center"
+            <div className="rounded-2xl"
               style={{ background: "rgba(255,255,255,0.65)", border: "1px dashed rgba(205,237,246,0.70)" }}>
-              <div className="text-3xl mb-3">🏦</div>
-              <p className="text-[14px] font-semibold text-ocean-deep mb-1.5">No banking data yet</p>
-              <p className="text-[12px] text-ocean/40 max-w-xs mx-auto leading-relaxed">
-                Upload Chase, Amex, or Discover statements to see spending trends and card activity.
-              </p>
+              <CoralEmptyState
+                variant="banking"
+                title="No banking data yet"
+                description="Upload Chase, Amex, or Discover statements to see spending trends and card activity."
+              />
             </div>
           </motion.div>
         )}

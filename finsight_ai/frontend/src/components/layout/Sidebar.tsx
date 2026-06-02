@@ -5,6 +5,7 @@ import {
   Receipt, FileText, MessageSquare, Lock,
 } from "lucide-react";
 import { useAppStore, type ActivePage } from "../../store/appStore";
+import { CoralMascot } from "../CoralMascot";
 
 // ── Nav config ────────────────────────────────────────────────────────────────
 
@@ -35,37 +36,35 @@ const NAV_SECTIONS: { label: string; items: { id: ActivePage; label: string; ico
 
 // ── Brand ─────────────────────────────────────────────────────────────────────
 
-function SidebarBrand() {
+function SidebarBrand({ onClick }: { onClick: () => void }) {
   return (
     <div className="px-5 pt-6 pb-5">
-      <motion.div
-        className="flex items-center gap-3"
+      <motion.button
+        type="button"
+        onClick={onClick}
+        title="Coral AI"
+        aria-label="Coral AI — go to overview"
+        className="group flex items-center gap-3 text-left"
         initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.12, duration: 0.38 }}
+        whileHover={{ scale: 1.03 }}
+        whileTap={{ scale: 0.97 }}
       >
-        <motion.div
-          animate={{ y: [0, -4, 0] }}
-          transition={{ duration: 4.5, ease: "easeInOut", repeat: Infinity }}
-          className="shrink-0"
-        >
-          <div
-            className="w-9 h-9 rounded-xl overflow-hidden"
+        <span className="relative shrink-0">
+          <CoralMascot variant="main" size="sm" glow animated />
+          {/* Mini tooltip / label on hover */}
+          <span
+            className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1.5 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[9px] font-semibold tracking-wide opacity-0 transition-opacity duration-200 group-hover:opacity-100"
             style={{
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(255,255,255,0.14)",
-              padding: "2px",
-              boxShadow: "0 4px 16px rgba(2,8,18,0.40)",
+              background: "rgba(255,255,255,0.10)",
+              border: "1px solid rgba(255,255,255,0.16)",
+              color: "rgba(255,255,255,0.70)",
             }}
           >
-            <img
-              src="/mascot.png"
-              alt="Coral"
-              className="w-full h-full object-contain rounded-lg"
-              style={{ animation: "blink 5s ease-in-out infinite" }}
-            />
-          </div>
-        </motion.div>
+            Coral AI
+          </span>
+        </span>
 
         <div>
           <div className="font-bold text-[15px] text-white leading-none tracking-tight">
@@ -75,7 +74,7 @@ function SidebarBrand() {
             Local financial intelligence
           </div>
         </div>
-      </motion.div>
+      </motion.button>
     </div>
   );
 }
@@ -204,7 +203,7 @@ export function Sidebar() {
         boxShadow: "4px 0 28px rgba(2,8,18,0.35)",
       }}
     >
-      <SidebarBrand />
+      <SidebarBrand onClick={() => setActivePage("overview")} />
 
       {/* Hairline */}
       <div className="mx-4 h-px mb-3" style={{ background: "rgba(255,255,255,0.055)" }} />

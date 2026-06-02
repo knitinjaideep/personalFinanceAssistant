@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { RefreshCw, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { dashboardApi } from "../api/dashboard";
 import type { BankingDashboard, Subscription } from "../api/dashboard";
 import { staggerContainer, staggerChild, contentPageVariants } from "../design/motion";
+import { CoralMascot } from "../components/CoralMascot";
+import { CoralEmptyState } from "../components/CoralEmptyState";
 
 function PageHeader() {
   return (
@@ -16,8 +18,13 @@ function PageHeader() {
         WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Subscriptions</h1>
-      <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">Recurring charges detected across your statements</p>
+      <div className="flex items-center gap-3">
+        <CoralMascot variant="banking" size="sm" className="shrink-0" />
+        <div>
+          <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Subscriptions</h1>
+          <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">Recurring charges detected across your statements</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -120,19 +127,13 @@ export function SubscriptionsPage() {
           </div>
         ) : subs.length === 0 ? (
           <motion.div variants={staggerChild}>
-            <div className="rounded-2xl px-6 py-12 text-center"
+            <div className="rounded-2xl"
               style={{ background: "rgba(255,255,255,0.65)", border: "1px dashed rgba(205,237,246,0.70)" }}>
-              <motion.div
-                animate={{ rotate: [0, 360] }}
-                transition={{ duration: 8, ease: "linear", repeat: Infinity }}
-                className="inline-block mb-4"
-              >
-                <RefreshCw size={28} style={{ color: "rgba(11,60,93,0.18)" }} />
-              </motion.div>
-              <p className="text-[14px] font-semibold text-ocean-deep mb-1.5">No subscriptions detected yet</p>
-              <p className="text-[12px] text-ocean/40 max-w-xs mx-auto leading-relaxed">
-                Upload 2+ months of credit card statements. Coral detects merchants that charge you repeatedly at a consistent amount.
-              </p>
+              <CoralEmptyState
+                variant="banking"
+                title="No subscriptions detected yet"
+                description="Upload 2+ months of credit card statements. Coral detects merchants that charge you repeatedly at a consistent amount."
+              />
             </div>
           </motion.div>
         ) : (

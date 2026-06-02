@@ -6,11 +6,16 @@ import {
 } from "recharts";
 import {
   CreditCard, TrendingUp, RefreshCw, Receipt,
-  FileText, DollarSign, AlertCircle,
+  FileText, AlertCircle, MessageSquare, Upload, BarChart3,
 } from "lucide-react";
 import { dashboardApi } from "../api/dashboard";
 import type { DashboardSummary, BankingDashboard, InvestmentsDashboard } from "../api/dashboard";
 import { staggerContainer, staggerChild, contentPageVariants } from "../design/motion";
+import { CoralMascot } from "../components/CoralMascot";
+import { CoralEmptyState } from "../components/CoralEmptyState";
+import { CoralBubbleMascot } from "../components/CoralBubbleMascot";
+import { CoralCategoryBubble } from "../components/CoralCategoryBubble";
+import { useAppStore } from "../store/appStore";
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 
@@ -38,13 +43,16 @@ function PageHeader() {
         WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <div>
-        <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight leading-none">
-          Overview
-        </h1>
-        <p className="text-[12px] text-ocean/40 mt-1 font-medium">
-          Your financial picture at a glance
-        </p>
+      <div className="flex items-center gap-3">
+        <CoralMascot variant="analytics" size="sm" className="shrink-0" />
+        <div>
+          <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight leading-none">
+            Overview
+          </h1>
+          <p className="text-[12px] text-ocean/40 mt-1 font-medium">
+            Your financial picture at a glance
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -159,6 +167,179 @@ function EmptyChart({ message }: { message: string }) {
       <AlertCircle size={18} className="text-ocean/20" />
       <p className="text-[11px] text-ocean/30 text-center max-w-[180px] leading-relaxed">{message}</p>
     </div>
+  );
+}
+
+// ── Hero / mascot card ────────────────────────────────────────────────────────
+
+function HeroCard() {
+  const setActivePage = useAppStore((s) => s.setActivePage);
+
+  const ctaBase =
+    "flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all";
+
+  return (
+    <motion.div variants={staggerChild}>
+      <div
+        className="relative overflow-hidden rounded-3xl"
+        style={{
+          background:
+            "linear-gradient(135deg, rgba(7,24,38,0.97) 0%, rgba(11,45,70,0.96) 55%, rgba(15,61,85,0.95) 100%)",
+          border: "1px solid rgba(95,168,211,0.18)",
+          boxShadow:
+            "0 18px 60px rgba(4,14,26,0.45), inset 0 1px 0 rgba(255,255,255,0.06)",
+        }}
+      >
+        {/* Ambient glow accents */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-24 -right-16 w-72 h-72 rounded-full"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(95,168,211,0.28) 0%, transparent 70%)",
+            filter: "blur(8px)",
+          }}
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-20 right-32 w-56 h-56 rounded-full"
+          style={{
+            background:
+              "radial-gradient(circle, rgba(255,122,90,0.22) 0%, transparent 70%)",
+            filter: "blur(8px)",
+          }}
+        />
+        <div className="relative flex flex-col md:flex-row items-center gap-6 px-7 py-8 md:py-9">
+          {/* Left — copy + CTAs */}
+          <div className="flex-1 text-center md:text-left order-2 md:order-1">
+            <h2 className="text-[26px] font-extrabold tracking-tight leading-none">
+              <span className="text-gradient-coral">Coral</span>
+            </h2>
+            <p className="text-[13px] font-semibold text-ocean-aqua/80 mt-1.5">
+              Local financial intelligence
+            </p>
+            <p className="text-[13px] text-white/55 mt-3 max-w-md leading-relaxed mx-auto md:mx-0">
+              Your local AI analyst for statements, spending, fees, and
+              investments. Ask me about your spending, statements, fees, and
+              investments.
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-2.5 mt-5">
+              <button
+                onClick={() => setActivePage("chat")}
+                className={ctaBase + " text-white"}
+                style={{
+                  background: "linear-gradient(135deg, #FF7A5A, #FFA38F)",
+                  boxShadow: "0 6px 20px rgba(255,122,90,0.38)",
+                }}
+              >
+                <MessageSquare size={14} />
+                Ask Coral
+              </button>
+              <button
+                onClick={() => setActivePage("documents")}
+                className={ctaBase + " text-white/85"}
+                style={{
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.16)",
+                }}
+              >
+                <Upload size={14} />
+                Upload Documents
+              </button>
+              <button
+                onClick={() => setActivePage("banking")}
+                className={ctaBase + " text-white/85"}
+                style={{
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.16)",
+                }}
+              >
+                <BarChart3 size={14} />
+                View Insights
+              </button>
+            </div>
+          </div>
+
+          {/* Right — mascot inside water-droplet bubble */}
+          <div className="order-1 md:order-2 shrink-0 pt-2">
+            <CoralBubbleMascot
+              variant="main"
+              size="hero"
+              glow
+              animated
+              priority
+              speech="Ask me about your spending, statements, fees, and investments."
+            />
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Category bubbles (large, floating, mascot-led navigation) ────────────────
+
+function FeatureCards() {
+  const setActivePage = useAppStore((s) => s.setActivePage);
+
+  const CATEGORIES = [
+    {
+      variant: "banking"     as const,
+      title: "Banking",
+      description: "Spending, cash flow, and card activity.",
+      actionLabel: "View banking",
+      onAction: () => setActivePage("banking"),
+      floatDelay: "0ms",
+    },
+    {
+      variant: "investments" as const,
+      title: "Investments",
+      description: "Portfolio value, holdings, and performance.",
+      actionLabel: "View portfolio",
+      onAction: () => setActivePage("investments"),
+      floatDelay: "260ms",
+    },
+    {
+      variant: "documents"   as const,
+      title: "Documents",
+      description: "Upload statements and track parsing.",
+      actionLabel: "Manage documents",
+      onAction: () => setActivePage("documents"),
+      floatDelay: "520ms",
+    },
+    {
+      variant: "analytics"   as const,
+      title: "Insights",
+      description: "Trends, categories, and spending analysis.",
+      actionLabel: "Explore insights",
+      onAction: () => setActivePage("overview"),
+      floatDelay: "780ms",
+    },
+  ] as const;
+
+  return (
+    <motion.div
+      variants={staggerContainer}
+      initial="hidden"
+      animate="visible"
+      className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5"
+    >
+      {CATEGORIES.map((cat) => (
+        <motion.div key={cat.variant} variants={staggerChild} className="flex">
+          <CoralCategoryBubble
+            variant={cat.variant}
+            title={cat.title}
+            description={cat.description}
+            actionLabel={cat.actionLabel}
+            onAction={cat.onAction}
+            floatDelay={cat.floatDelay}
+            animated
+            className="flex-1"
+          />
+        </motion.div>
+      ))}
+    </motion.div>
   );
 }
 
@@ -322,6 +503,7 @@ function fmtUSD(n: number): string {
 }
 
 export function OverviewPage() {
+  const setActivePage = useAppStore((s) => s.setActivePage);
   const [loading, setLoading]       = useState(true);
   const [summary, setSummary]       = useState<DashboardSummary | null>(null);
   const [banking, setBanking]       = useState<BankingDashboard | null>(null);
@@ -366,6 +548,12 @@ export function OverviewPage() {
         animate="visible"
         className="flex-1 overflow-y-auto px-7 py-6 space-y-5"
       >
+
+        {/* ── Hero / mascot card ───────────────────────────────────────────── */}
+        <HeroCard />
+
+        {/* ── Feature cards ────────────────────────────────────────────────── */}
+        <FeatureCards />
 
         {/* ── Metric cards ─────────────────────────────────────────────────── */}
         <motion.div
@@ -494,31 +682,43 @@ export function OverviewPage() {
         {!loading && docsProcessed === 0 && (
           <motion.div variants={staggerChild}>
             <div
-              className="rounded-2xl px-6 py-10 text-center"
+              className="rounded-2xl"
               style={{
                 background: "rgba(255,255,255,0.65)",
                 border: "1px dashed rgba(205,237,246,0.70)",
               }}
             >
-              <motion.div
-                animate={{ y: [0, -6, 0] }}
-                transition={{ duration: 3.5, ease: "easeInOut", repeat: Infinity }}
-                className="text-3xl mb-4"
-              >
-                🪸
-              </motion.div>
-              <p className="text-[14px] font-semibold text-ocean-deep mb-1.5">No statements yet</p>
-              <p className="text-[12px] text-ocean/40 max-w-xs mx-auto leading-relaxed">
-                Use the Documents page or Chat to upload your first statement.
-                All data stays on your device.
-              </p>
-              <div className="flex items-center justify-center gap-1.5 mt-4">
-                <DollarSign size={11} className="text-ocean/20" />
-                <span className="text-[10px] text-ocean/25">100% local · no cloud</span>
-              </div>
+              <CoralEmptyState
+                variant="documents"
+                title="No statements uploaded yet"
+                description="Drop your PDFs here and Coral will turn them into searchable financial data."
+                actionLabel="Upload a statement"
+                onAction={() => setActivePage("documents")}
+              />
             </div>
           </motion.div>
         )}
+
+        {/* ── Security / privacy callout ───────────────────────────────────── */}
+        <motion.div variants={staggerChild}>
+          <div
+            className="flex items-center gap-4 rounded-2xl px-5 py-4"
+            style={{
+              background: "rgba(76,175,147,0.07)",
+              border: "1px solid rgba(76,175,147,0.22)",
+            }}
+          >
+            <CoralMascot variant="security" size="sm" className="shrink-0" />
+            <div>
+              <p className="text-[13px] font-semibold text-ocean-deep">
+                Your financial data stays local.
+              </p>
+              <p className="text-[11.5px] text-ocean/45 mt-0.5">
+                Coral parses and stores everything on your device — no cloud, no external APIs.
+              </p>
+            </div>
+          </div>
+        </motion.div>
 
         <div className="h-3" />
       </motion.div>

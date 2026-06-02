@@ -12,14 +12,14 @@ import { DocumentsModal } from "../components/documents/DocumentsModal";
 import {
   contentPageVariants, staggerContainer, staggerChild, fadeVariants,
 } from "../design/motion";
+import { CoralMascot } from "../components/CoralMascot";
+import { CoralBubbleMascot } from "../components/CoralBubbleMascot";
 
 const EXAMPLE_QUESTIONS = [
-  "What fees have I been charged?",
-  "Show me my account balances",
-  "What's my portfolio worth?",
-  "List my recent Chase transactions",
-  "Which institutions do I have data from?",
-  "Summarize my Morgan Stanley statement",
+  "How much did I spend on groceries last month?",
+  "Show me Amex transactions from January 2025",
+  "What fees did Morgan Stanley charge me?",
+  "Summarize my latest statement",
 ];
 
 // ── Typing indicator ──────────────────────────────────────────────────────────
@@ -31,8 +31,9 @@ function TypingIndicator() {
       initial="hidden"
       animate="visible"
       exit="exit"
-      className="flex items-center gap-3 pl-1"
+      className="flex items-center gap-2.5 pl-1"
     >
+      <CoralMascot variant="main" size="xs" className="shrink-0" />
       <div
         className="flex items-center gap-1.5 px-4 py-3 rounded-3xl rounded-bl-lg"
         style={{
@@ -50,7 +51,7 @@ function TypingIndicator() {
           />
         ))}
       </div>
-      <span className="text-xs text-ocean/40 font-medium">Analyzing…</span>
+      <span className="text-xs text-ocean/40 font-medium">Coral is thinking…</span>
     </motion.div>
   );
 }
@@ -65,40 +66,23 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
       animate="visible"
       className="flex flex-col items-center justify-center min-h-[55vh] text-center px-4"
     >
-      <motion.div
-        animate={{ y: [0, -10, 0] }}
-        transition={{ duration: 4, ease: "easeInOut", repeat: Infinity }}
-        className="mb-6"
-      >
-        <div
-          className="w-20 h-20 rounded-3xl flex items-center justify-center p-1.5"
-          style={{
-            background: "rgba(205,237,246,0.40)",
-            border: "1px solid rgba(205,237,246,0.60)",
-            boxShadow: "0 8px 32px rgba(11,60,93,0.12)",
-          }}
-        >
-          <img
-            src="/mascot.png"
-            alt="Coral mascot"
-            className="w-full h-full object-contain rounded-2xl"
-            style={{ animation: "blink 5s ease-in-out infinite" }}
-          />
-        </div>
+      <motion.div variants={staggerChild} className="mb-6">
+        <CoralBubbleMascot variant="main" size="lg" animated glow />
       </motion.div>
 
       <motion.h2
         variants={staggerChild}
         className="text-xl font-bold text-ocean-deep mb-2 leading-tight"
       >
-        Ask me anything about your finances
+        Hi, I'm Coral. Ask me anything about your finances.
       </motion.h2>
 
       <motion.p
         variants={staggerChild}
         className="text-sm text-ocean/45 mb-9 max-w-sm leading-relaxed"
       >
-        Fees, balances, spending, portfolio — everything stays on your device.
+        Ask me what changed, what you spent, or what your statements say —
+        everything stays on your device.
       </motion.p>
 
       <motion.div
@@ -288,21 +272,7 @@ export function ChatPage() {
       >
         {/* Brand */}
         <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-2xl overflow-hidden shrink-0"
-            style={{
-              background: "rgba(205,237,246,0.40)",
-              border: "1px solid rgba(205,237,246,0.60)",
-              padding: "2px",
-            }}
-          >
-            <img
-              src="/mascot.png"
-              alt="Coral"
-              className="w-full h-full object-contain rounded-xl"
-              style={{ animation: "blink 5s ease-in-out infinite" }}
-            />
-          </div>
+          <CoralMascot size="sm" animated={false} className="shrink-0" />
           <div>
             <h1 className="text-[16px] font-bold text-ocean-deep leading-tight tracking-tight">
               Coral

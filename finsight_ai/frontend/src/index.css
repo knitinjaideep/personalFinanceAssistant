@@ -247,3 +247,148 @@
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
+/* ── Coral mascot motion ───────────────────────────────────────────────── */
+@keyframes coralFloat {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-8px); }
+}
+
+@keyframes coralGlowPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.96); }
+  50%      { opacity: 1;    transform: scale(1.06); }
+}
+
+@keyframes coralPeek {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50%      { transform: translateY(-4px) rotate(-3deg); }
+}
+
+/* ── Water-droplet bubble mascot ──────────────────────────────────────── */
+
+/* Organic morphing float — shape + position animate together */
+@keyframes coralDropletFloat {
+  0%, 100% {
+    transform: translateY(0px) rotate(-0.8deg) scale(1);
+    border-radius: 45% 55% 52% 48% / 48% 42% 58% 52%;
+  }
+  33% {
+    transform: translateY(-7px) rotate(0.6deg) scale(1.012);
+    border-radius: 50% 50% 48% 52% / 44% 54% 46% 56%;
+  }
+  66% {
+    transform: translateY(-4px) rotate(-0.4deg) scale(1.008);
+    border-radius: 48% 52% 55% 45% / 52% 46% 54% 48%;
+  }
+}
+
+/* Glossy highlight shimmers gently inside the bubble */
+@keyframes coralBubbleShimmer {
+  0%, 100% {
+    opacity: 0.45;
+    transform: rotate(-18deg) translate(0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.68;
+    transform: rotate(-14deg) translate(5px, -5px) scale(1.08);
+  }
+}
+
+/* Glow halo pulses in sync with the float */
+@keyframes coralBubbleGlow {
+  0%, 100% { opacity: 0.55; transform: scale(0.96); }
+  50%      { opacity: 0.85; transform: scale(1.05); }
+}
+
+.coral-float {
+  animation: coralFloat 4.5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.coral-glow-pulse {
+  animation: coralGlowPulse 4.5s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.coral-peek {
+  animation: coralPeek 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.coral-droplet-float {
+  animation: coralDropletFloat 5.5s ease-in-out infinite;
+  will-change: transform, border-radius;
+}
+
+.coral-bubble-shimmer {
+  animation: coralBubbleShimmer 5.5s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.coral-bubble-glow {
+  animation: coralBubbleGlow 5.5s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+/* ── Category bubble cards ────────────────────────────────────────────── */
+
+/* Gentle full-card float for the four Overview category bubbles */
+@keyframes coralCategoryFloat {
+  0%, 100% { transform: translateY(0px);  }
+  50%      { transform: translateY(-9px); }
+}
+
+.coral-category-float {
+  animation: coralCategoryFloat 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Hover: pause the float and scale the card up; raise shadow */
+.coral-category-bubble {
+  transition: transform 0.30s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow  0.30s ease;
+}
+
+.coral-category-bubble:hover,
+.coral-category-bubble:focus-visible {
+  /* pause the float so the hover scale isn't fighting the keyframe */
+  animation-play-state: paused;
+  transform: translateY(-6px) scale(1.055) !important;
+  box-shadow:
+    0 28px 80px rgba(255,122,90,0.20),
+    0 8px 32px rgba(11,60,93,0.14),
+    inset 0 1px 0 rgba(255,255,255,0.98) !important;
+}
+
+/* Hover magnify for droplet images inside category and other cards */
+.coral-hover-magnify {
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+              border-radius 0.28s ease;
+}
+
+.coral-hover-magnify:hover {
+  transform: scale(1.10) !important;
+  animation-play-state: paused;
+}
+
+/* Respect users who prefer reduced motion — freeze the mascot gracefully */
+@media (prefers-reduced-motion: reduce) {
+  .coral-animated,
+  .coral-float,
+  .coral-glow-pulse,
+  .coral-peek,
+  .coral-droplet-float,
+  .coral-bubble-shimmer,
+  .coral-bubble-glow,
+  .coral-category-float,
+  .coral-hover-magnify {
+    animation: none !important;
+    /* Reset any mid-animation border-radius to the static droplet shape */
+    border-radius: 45% 55% 52% 48% / 48% 42% 58% 52%;
+  }
+
+  .coral-category-bubble:hover,
+  .coral-category-bubble:focus-visible {
+    transform: translateY(-3px) scale(1.02) !important;
+  }
+}

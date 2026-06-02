@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, ShieldCheck, ShieldAlert } from "lucide-react";
 import type { IngestionHealth } from "../../types";
 import { issueLabel } from "../../utils/documentUtils";
+import { CoralMascot } from "../CoralMascot";
 
 interface Props {
   health: IngestionHealth | null;
@@ -43,6 +44,19 @@ export function IngestionHealthPanel({ health, loading }: Props) {
         boxShadow: "0 4px 24px rgba(11,60,93,0.06)",
       }}
     >
+      {/* Parsed-but-incomplete warning — Coral security mascot flags it */}
+      {!healthy && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 border-b"
+          style={{ borderColor: "rgba(255,209,102,0.35)", background: "rgba(255,209,102,0.07)" }}
+        >
+          <CoralMascot variant="security" size="sm" className="shrink-0" />
+          <p className="text-[12px] text-ocean-deep/75 leading-snug">
+            Some documents need reprocessing before I can answer accurately.
+          </p>
+        </div>
+      )}
+
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-ocean-50/25 transition-colors"

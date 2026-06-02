@@ -8,6 +8,8 @@ import { AlertCircle } from "lucide-react";
 import { dashboardApi } from "../api/dashboard";
 import type { InvestmentsDashboard } from "../api/dashboard";
 import { staggerContainer, staggerChild, contentPageVariants } from "../design/motion";
+import { CoralMascot } from "../components/CoralMascot";
+import { CoralEmptyState } from "../components/CoralEmptyState";
 
 const CHART_COLORS = [
   "#1F6F8B", "#FF7A5A", "#4CAF93", "#FFD166",
@@ -25,8 +27,13 @@ function PageHeader() {
         WebkitBackdropFilter: "blur(12px)",
       }}
     >
-      <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Investments</h1>
-      <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">Portfolio, holdings & performance</p>
+      <div className="flex items-center gap-3">
+        <CoralMascot variant="investments" size="sm" className="shrink-0" />
+        <div>
+          <h1 className="text-[18px] font-bold text-ocean-deep tracking-tight">Investments</h1>
+          <p className="text-[12px] text-ocean/40 mt-0.5 font-medium">Portfolio, holdings & performance</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -298,13 +305,13 @@ export function InvestmentsPage() {
 
         {!loading && !hasData && (
           <motion.div variants={staggerChild}>
-            <div className="rounded-2xl px-6 py-12 text-center"
+            <div className="rounded-2xl"
               style={{ background: "rgba(255,255,255,0.65)", border: "1px dashed rgba(205,237,246,0.70)" }}>
-              <div className="text-3xl mb-3">📈</div>
-              <p className="text-[14px] font-semibold text-ocean-deep mb-1.5">No investment data yet</p>
-              <p className="text-[12px] text-ocean/40 max-w-xs mx-auto leading-relaxed">
-                Upload Morgan Stanley or E*TRADE statements to see your portfolio, holdings, and performance.
-              </p>
+              <CoralEmptyState
+                variant="investments"
+                title="No investment data yet"
+                description="Upload Morgan Stanley or E*TRADE statements and Coral will organize your holdings."
+              />
             </div>
           </motion.div>
         )}
