@@ -1,14 +1,33 @@
 // ── Core types ──────────────────────────────────────────────────────────────
 
+export type DocumentStatus = "uploaded" | "processing" | "parsed" | "failed";
+
 export interface DocumentSummary {
   id: string;
   filename: string;
   institution: string;
-  status: "uploaded" | "processing" | "parsed" | "failed";
+  status: DocumentStatus;
   page_count: number | null;
   statement_count: number;
   upload_time: string | null;
+  processed_time?: string | null;
   error: string | null;
+
+  // Enrichment for grouping (best-effort, may be null)
+  account_product?: string | null;
+  account_type?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  statement_year?: number | null;
+  statement_month?: number | null;
+}
+
+export interface DocumentStats {
+  total: number;
+  parsed: number;
+  processing: number;
+  uploaded: number;
+  failed: number;
 }
 
 export interface DocumentUploadResponse {

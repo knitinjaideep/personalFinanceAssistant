@@ -1,7 +1,9 @@
 import { api } from "./client";
-import type { DocumentSummary, DocumentUploadResponse } from "../types";
+import type { DocumentStats, DocumentSummary, DocumentUploadResponse } from "../types";
 
 export const documentsApi = {
+  stats: (): Promise<DocumentStats> => api.get<DocumentStats>("/documents/stats"),
+
   upload: (file: File, sourceId?: string, year?: number): Promise<DocumentUploadResponse> => {
     const formData = new FormData();
     formData.append("file", file);

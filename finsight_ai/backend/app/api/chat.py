@@ -1,5 +1,8 @@
 """
-Chat API endpoint — query router + answer builder.
+Chat API endpoint — robust intent pipeline (classifier → router → fallback).
+
+The heavy lifting lives in ``app.services.chat_router``. This endpoint owns
+request-level timing/logging and translates routing outcomes to the API schema.
 """
 
 from __future__ import annotations
@@ -8,11 +11,11 @@ import time
 
 from fastapi import APIRouter, HTTPException, Request
 
+from app.config import settings
 from app.core.logger import get_logger, get_request_id
 from app.domain.entities import AnswerTimings, ChatRequest, ChatResponse
 from app.domain.errors import CoralError
-from app.services.answer_builder import build_answer
-from app.services.query_router import route_question
+from app.services.chat_router import route
 
 logger = get_logger("coral.chat")
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -20,7 +23,7 @@ router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 @router.post("/query", response_model=ChatResponse)
 async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
-    """Answer a financial question using SQL-first routing."""
+    """Answer a financial question via the intent classification + routing pipeline."""
     if not body.question.strip():
         raise HTTPException(400, "Question cannot be empty")
 
@@ -32,63 +35,19 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
         extra={
             "stage": "chat_request_received",
             "request_id": req_id,
-            "question_preview": body.question[:80],
+            "selected_model": settings.ollama.model,
+            "user_question": body.question[:200],
         },
     )
 
-    timings = AnswerTimings()
-
     try:
-        # ── Step 1: Route + extract context ──────────────────────────────────
-        logger.info(
-            "intent_classification_started",
-            extra={"stage": "intent_classification_started", "request_id": req_id},
-        )
-        t0 = time.perf_counter()
-        intent, path, confidence, ctx = await route_question(body.question)
-        timings.intent_ms = round((time.perf_counter() - t0) * 1000, 1)
+        outcome = await route(body.question, req_id=req_id)
 
-        logger.info(
-            "intent_classification_completed",
-            extra={
-                "stage": "intent_classification_completed",
-                "request_id": req_id,
-                "intent": intent.value,
-                "route": path.value,
-                "confidence": round(confidence, 3),
-                "duration_ms": timings.intent_ms,
-            },
-        )
-        logger.info(
-            "query_parsing_completed",
-            extra={
-                "stage": "query_parsing_completed",
-                "request_id": req_id,
-                "timeframe": ctx.timeframe_label or None,
-                "category": ctx.category,
-                "merchant": ctx.merchant,
-                "institution": ctx.institution,
-                "account_type": ctx.account_type,
-            },
-        )
-        logger.info(
-            "route_selected",
-            extra={
-                "stage": "route_selected",
-                "request_id": req_id,
-                "route": path.value,
-                "intent": intent.value,
-            },
-        )
-
-        # ── Step 2: Build structured answer ───────────────────────────────────
-        t1 = time.perf_counter()
-        answer = await build_answer(body.question, intent, path, confidence, ctx, req_id=req_id)
-        timings.sql_ms = answer.timings.sql_ms
-        timings.rag_ms = answer.timings.rag_ms
-        timings.llm_ms = answer.timings.llm_ms
-
-        timings.total_ms = round((time.perf_counter() - total_start) * 1000, 1)
+        answer = outcome.answer
+        total_ms = round((time.perf_counter() - total_start) * 1000, 1)
+        # Preserve any per-stage timings answer_builder populated.
+        timings = answer.timings or AnswerTimings()
+        timings.total_ms = total_ms
         answer.timings = timings
         answer.request_id = req_id
 
@@ -97,12 +56,14 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
             extra={
                 "stage": "chat_request_completed",
                 "request_id": req_id,
-                "intent": intent.value,
-                "route": path.value,
-                "confidence": round(confidence, 3),
-                "rows_used": answer.rows_used,
-                "answer_type": answer.answer_type,
-                "duration_ms": timings.total_ms,
+                "classifier_intent": outcome.classification.intent.value,
+                "query_intent": outcome.query_intent.value,
+                "selected_route": outcome.route,
+                "sql_rows": outcome.sql_rows,
+                "rag_chunks": outcome.rag_chunks,
+                "fallback_steps": outcome.fallback_steps,
+                "final_answer_status": outcome.final_answer_status,
+                "duration_ms": total_ms,
             },
         )
 
@@ -132,4 +93,7 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
             },
             exc_info=True,
         )
-        raise HTTPException(500, {"detail": "An unexpected error occurred processing your question", "request_id": req_id})
+        raise HTTPException(
+            500,
+            {"detail": "An unexpected error occurred processing your question", "request_id": req_id},
+        )

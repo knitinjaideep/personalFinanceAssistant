@@ -42,7 +42,7 @@ def _log_startup_diagnostics(app: FastAPI) -> None:
             "debug": settings.debug,
             "log_level": settings.log_level,
             "database_path": str(settings.get_db_path()),
-            "ollama_model": settings.ollama.chat_model,
+            "ollama_model": settings.ollama.model,
             "embedding_model": settings.ollama.embedding_model,
             "langgraph_installed": langgraph_installed,
             "langgraph_wired_to_chat": False,
@@ -57,11 +57,62 @@ def _log_startup_diagnostics(app: FastAPI) -> None:
         )
 
 
+async def _check_ollama_model() -> None:
+    """Verify the configured chat model is available in Ollama at startup.
+
+    Logs a clear, actionable error (with the exact `ollama pull` command) if the
+    model is missing or Ollama is unreachable. Does not crash the app — the chat
+    pipeline degrades to its rule-based fallback if the model is absent.
+    """
+    from app.services import llm
+
+    model = settings.ollama.model
+    try:
+        health = await llm.check_health()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "ollama_unreachable",
+            extra={"stage": "startup_check", "error": str(exc), "model": model,
+                   "hint": settings.ollama.pull_hint},
+        )
+        return
+
+    if health.get("status") != "ok":
+        logger.error(
+            "ollama_unreachable",
+            extra={"stage": "startup_check", "error": health.get("error"),
+                   "model": model, "hint": settings.ollama.pull_hint},
+        )
+        return
+
+    available = health.get("models", [])
+    # Match on exact name or base name (e.g. "gemma4:latest" vs "gemma4").
+    base = model.split(":")[0]
+    found = any(m == model or m.split(":")[0] == base for m in available)
+    if found:
+        logger.info(
+            "ollama_model_ready",
+            extra={"stage": "startup_check", "model": model},
+        )
+    else:
+        logger.error(
+            "ollama_model_unavailable — chat model not installed. %s",
+            settings.ollama.pull_hint,
+            extra={
+                "stage": "startup_check",
+                "model": model,
+                "available_models": available,
+                "hint": settings.ollama.pull_hint,
+            },
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     logger.info("db.initialized", extra={"stage": "db_initialized"})
     _log_startup_diagnostics(app)
+    await _check_ollama_model()
     yield
     logger.info("coral.shutdown", extra={"stage": "app_shutdown"})
 

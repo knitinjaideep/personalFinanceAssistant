@@ -41,6 +41,7 @@ from app.db.models import DocumentModel
 from app.domain.entities import (
     BulkUploadFileResult,
     BulkUploadSummary,
+    DocumentStats,
     DocumentSummary,
     DocumentUploadResponse,
 )
@@ -49,6 +50,62 @@ from app.statement_sources import SOURCES_BY_ID
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+
+
+# ── Status normalization ──────────────────────────────────────────────────────
+# Backend writes only canonical lowercase values, but tolerate synonyms/casing so
+# the dashboard counts are always correct regardless of how a status was written.
+
+_STATUS_ALIASES: dict[str, str] = {
+    "parsed": "parsed", "completed": "parsed", "processed": "parsed", "success": "parsed",
+    "processing": "processing", "in_progress": "processing", "running": "processing",
+    "uploaded": "uploaded", "pending": "uploaded", "queued": "uploaded",
+    "failed": "failed", "error": "failed",
+}
+
+
+def normalize_status(value: str | None) -> str:
+    """Map any status spelling/casing to one of: parsed, processing, uploaded, failed."""
+    if not value:
+        return "uploaded"
+    return _STATUS_ALIASES.get(value.strip().lower(), "uploaded")
+
+
+async def _build_summary(session, doc: DocumentModel) -> DocumentSummary:
+    """Build an enriched DocumentSummary, pulling period/account info from statements."""
+    stmts = await repo.get_statements_for_document(session, doc.id)
+
+    period_start = period_end = None
+    account_type = None
+    if stmts:
+        starts = [s.period_start for s in stmts if s.period_start]
+        ends = [s.period_end for s in stmts if s.period_end]
+        period_start = min(starts) if starts else None
+        period_end = max(ends) if ends else None
+        # Prefer a concrete (non-"unknown") account_type if any statement has one.
+        account_type = next(
+            (s.account_type for s in stmts if s.account_type and s.account_type != "unknown"),
+            stmts[0].account_type,
+        )
+
+    anchor = period_end or period_start
+    return DocumentSummary(
+        id=doc.id,
+        filename=doc.original_filename,
+        institution=doc.institution_type,
+        status=normalize_status(doc.status),
+        page_count=doc.page_count,
+        statement_count=len(stmts),
+        upload_time=doc.upload_time,
+        processed_time=doc.processed_time,
+        error=doc.error_message,
+        account_product=doc.account_product,
+        account_type=account_type,
+        period_start=period_start,
+        period_end=period_end,
+        statement_year=anchor.year if anchor else None,
+        statement_month=anchor.month if anchor else None,
+    )
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -472,23 +529,34 @@ async def get_document_status(doc_id: str):
 
 @router.get("/", response_model=list[DocumentSummary])
 async def list_documents():
-    """List all documents with status."""
+    """List all documents with enriched, status-normalized summaries."""
     async with get_session() as session:
         docs = await repo.list_documents(session)
-        summaries = []
-        for doc in docs:
-            stmts = await repo.get_statements_for_document(session, doc.id)
-            summaries.append(DocumentSummary(
-                id=doc.id,
-                filename=doc.original_filename,
-                institution=doc.institution_type,
-                status=doc.status,
-                page_count=doc.page_count,
-                statement_count=len(stmts),
-                upload_time=doc.upload_time,
-                error=doc.error_message,
-            ))
-        return summaries
+        return [await _build_summary(session, doc) for doc in docs]
+
+
+@router.get("/stats", response_model=DocumentStats)
+async def document_stats():
+    """Aggregated, status-normalized counts for the Documents dashboard cards.
+
+    Counts are derived from the documents table with status normalization, so the
+    Processing card reflects only documents *truly* in a processing state.
+    """
+    async with get_session() as session:
+        docs = await repo.list_documents(session)
+
+    stats = DocumentStats(total=len(docs))
+    for doc in docs:
+        status = normalize_status(doc.status)
+        if status == "parsed":
+            stats.parsed += 1
+        elif status == "processing":
+            stats.processing += 1
+        elif status == "failed":
+            stats.failed += 1
+        else:
+            stats.uploaded += 1
+    return stats
 
 
 @router.get("/{doc_id}", response_model=DocumentSummary)
@@ -499,17 +567,7 @@ async def get_document(doc_id: str):
             doc = await repo.get_document(session, doc_id)
         except Exception:
             raise HTTPException(404, f"Document {doc_id} not found")
-        stmts = await repo.get_statements_for_document(session, doc.id)
-        return DocumentSummary(
-            id=doc.id,
-            filename=doc.original_filename,
-            institution=doc.institution_type,
-            status=doc.status,
-            page_count=doc.page_count,
-            statement_count=len(stmts),
-            upload_time=doc.upload_time,
-            error=doc.error_message,
-        )
+        return await _build_summary(session, doc)
 
 
 @router.delete("/{doc_id}")

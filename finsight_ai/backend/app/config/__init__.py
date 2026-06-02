@@ -10,21 +10,55 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class OllamaConfig(BaseSettings):
+    """Central Ollama model configuration.
+
+    The single primary model used for chat, intent classification, and entity
+    extraction is `model`. It defaults to Gemma 4 (``gemma4:latest``) and can be
+    overridden with the ``OLLAMA_MODEL`` environment variable (also accepts the
+    legacy ``CORAL_OLLAMA_MODEL`` form). Do NOT hardcode model names elsewhere —
+    read ``settings.ollama.model`` instead.
+    """
+
     model_config = SettingsConfigDict(env_prefix="CORAL_OLLAMA_", env_file=".env", extra="ignore")
 
     base_url: str = Field(default="http://localhost:11434")
-    classification_model: str = Field(default="qwen3:8b")
-    extraction_model: str = Field(default="qwen3:8b")
-    chat_model: str = Field(default="qwen3:8b")
+
+    # The one place model names live. Override via OLLAMA_MODEL=gemma4:e4b
+    model: str = Field(
+        default="gemma4:latest",
+        validation_alias=AliasChoices("OLLAMA_MODEL", "CORAL_OLLAMA_MODEL"),
+        description="Primary Ollama model for chat / classification / extraction.",
+    )
+
     embedding_model: str = Field(default="nomic-embed-text")
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     num_ctx: int = Field(default=8192)
     timeout_seconds: int = Field(default=120)
+
+    # ── Backward-compatible accessors ────────────────────────────────────────
+    # Older code referenced separate models per task. They now all resolve to
+    # the single centralized `model` so nothing is hardcoded in two places.
+    @property
+    def chat_model(self) -> str:
+        return self.model
+
+    @property
+    def classification_model(self) -> str:
+        return self.model
+
+    @property
+    def extraction_model(self) -> str:
+        return self.model
+
+    @property
+    def pull_hint(self) -> str:
+        """User-facing instruction to install the configured model."""
+        return f"Run: ollama pull {self.model}"
 
 
 class DatabaseConfig(BaseSettings):

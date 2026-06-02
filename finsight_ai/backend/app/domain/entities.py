@@ -192,7 +192,25 @@ class DocumentSummary(BaseModel):
     page_count: int | None = None
     statement_count: int = 0
     upload_time: datetime | None = None
+    processed_time: datetime | None = None
     error: str | None = None
+
+    # Enrichment for the Documents dashboard grouping (best-effort, may be null).
+    account_product: str | None = None   # e.g. "American Express — Blue Cash"
+    account_type: str | None = None      # from the parsed statement, e.g. "credit_card"
+    period_start: date | None = None     # earliest statement period for this doc
+    period_end: date | None = None       # latest statement period for this doc
+    statement_year: int | None = None    # year derived from period_end
+    statement_month: int | None = None   # month derived from period_end
+
+
+class DocumentStats(BaseModel):
+    """Aggregated, status-normalized document counts for the dashboard cards."""
+    total: int = 0
+    parsed: int = 0
+    processing: int = 0
+    uploaded: int = 0
+    failed: int = 0
 
 
 class AnalyticsSummary(BaseModel):

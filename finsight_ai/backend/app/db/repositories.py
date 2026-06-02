@@ -116,9 +116,13 @@ async def get_or_create_institution(
     session: AsyncSession, institution_type: str, name: str
 ) -> InstitutionModel:
     result = await session.execute(
-        select(InstitutionModel).where(InstitutionModel.institution_type == institution_type)
+        select(InstitutionModel)
+        .where(InstitutionModel.institution_type == institution_type)
+        .order_by(InstitutionModel.created_at)
     )
-    inst = result.scalar_one_or_none()
+    # Tolerate pre-existing duplicates: deterministically reuse the oldest match
+    # rather than raising MultipleResultsFound.
+    inst = result.scalars().first()
     if inst is None:
         inst = InstitutionModel(name=name, institution_type=institution_type)
         session.add(inst)
@@ -137,12 +141,16 @@ async def get_or_create_account(
     account_name: str | None = None,
 ) -> AccountModel:
     result = await session.execute(
-        select(AccountModel).where(
+        select(AccountModel)
+        .where(
             AccountModel.institution_id == institution_id,
             AccountModel.account_number_masked == account_number_masked,
         )
+        .order_by(AccountModel.created_at)
     )
-    acct = result.scalar_one_or_none()
+    # Tolerate pre-existing duplicates: deterministically reuse the oldest match
+    # rather than raising MultipleResultsFound.
+    acct = result.scalars().first()
     if acct is None:
         acct = AccountModel(
             institution_id=institution_id,
