@@ -5,8 +5,6 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { OverviewPage } from "./pages/OverviewPage";
 import { BankingPage } from "./pages/BankingPage";
 import { InvestmentsPage } from "./pages/InvestmentsPage";
-import { SubscriptionsPage } from "./pages/SubscriptionsPage";
-import { FeesPage } from "./pages/FeesPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { ChatPage } from "./pages/ChatPage";
 import { CoralFloatingButton } from "./components/CoralFloatingButton";
@@ -30,13 +28,11 @@ function PageContent() {
         exit="exit"
         className="flex-1 min-h-0 flex flex-col"
       >
-        {activePage === "overview"       && <OverviewPage />}
-        {activePage === "banking"        && <BankingPage />}
-        {activePage === "investments"    && <InvestmentsPage />}
-        {activePage === "subscriptions"  && <SubscriptionsPage />}
-        {activePage === "fees"           && <FeesPage />}
-        {activePage === "documents"      && <DocumentsPage />}
-        {activePage === "chat"           && <ChatPage />}
+        {activePage === "overview"    && <OverviewPage />}
+        {activePage === "banking"     && <BankingPage />}
+        {activePage === "investments" && <InvestmentsPage />}
+        {activePage === "documents"   && <DocumentsPage />}
+        {activePage === "chat"        && <ChatPage />}
       </motion.div>
     </AnimatePresence>
   );

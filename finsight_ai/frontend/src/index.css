@@ -282,6 +282,18 @@
   }
 }
 
+/* ── Overview feature cards gentle float ─────────────────────────────────── */
+@keyframes coralFeatureFloat {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-7px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [style*="coralFeatureFloat"] {
+    animation: none !important;
+  }
+}
+
 /* Glossy highlight shimmers gently inside the bubble */
 @keyframes coralBubbleShimmer {
   0%, 100% {

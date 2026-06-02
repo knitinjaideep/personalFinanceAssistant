@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import {
-  LayoutDashboard, Landmark, TrendingUp, RefreshCw,
-  Receipt, FileText, MessageSquare, Lock,
+  LayoutDashboard, Landmark, TrendingUp,
+  FileText, MessageSquare, Lock,
 } from "lucide-react";
 import { useAppStore, type ActivePage } from "../../store/appStore";
 import { CoralMascot } from "../CoralMascot";
@@ -13,23 +13,21 @@ const NAV_SECTIONS: { label: string; items: { id: ActivePage; label: string; ico
   {
     label: "Overview",
     items: [
-      { id: "overview",      label: "Overview",      icon: <LayoutDashboard size={15} /> },
+      { id: "overview",    label: "Overview",     icon: <LayoutDashboard size={15} /> },
     ],
   },
   {
     label: "Money",
     items: [
-      { id: "banking",       label: "Banking",       icon: <Landmark size={15} /> },
-      { id: "investments",   label: "Investments",   icon: <TrendingUp size={15} /> },
-      { id: "subscriptions", label: "Subscriptions", icon: <RefreshCw size={15} /> },
-      { id: "fees",          label: "Fees",          icon: <Receipt size={15} /> },
+      { id: "banking",     label: "Banking",      icon: <Landmark size={15} /> },
+      { id: "investments", label: "Investments",  icon: <TrendingUp size={15} /> },
     ],
   },
   {
     label: "Tools",
     items: [
-      { id: "documents",     label: "Documents",     icon: <FileText size={15} /> },
-      { id: "chat",          label: "Chat",          icon: <MessageSquare size={15} /> },
+      { id: "documents",   label: "Documents",    icon: <FileText size={15} /> },
+      { id: "chat",        label: "Chat",         icon: <MessageSquare size={15} /> },
     ],
   },
 ];

@@ -18,8 +18,6 @@ export type ActivePage =
   | "overview"
   | "banking"
   | "investments"
-  | "subscriptions"
-  | "fees"
   | "documents"
   | "chat";
 
