@@ -6,6 +6,7 @@ import { useAppStore } from "../../store/appStore";
 const CARDS = [
   {
     variant: "banking" as const,
+    iconKey: "banking" as const,
     title: "Banking",
     description: "Credit cards, checking, savings, and cash flow.",
     actionLabel: "View banking",
@@ -14,6 +15,7 @@ const CARDS = [
   },
   {
     variant: "investments" as const,
+    iconKey: "investments" as const,
     title: "Investments",
     description: "Portfolio value, holdings, and performance.",
     actionLabel: "View portfolio",
@@ -22,6 +24,7 @@ const CARDS = [
   },
   {
     variant: "documents" as const,
+    iconKey: "documents" as const,
     title: "Documents",
     description: "Upload statements and track parsing.",
     actionLabel: "Manage documents",
@@ -30,6 +33,7 @@ const CARDS = [
   },
   {
     variant: "main" as const,
+    iconKey: "chat" as const,
     title: "Chat",
     description: "Ask Coral about your finances in plain English.",
     actionLabel: "Open chat",
@@ -52,6 +56,7 @@ export function OverviewImageFeatureCards() {
         <motion.div key={card.variant} variants={staggerChild} className="flex">
           <CoralImageFeatureCard
             variant={card.variant}
+            iconKey={card.iconKey}
             title={card.title}
             description={card.description}
             actionLabel={card.actionLabel}

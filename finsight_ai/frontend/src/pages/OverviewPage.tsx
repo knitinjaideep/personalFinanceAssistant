@@ -1,13 +1,11 @@
 import { motion } from "framer-motion";
 import { MessageSquare, Upload, ArrowRight, Sparkles, CheckCircle2, AlertCircle, Clock } from "lucide-react";
 import { staggerChild, staggerContainer, contentPageVariants } from "../design/motion";
-import { CoralBubbleMascot } from "../components/CoralBubbleMascot";
 import { OverviewImageFeatureCards } from "../components/dashboard/OverviewImageFeatureCards";
-import { HomeImagePanel } from "../components/home/HomeImagePanel";
+import { HomeHeroMascot } from "../components/home/HomeHeroMascot";
 import { useAppStore } from "../store/appStore";
 import { useBankingData } from "../hooks/useBankingData";
 import { useInvestmentData } from "../hooks/useInvestmentData";
-import { homeImages } from "../lib/homeImages";
 
 // ── Open hero — no card, content floats over the page background ──────────────
 
@@ -17,60 +15,73 @@ function OpenHero() {
   return (
     <motion.div variants={staggerChild}>
       <section
-        className="relative min-h-[520px] overflow-visible px-7 pt-10 pb-6"
+        className="relative overflow-visible"
         style={{ background: "transparent" }}
       >
-        {/* Soft radial vignette — edge-less, not rectangular, improves text contrast */}
+        {/* Left-side text vignette — improves readability without boxing the hero */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(ellipse at 22% 48%, rgba(3,17,31,0.68) 0%, rgba(3,17,31,0.28) 42%, transparent 68%)",
+              "radial-gradient(ellipse at 18% 50%, rgba(3,17,31,0.72) 0%, rgba(3,17,31,0.32) 44%, transparent 70%)",
           }}
         />
+        {/* No bottom-fade overlay here — avoids a hard seam against the feature cards */}
 
         {/* Content grid */}
-        <div className="relative z-10 grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
+        <div className="relative z-10 mx-auto grid min-h-[560px] max-w-7xl grid-cols-1 items-center gap-8 px-6 pt-12 pb-4 lg:grid-cols-[0.46fr_0.54fr] lg:gap-4 lg:px-10 xl:min-h-[620px]">
+
           {/* ── Left — text ──────────────────────────────────────────────── */}
-          <div className="flex flex-col items-start">
-            {/* Welcome badge */}
+          <div className="relative z-20 flex max-w-xl flex-col items-start">
+
+            {/* Welcome pill */}
             <div
-              className="mb-5 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-[11px] font-semibold tracking-wide"
+              className="mb-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold"
               style={{
                 background: "rgba(34,211,238,0.10)",
-                border: "1px solid rgba(34,211,238,0.22)",
-                color: "rgba(34,211,238,0.90)",
+                border: "1px solid rgba(34,211,238,0.25)",
+                color: "rgba(186,230,255,0.90)",
+                backdropFilter: "blur(12px)",
+                WebkitBackdropFilter: "blur(12px)",
+                boxShadow: "0 0 30px rgba(34,211,238,0.08)",
               }}
             >
-              <Sparkles size={10} />
+              <Sparkles size={12} style={{ color: "rgba(34,211,238,0.90)" }} />
               Welcome to Coral
             </div>
 
-            <h1 className="text-[44px] font-extrabold tracking-tight leading-[1.08] text-white drop-shadow-[0_2px_16px_rgba(3,17,31,0.80)]">
-              Hi, I'm Coral 👋
+            <h1
+              className="text-5xl font-bold tracking-tight text-white xl:text-6xl"
+              style={{
+                lineHeight: 1.08,
+                textShadow: "0 2px 20px rgba(3,17,31,0.80)",
+              }}
+            >
+              Hi, I'm Coral <span className="inline-block">👋</span>
             </h1>
 
             <p
-              className="text-[15px] font-semibold mt-2"
-              style={{ color: "rgba(34,211,238,0.75)" }}
+              className="mt-5 text-xl font-semibold"
+              style={{ color: "rgba(34,211,238,0.85)" }}
             >
               Your local financial intelligence hub.
             </p>
 
             <p
-              className="text-[13.5px] mt-4 max-w-[420px] leading-relaxed"
-              style={{ color: "rgba(255,255,255,0.60)" }}
+              className="mt-5 max-w-lg text-[15px] leading-relaxed"
+              style={{ color: "rgba(255,255,255,0.62)" }}
             >
               Everything you need to understand your finances, all in one place.
               100% private — no cloud, no sharing, ever.
             </p>
 
             {/* CTA buttons */}
-            <div className="flex flex-wrap items-center gap-3 mt-7">
+            <div className="mt-9 flex flex-col gap-4 sm:flex-row">
               <button
+                type="button"
                 onClick={() => setActivePage("chat")}
-                className="flex items-center gap-2 px-6 py-3 rounded-2xl text-[13px] font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.97]"
+                className="flex items-center gap-2 rounded-2xl px-6 py-3 text-[13px] font-semibold text-white transition-all hover:scale-[1.03] active:scale-[0.97]"
                 style={{
                   background: "linear-gradient(135deg, #FF7A5A, #FFA38F)",
                   boxShadow: "0 6px 28px rgba(255,122,90,0.45)",
@@ -80,8 +91,9 @@ function OpenHero() {
                 Ask Coral
               </button>
               <button
+                type="button"
                 onClick={() => setActivePage("documents")}
-                className="flex items-center gap-2 px-6 py-3 rounded-2xl text-[13px] font-semibold transition-all hover:scale-[1.03] active:scale-[0.97]"
+                className="flex items-center gap-2 rounded-2xl px-6 py-3 text-[13px] font-semibold transition-all hover:scale-[1.03] active:scale-[0.97]"
                 style={{
                   background: "rgba(255,255,255,0.08)",
                   backdropFilter: "blur(8px)",
@@ -95,43 +107,25 @@ function OpenHero() {
               </button>
             </div>
 
-            {/* Privacy badge */}
+            {/* Privacy line */}
             <div
-              className="mt-6 inline-flex items-center gap-2 text-[11px] font-semibold tracking-wider"
-              style={{ color: "rgba(76,175,147,0.85)" }}
+              className="mt-7 flex items-center gap-2 text-[12px] font-semibold tracking-wide"
+              style={{ color: "rgba(110,231,183,0.80)" }}
             >
               <span
-                className="w-1.5 h-1.5 rounded-full bg-[#4CAF93] inline-block"
-                style={{ boxShadow: "0 0 8px rgba(76,175,147,0.80)" }}
+                className="inline-block h-2 w-2 rounded-full"
+                style={{
+                  background: "#6ee7b7",
+                  boxShadow: "0 0 18px rgba(110,231,183,0.80)",
+                }}
               />
               Private • Local • Secure
             </div>
           </div>
 
-          {/* ── Right — mascot floats directly over background ───────────────── */}
-          <div className="flex justify-center lg:justify-end">
-            {/* Radial background glow so mascot doesn't feel pasted */}
-            <div className="relative">
-              <div
-                aria-hidden
-                className="pointer-events-none absolute"
-                style={{
-                  inset: "-30%",
-                  borderRadius: "50%",
-                  background:
-                    "radial-gradient(circle, rgba(34,211,238,0.18) 0%, rgba(255,122,90,0.12) 40%, transparent 70%)",
-                  filter: "blur(28px)",
-                }}
-              />
-              <CoralBubbleMascot
-                variant="main"
-                size="hero"
-                glow
-                animated
-                priority
-                speech="Ask me anything about your spending, statements, fees, or investments!"
-              />
-            </div>
+          {/* ── Right — glass bubble mascot ──────────────────────────────── */}
+          <div className="relative z-10 flex items-center justify-center lg:-ml-8 xl:-ml-14">
+            <HomeHeroMascot />
           </div>
         </div>
       </section>
@@ -164,20 +158,36 @@ function NextBestActions() {
 
   return (
     <motion.div variants={staggerChild} className="h-full">
-      <HomeImagePanel
-        title={
-          <>
-            <Sparkles size={13} style={{ color: "rgba(255,122,90,0.85)" }} />
-            ✦ Next best actions
-          </>
-        }
-        backgroundSrc="/backgrounds/app-ocean-dark.png"
-        overlay="left-heavy"
-        imagePosition="center center"
-        imageClassName="opacity-[0.88]"
-        contentClassName="p-6 lg:p-7"
+      <motion.div
+        className="group relative h-full min-h-[280px] rounded-[28px] p-6 lg:p-7"
+        style={{
+          background: "rgba(7,24,38,0.50)",
+          backdropFilter: "blur(1px)",
+          WebkitBackdropFilter: "blur(1px)",
+          border: "1px solid rgba(34,211,238,0.32)",
+          boxShadow: "0 24px 80px rgba(4,14,26,0.38), 0 4px 16px rgba(4,14,26,0.22), 0 0 0 1px rgba(34,211,238,0.08), inset 0 1px 0 rgba(34,211,238,0.18)",
+          animation: "coralFeatureFloat 5.2s ease-in-out infinite",
+          animationDelay: "0ms",
+        }}
+        whileHover={{ scale: 1.025, y: -5, transition: { type: "spring", stiffness: 280, damping: 22 } }}
+        whileTap={{ scale: 0.98, transition: { duration: 0.12 } }}
       >
-        <div className="space-y-3">
+        {/* Top light wash — matches feature cards */}
+        <div
+          className="absolute inset-0 rounded-[28px] pointer-events-none"
+          style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%)" }}
+        />
+        {/* Hover glow ring — matches feature cards */}
+        <div
+          className="absolute inset-0 rounded-[28px] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+          style={{ boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.22), 0 0 50px rgba(95,168,211,0.22)" }}
+        />
+
+        <h2 className="relative flex items-center gap-1.5 text-[13px] font-bold text-white mb-4">
+          <Sparkles size={13} style={{ color: "rgba(255,122,90,0.85)" }} />
+          ✦ Next best actions
+        </h2>
+        <div className="relative space-y-3">
           {NEXT_ACTIONS.map((action) => (
             <button
               key={action.title}
@@ -185,30 +195,30 @@ function NextBestActions() {
               onClick={() => setActivePage(action.page)}
               className="w-full flex items-center justify-between rounded-2xl text-left transition-all hover:scale-[1.01] group/row"
               style={{
-                background: "rgba(3,17,31,0.45)",
-                border: "1px solid rgba(34,211,238,0.12)",
-                backdropFilter: "blur(12px)",
-                WebkitBackdropFilter: "blur(12px)",
-                padding: "14px 18px",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(34,211,238,0.22)",
+                backdropFilter: "blur(2px)",
+                WebkitBackdropFilter: "blur(2px)",
+                padding: "13px 16px",
               }}
             >
               <div>
                 <p className="text-[13px] font-semibold" style={{ color: "rgba(255,255,255,0.90)" }}>
                   {action.title}
                 </p>
-                <p className="text-[11px] mt-0.5" style={{ color: "rgba(186,230,255,0.55)" }}>
+                <p className="text-[11px] mt-0.5" style={{ color: "rgba(186,230,255,0.50)" }}>
                   {action.description}
                 </p>
               </div>
               <ArrowRight
                 size={14}
                 className="shrink-0 ml-3 transition-transform duration-200 group-hover/row:translate-x-1"
-                style={{ color: "rgba(34,211,238,0.75)" }}
+                style={{ color: "rgba(34,211,238,0.70)" }}
               />
             </button>
           ))}
         </div>
-      </HomeImagePanel>
+      </motion.div>
     </motion.div>
   );
 }
@@ -255,25 +265,43 @@ function DataAtAGlance() {
 
   return (
     <motion.div variants={staggerChild} className="h-full">
-      <HomeImagePanel
-        title="Your data at a glance"
-        backgroundSrc="/backgrounds/app-ocean-dark.png"
-        overlay="balanced"
-        imagePosition="center center"
-        imageClassName="opacity-[0.82]"
-        contentClassName="p-6 lg:p-7"
+      <motion.div
+        className="group relative h-full min-h-[280px] rounded-[28px] p-6 lg:p-7"
+        style={{
+          background: "rgba(7,24,38,0.50)",
+          backdropFilter: "blur(1px)",
+          WebkitBackdropFilter: "blur(1px)",
+          border: "1px solid rgba(34,211,238,0.32)",
+          boxShadow: "0 24px 80px rgba(4,14,26,0.38), 0 4px 16px rgba(4,14,26,0.22), 0 0 0 1px rgba(34,211,238,0.08), inset 0 1px 0 rgba(34,211,238,0.18)",
+          animation: "coralFeatureFloat 5.2s ease-in-out infinite",
+          animationDelay: "400ms",
+        }}
+        whileHover={{ scale: 1.025, y: -5, transition: { type: "spring", stiffness: 280, damping: 22 } }}
+        whileTap={{ scale: 0.98, transition: { duration: 0.12 } }}
       >
-        <div className="space-y-4">
+        {/* Top light wash */}
+        <div
+          className="absolute inset-0 rounded-[28px] pointer-events-none"
+          style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%)" }}
+        />
+        {/* Hover glow ring */}
+        <div
+          className="absolute inset-0 rounded-[28px] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+          style={{ boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.22), 0 0 50px rgba(95,168,211,0.22)" }}
+        />
+
+        <h2 className="relative text-[13px] font-bold text-white mb-4">Your data at a glance</h2>
+        <div className="relative space-y-4">
           {rows.map((row) => (
             <div
               key={row.label}
               className="flex items-center justify-between rounded-2xl"
               style={{
-                background: "rgba(3,17,31,0.42)",
-                border: "1px solid rgba(34,211,238,0.12)",
-                backdropFilter: "blur(12px)",
-                WebkitBackdropFilter: "blur(12px)",
-                padding: "14px 18px",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(34,211,238,0.22)",
+                backdropFilter: "blur(2px)",
+                WebkitBackdropFilter: "blur(2px)",
+                padding: "13px 16px",
               }}
             >
               <span className="text-[13px] font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
@@ -283,7 +311,7 @@ function DataAtAGlance() {
             </div>
           ))}
         </div>
-      </HomeImagePanel>
+      </motion.div>
     </motion.div>
   );
 }
@@ -304,7 +332,7 @@ export function OverviewPage() {
         <OpenHero />
 
         {/* Four feature cards */}
-        <motion.div variants={staggerChild} className="px-7 mt-2">
+        <motion.div variants={staggerChild} className="px-7">
           <OverviewImageFeatureCards />
         </motion.div>
 

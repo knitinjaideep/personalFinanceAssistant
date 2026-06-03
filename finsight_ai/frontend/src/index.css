@@ -331,6 +331,23 @@
   100% { background-position: 200% 0; }
 }
 
+/* ── Hero mascot glass bubble float ─────────────────────────────────────── */
+@keyframes coral-soft-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-7px); }
+}
+
+.coral-soft-float {
+  animation: coral-soft-float 7s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coral-soft-float {
+    animation: none !important;
+  }
+}
+
 /* ── CSS classes ─────────────────────────────────────────────────────────── */
 
 .coral-float {
