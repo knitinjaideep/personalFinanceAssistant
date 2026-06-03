@@ -8,7 +8,7 @@ import { InvestmentsPage } from "./pages/InvestmentsPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { ChatPage } from "./pages/ChatPage";
 import { CoralFloatingButton } from "./components/CoralFloatingButton";
-import { CoralAppBackground } from "./components/CoralAppBackground";
+import { CoralPageBackground } from "./components/CoralPageBackground";
 
 const pageVariants = {
   hidden: { opacity: 0, y: 8 },
@@ -41,51 +41,33 @@ function PageContent() {
 export default function App() {
   return (
     <div
-      className="relative min-h-screen w-full flex items-center justify-center overflow-hidden"
-      style={{
-        background: "radial-gradient(ellipse at 40% 20%, #0f3d55 0%, #071826 55%, #040e18 100%)",
-        padding: "20px",
-      }}
+      className="relative min-h-screen w-full overflow-hidden"
+      style={{ background: "#03111f" }}
     >
-      {/* Global full-viewport watermark — outside the clipped shell so it spans
-          the entire screen. Uses position:fixed internally and sits at z-0
-          behind everything. pointer-events-none so it never blocks clicks. */}
-      <CoralAppBackground />
+      {/* Full-viewport underwater photo background — fixed, z-0, never blocks clicks */}
+      <CoralPageBackground />
 
-      {/* Outer shell — fills viewport with slight margin */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.985, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full flex"
-        style={{
-          position: "relative",
-          zIndex: 10,
-          height: "calc(100vh - 40px)",
-          maxWidth: "1400px",
-          borderRadius: "20px",
-          overflow: "hidden",
-          boxShadow:
-            "0 48px 140px rgba(2,8,18,0.75), 0 8px 32px rgba(2,8,18,0.50), 0 0 0 1px rgba(255,255,255,0.05)",
-        }}
+      {/* App shell — full screen, sits above background */}
+      <div
+        className="relative flex min-h-screen"
+        style={{ zIndex: 10 }}
       >
-        {/* Left sidebar — dark navy panel */}
+        {/* Left sidebar */}
         <Sidebar />
 
-        {/* Right content — light glass panel */}
-        <div
-          className="relative flex-1 flex flex-col min-w-0"
+        {/* Main content area — transparent so the full-viewport background shows through */}
+        <main
+          className="relative flex-1 flex flex-col min-w-0 min-h-screen"
           style={{
-            background: "linear-gradient(160deg, rgba(240,249,252,0.97) 0%, rgba(248,253,255,0.99) 100%)",
-            borderLeft: "1px solid rgba(255,255,255,0.06)",
+            background: "transparent",
+            borderLeft: "1px solid rgba(34,211,238,0.08)",
           }}
         >
-          {/* Page content */}
-          <div className="relative z-10 flex-1 flex flex-col min-h-0">
+          <div className="relative z-10 flex-1 flex flex-col min-h-0" style={{ background: "transparent" }}>
             <PageContent />
           </div>
-        </div>
-      </motion.div>
+        </main>
+      </div>
 
       {/* Floating "Ask Coral" launcher (hidden on chat page) */}
       <CoralFloatingButton />
@@ -95,16 +77,16 @@ export default function App() {
         toastOptions={{
           style: {
             borderRadius: "14px",
-            background: "rgba(255,255,255,0.96)",
+            background: "rgba(6,26,42,0.92)",
             backdropFilter: "blur(16px)",
-            color: "#0B3C5D",
-            border: "1px solid rgba(205,237,246,0.8)",
-            boxShadow: "0 8px 32px rgba(11,60,93,0.14)",
+            color: "rgba(255,255,255,0.90)",
+            border: "1px solid rgba(34,211,238,0.20)",
+            boxShadow: "0 8px 32px rgba(3,17,31,0.50)",
             fontSize: "13px",
             fontWeight: "500",
           },
-          success: { iconTheme: { primary: "#4CAF93", secondary: "white" } },
-          error:   { iconTheme: { primary: "#E45757", secondary: "white" } },
+          success: { iconTheme: { primary: "#4CAF93", secondary: "rgba(6,26,42,0.92)" } },
+          error:   { iconTheme: { primary: "#E45757", secondary: "rgba(6,26,42,0.92)" } },
         }}
       />
     </div>

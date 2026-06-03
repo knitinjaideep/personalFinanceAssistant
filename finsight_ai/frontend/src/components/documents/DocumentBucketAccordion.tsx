@@ -19,13 +19,12 @@ interface Props {
   expanded: Set<string>;
   toggle: (key: string) => void;
   onChanged: () => void;
-  /** document_id → ingestion issues, for per-row "incomplete" badges. */
   issuesByDoc?: Record<string, DocumentIssue>;
 }
 
 function Caret({ open }: { open: boolean }) {
   return (
-    <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.18 }} className="text-ocean/40">
+    <motion.span animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.18 }} style={{ color: "rgba(34,211,238,0.45)" }}>
       <ChevronRight size={15} />
     </motion.span>
   );
@@ -72,12 +71,15 @@ function YearSection({
     <div>
       <button
         onClick={() => toggle(key)}
-        className="w-full flex items-center gap-2 pl-9 pr-4 py-2 hover:bg-ocean-50/30 transition-colors"
+        className="w-full flex items-center gap-2 pl-9 pr-4 py-2 transition-colors"
+        style={{ background: open ? "rgba(34,211,238,0.04)" : "transparent" }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(34,211,238,0.06)")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = open ? "rgba(34,211,238,0.04)" : "transparent")}
       >
         <Caret open={open} />
-        <Calendar size={12} className="text-ocean/35" />
-        <span className="text-[11.5px] font-semibold text-ocean/70">{group.yearLabel}</span>
-        <span className="text-[10px] text-ocean/35">({group.docs.length})</span>
+        <Calendar size={12} style={{ color: "rgba(34,211,238,0.40)" }} />
+        <span className="text-[11.5px] font-semibold" style={{ color: "rgba(255,255,255,0.65)" }}>{group.yearLabel}</span>
+        <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.28)" }}>({group.docs.length})</span>
       </button>
       <Collapse open={open}>
         {group.docs.map((doc: DocumentSummary) => (
@@ -109,12 +111,18 @@ function AccountSection({
     <div>
       <button
         onClick={() => toggle(key)}
-        className="w-full flex items-center gap-2 pl-5 pr-4 py-2.5 hover:bg-ocean-50/30 transition-colors border-t border-ocean-50/40"
+        className="w-full flex items-center gap-2 pl-5 pr-4 py-2.5 transition-colors"
+        style={{
+          borderTop: "1px solid rgba(34,211,238,0.08)",
+          background: open ? "rgba(34,211,238,0.04)" : "transparent",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(34,211,238,0.06)")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = open ? "rgba(34,211,238,0.04)" : "transparent")}
       >
         <Caret open={open} />
-        <CreditCard size={13} className="text-ocean/45" />
-        <span className="text-[12.5px] font-semibold text-ocean-deep">{group.account}</span>
-        <span className="text-[10px] text-ocean/35">({group.count})</span>
+        <CreditCard size={13} style={{ color: "rgba(34,211,238,0.45)" }} />
+        <span className="text-[12.5px] font-semibold text-white">{group.account}</span>
+        <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.28)" }}>({group.count})</span>
       </button>
       <Collapse open={open}>
         {group.years.map((yg) => (
@@ -145,21 +153,29 @@ export function DocumentBucketAccordion({ groups, expanded, toggle, onChanged, i
             key={inst.slug}
             className="rounded-2xl overflow-hidden"
             style={{
-              background: "rgba(255,255,255,0.85)",
-              border: "1px solid rgba(205,237,246,0.65)",
-              boxShadow: "0 4px 24px rgba(11,60,93,0.06)",
+              background: "rgba(3,17,31,0.55)",
+              backdropFilter: "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              border: "1px solid rgba(34,211,238,0.12)",
+              boxShadow: "0 8px 32px rgba(3,17,31,0.35)",
             }}
           >
             <button
               onClick={() => toggle(key)}
-              className="w-full flex items-center gap-2.5 px-4 py-3.5 hover:bg-ocean-50/25 transition-colors"
+              className="w-full flex items-center gap-2.5 px-4 py-3.5 transition-colors"
+              style={{ background: open ? "rgba(34,211,238,0.05)" : "transparent" }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(34,211,238,0.07)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = open ? "rgba(34,211,238,0.05)" : "transparent")}
             >
               <Caret open={open} />
-              <div className="p-1.5 rounded-lg" style={{ background: "rgba(31,111,139,0.10)", color: "#1F6F8B" }}>
+              <div
+                className="p-1.5 rounded-lg"
+                style={{ background: "rgba(34,211,238,0.12)", color: "rgba(34,211,238,0.80)" }}
+              >
                 <Landmark size={14} />
               </div>
-              <span className="text-[14px] font-bold text-ocean-deep tracking-tight">{inst.label}</span>
-              <span className="text-[11px] text-ocean/40 font-medium">
+              <span className="text-[14px] font-bold text-white tracking-tight">{inst.label}</span>
+              <span className="text-[11px] font-medium" style={{ color: "rgba(255,255,255,0.35)" }}>
                 {inst.count} document{inst.count !== 1 ? "s" : ""}
               </span>
             </button>

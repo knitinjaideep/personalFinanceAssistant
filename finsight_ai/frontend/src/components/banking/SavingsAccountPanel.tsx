@@ -25,35 +25,35 @@ export function SavingsAccountPanel({ data, last6Months }: Props) {
 
   return (
     <div
-      className="rounded-xl p-4 space-y-4"
+      className="rounded-2xl p-4 space-y-4"
       style={{
-        background: "rgba(255,255,255,0.70)",
-        border: "1px solid rgba(205,237,246,0.55)",
+        background: "rgba(3,17,31,0.50)",
+        border: "1px solid rgba(34,211,238,0.10)",
       }}
     >
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[14px] font-bold text-ocean-deep">{config.displayName}</p>
-          <p className="text-[11px] text-ocean/40 mt-0.5">High-yield savings</p>
+          <p className="text-[14px] font-bold text-white">{config.displayName}</p>
+          <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>High-yield savings</p>
         </div>
         {cardSummary && (
           <div className="text-right">
             <p className="text-[13px] font-bold" style={{ color: "#4CAF93" }}>
               {fmtUSD(cardSummary.total_spend)}
             </p>
-            <p className="text-[10px] text-ocean/35">total activity</p>
+            <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.30)" }}>total activity</p>
           </div>
         )}
       </div>
 
       {!hasData && dataHealth.warning && (
         <div
-          className="rounded-lg px-3 py-2 flex items-start gap-2"
-          style={{ background: "rgba(255,209,102,0.10)", border: "1px solid rgba(255,209,102,0.25)" }}
+          className="rounded-xl px-3 py-2 flex items-start gap-2"
+          style={{ background: "rgba(255,209,102,0.08)", border: "1px solid rgba(255,209,102,0.20)" }}
         >
-          <AlertCircle size={13} style={{ color: "#c89a00" }} className="shrink-0 mt-0.5" />
-          <p className="text-[11px] leading-relaxed" style={{ color: "#a07800" }}>
+          <AlertCircle size={13} style={{ color: "#FFD166" }} className="shrink-0 mt-0.5" />
+          <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,209,102,0.80)" }}>
             {dataHealth.warning}
           </p>
         </div>
@@ -69,10 +69,10 @@ export function SavingsAccountPanel({ data, last6Months }: Props) {
           ].map(({ label, value, color }) => (
             <div
               key={label}
-              className="rounded-lg p-2 text-center"
-              style={{ background: "rgba(240,249,252,0.60)" }}
+              className="rounded-xl p-2 text-center"
+              style={{ background: "rgba(34,211,238,0.06)", border: "1px solid rgba(34,211,238,0.10)" }}
             >
-              <p className="text-[10px] text-ocean/38 font-medium uppercase tracking-wide">{label}</p>
+              <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.38)" }}>{label}</p>
               <p className="text-[13px] font-bold mt-0.5 tabular" style={{ color }}>{value}</p>
             </div>
           ))}
@@ -81,7 +81,7 @@ export function SavingsAccountPanel({ data, last6Months }: Props) {
 
       {/* Cash flow chart */}
       <div>
-        <p className="text-[11px] font-semibold text-ocean/50 uppercase tracking-wide mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "rgba(255,255,255,0.38)" }}>
           Deposits vs Withdrawals — Last 6 Months
         </p>
         <CashFlowChart

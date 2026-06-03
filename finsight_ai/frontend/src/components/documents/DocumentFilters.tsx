@@ -15,9 +15,17 @@ interface Props {
   onCollapseAll: () => void;
 }
 
-const selectStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.9)",
-  border: "1px solid rgba(205,237,246,0.7)",
+const darkGlass: React.CSSProperties = {
+  background: "rgba(3,17,31,0.55)",
+  backdropFilter: "blur(16px)",
+  WebkitBackdropFilter: "blur(16px)",
+  border: "1px solid rgba(34,211,238,0.12)",
+  color: "rgba(255,255,255,0.80)",
+};
+
+const darkGlassSelect: React.CSSProperties = {
+  ...darkGlass,
+  colorScheme: "dark",
 };
 
 export function DocumentFilters({ docs, filters, onChange, onExpandAll, onCollapseAll }: Props) {
@@ -32,14 +40,18 @@ export function DocumentFilters({ docs, filters, onChange, onExpandAll, onCollap
       <div className="relative flex-1 min-w-[200px]">
         <Search
           size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-ocean/35 pointer-events-none"
+          className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+          style={{ color: "rgba(34,211,238,0.45)" }}
         />
         <input
           value={filters.search}
           onChange={(e) => set({ search: e.target.value })}
           placeholder="Search filename, account, institution…"
-          className="w-full pl-9 pr-3 py-2 rounded-xl text-[13px] text-ocean-deep placeholder:text-ocean/30 focus:outline-none focus:ring-2 focus:ring-ocean-sea/30"
-          style={selectStyle}
+          className="w-full pl-9 pr-3 py-2 rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+          style={{
+            ...darkGlass,
+            background: "rgba(3,17,31,0.55)",
+          }}
         />
       </div>
 
@@ -47,8 +59,8 @@ export function DocumentFilters({ docs, filters, onChange, onExpandAll, onCollap
       <select
         value={filters.institution}
         onChange={(e) => set({ institution: e.target.value })}
-        className="px-3 py-2 rounded-xl text-[12px] font-medium text-ocean-deep focus:outline-none focus:ring-2 focus:ring-ocean-sea/30"
-        style={selectStyle}
+        className="px-3 py-2 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+        style={darkGlassSelect}
       >
         <option value="all">All institutions</option>
         {institutions.map((opt) => (
@@ -62,8 +74,8 @@ export function DocumentFilters({ docs, filters, onChange, onExpandAll, onCollap
       <select
         value={filters.year}
         onChange={(e) => set({ year: e.target.value })}
-        className="px-3 py-2 rounded-xl text-[12px] font-medium text-ocean-deep focus:outline-none focus:ring-2 focus:ring-ocean-sea/30"
-        style={selectStyle}
+        className="px-3 py-2 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+        style={darkGlassSelect}
       >
         <option value="all">All years</option>
         {years.map((y) => (
@@ -77,8 +89,8 @@ export function DocumentFilters({ docs, filters, onChange, onExpandAll, onCollap
       <select
         value={filters.status}
         onChange={(e) => set({ status: e.target.value })}
-        className="px-3 py-2 rounded-xl text-[12px] font-medium text-ocean-deep focus:outline-none focus:ring-2 focus:ring-ocean-sea/30"
-        style={selectStyle}
+        className="px-3 py-2 rounded-xl text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+        style={darkGlassSelect}
       >
         <option value="all">All statuses</option>
         {(["parsed", "processing", "uploaded", "failed"] as const).map((s) => (
@@ -92,8 +104,8 @@ export function DocumentFilters({ docs, filters, onChange, onExpandAll, onCollap
       <div className="flex items-center gap-1.5 ml-auto">
         <button
           onClick={onExpandAll}
-          className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-[12px] font-medium text-ocean/60 hover:text-ocean transition-colors"
-          style={selectStyle}
+          className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-[12px] font-medium transition-colors hover:border-cyan-400/25"
+          style={darkGlass}
           title="Expand all"
         >
           <ChevronsUpDown size={13} />
@@ -101,8 +113,8 @@ export function DocumentFilters({ docs, filters, onChange, onExpandAll, onCollap
         </button>
         <button
           onClick={onCollapseAll}
-          className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-[12px] font-medium text-ocean/60 hover:text-ocean transition-colors"
-          style={selectStyle}
+          className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-[12px] font-medium transition-colors hover:border-cyan-400/25"
+          style={darkGlass}
           title="Collapse all"
         >
           <ChevronsDownUp size={13} />

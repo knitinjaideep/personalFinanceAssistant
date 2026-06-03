@@ -61,9 +61,9 @@ export function CoralEmptyState({
       <div className="mb-5">
         <CoralMascot variant={variant} size="lg" />
       </div>
-      <h3 className="text-[15px] font-semibold text-ocean-deep mb-2">{title}</h3>
+      <h3 className="text-[15px] font-semibold text-white/85 mb-2">{title}</h3>
       {description && (
-        <p className="text-[13px] text-ocean/50 max-w-sm leading-relaxed">{description}</p>
+        <p className="text-[13px] max-w-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.45)" }}>{description}</p>
       )}
       {action && <div className="mt-5">{action}</div>}
     </div>

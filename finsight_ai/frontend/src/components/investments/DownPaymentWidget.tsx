@@ -10,9 +10,9 @@ interface Props {
 
 function Skeleton() {
   return (
-    <div className="rounded-2xl p-5 animate-pulse" style={{ background: "rgba(255,255,255,0.88)", border: "1px solid rgba(205,237,246,0.65)" }}>
-      <div className="w-28 h-2.5 rounded bg-ocean/10 mb-4" />
-      <div className="w-24 h-7 rounded bg-ocean/10" />
+    <div className="rounded-2xl p-5 animate-pulse" style={{ background: "rgba(3,17,31,0.60)", border: "1px solid rgba(34,211,238,0.10)" }}>
+      <div className="w-28 h-2.5 rounded mb-4" style={{ background: "rgba(34,211,238,0.10)" }} />
+      <div className="w-24 h-7 rounded" style={{ background: "rgba(34,211,238,0.10)" }} />
     </div>
   );
 }
@@ -26,56 +26,57 @@ export function DownPaymentWidget({ savedAmount, goalAmount, asOf, loading }: Pr
     <div
       className="rounded-2xl p-5"
       style={{
-        background: "rgba(255,255,255,0.88)",
-        border: "1px solid rgba(205,237,246,0.65)",
-        boxShadow: "0 4px 24px rgba(11,60,93,0.07), inset 0 1px 0 rgba(255,255,255,0.90)",
+        background: "rgba(3,17,31,0.60)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        border: "1px solid rgba(34,211,238,0.12)",
+        boxShadow: "0 8px 32px rgba(3,17,31,0.40)",
       }}
     >
       <div className="flex items-start justify-between mb-3">
-        <span className="text-[10px] font-semibold text-ocean/38 uppercase tracking-widest">
+        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
           Down Payment
         </span>
-        <div className="p-2 rounded-xl" style={{ background: "rgba(255,209,102,0.18)", color: "#c89a00" }}>
+        <div className="p-2 rounded-xl" style={{ background: "rgba(255,209,102,0.14)", color: "#FFD166" }}>
           <Home size={14} />
         </div>
       </div>
 
       {savedAmount <= 0 ? (
         <div className="flex flex-col items-center gap-2 py-3 text-center">
-          <AlertCircle size={16} className="text-ocean/20" />
-          <p className="text-[12px] text-ocean/40">No down payment data found</p>
-          <p className="text-[10px] text-ocean/30 max-w-[160px] leading-relaxed">
+          <AlertCircle size={16} style={{ color: "rgba(255,255,255,0.18)" }} />
+          <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.38)" }}>No down payment data found</p>
+          <p className="text-[10px] max-w-[160px] leading-relaxed" style={{ color: "rgba(255,255,255,0.25)" }}>
             Upload Marcus savings statements to track progress.
           </p>
         </div>
       ) : (
         <>
-          <p className="text-[26px] font-bold tracking-tight tabular" style={{ color: "#a07800" }}>
+          <p className="text-[26px] font-bold tracking-tight tabular" style={{ color: "#FFD166" }}>
             {fmtUSD(savedAmount)}
           </p>
           {asOf && (
-            <p className="text-[10px] text-ocean/35 mt-1">As of {asOf}</p>
+            <p className="text-[10px] mt-1" style={{ color: "rgba(255,255,255,0.30)" }}>As of {asOf}</p>
           )}
 
-          {/* Progress bar if goal is set */}
           {pct !== null && goalAmount ? (
             <div className="mt-3">
-              <div className="flex items-center justify-between text-[10px] text-ocean/45 mb-1">
+              <div className="flex items-center justify-between text-[10px] mb-1" style={{ color: "rgba(255,255,255,0.40)" }}>
                 <span>{pct.toFixed(0)}% of goal</span>
                 <span>{fmtUSD(goalAmount)}</span>
               </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(205,237,246,0.50)" }}>
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(34,211,238,0.10)" }}>
                 <div
                   className="h-full rounded-full transition-all"
                   style={{
                     width: `${pct}%`,
-                    background: "linear-gradient(90deg, #FFD166, #c89a00)",
+                    background: "linear-gradient(90deg, #FFD166, #FFA38F)",
                   }}
                 />
               </div>
             </div>
           ) : (
-            <p className="text-[10px] text-ocean/30 mt-2">
+            <p className="text-[10px] mt-2" style={{ color: "rgba(255,255,255,0.28)" }}>
               No goal set — tracking savings total from linked accounts.
             </p>
           )}

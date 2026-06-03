@@ -16,8 +16,10 @@ import { CoralMascot } from "../components/CoralMascot";
 import { CoralBubbleMascot } from "../components/CoralBubbleMascot";
 
 const EXAMPLE_QUESTIONS = [
-  "How much did I spend on groceries last month?",
-  "Show me Amex transactions from January 2025",
+  "How much did I spend on dining last month?",
+  "Show my top spending categories",
+  "Do I have any subscriptions?",
+  "How is my cash flow looking this month?",
   "What fees did Morgan Stanley charge me?",
   "Summarize my latest statement",
 ];
@@ -37,21 +39,23 @@ function TypingIndicator() {
       <div
         className="flex items-center gap-1.5 px-4 py-3 rounded-3xl rounded-bl-lg"
         style={{
-          background: "rgba(255,255,255,0.95)",
-          border: "1px solid rgba(205,237,246,0.7)",
-          boxShadow: "0 4px 16px rgba(11,60,93,0.08)",
+          background: "rgba(3,17,31,0.75)",
+          backdropFilter: "blur(12px)",
+          border: "1px solid rgba(34,211,238,0.18)",
+          boxShadow: "0 4px 16px rgba(3,17,31,0.40)",
         }}
       >
         {[0, 1, 2].map((i) => (
           <motion.span
             key={i}
-            className="w-1.5 h-1.5 rounded-full bg-ocean/40"
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: "rgba(34,211,238,0.60)" }}
             animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
             transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.18, ease: "easeInOut" }}
           />
         ))}
       </div>
-      <span className="text-xs text-ocean/40 font-medium">Coral is thinking…</span>
+      <span className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.40)" }}>Coral is thinking…</span>
     </motion.div>
   );
 }
@@ -67,22 +71,36 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
       className="flex flex-col items-center justify-center min-h-[55vh] text-center px-4"
     >
       <motion.div variants={staggerChild} className="mb-6">
-        <CoralBubbleMascot variant="main" size="lg" animated glow />
+        <CoralBubbleMascot
+          variant="main"
+          size="lg"
+          animated
+          glow
+          speech="I'm here to help you understand your money in plain English."
+        />
       </motion.div>
 
       <motion.h2
         variants={staggerChild}
-        className="text-xl font-bold text-ocean-deep mb-2 leading-tight"
+        className="text-[22px] font-bold text-white mb-2 leading-tight"
       >
-        Hi, I'm Coral. Ask me anything about your finances.
+        Chat with Coral
       </motion.h2>
 
       <motion.p
         variants={staggerChild}
-        className="text-sm text-ocean/45 mb-9 max-w-sm leading-relaxed"
+        className="text-[14px] mb-2 font-medium"
+        style={{ color: "rgba(34,211,238,0.70)" }}
       >
-        Ask me what changed, what you spent, or what your statements say —
-        everything stays on your device.
+        Ask anything about your finances
+      </motion.p>
+
+      <motion.p
+        variants={staggerChild}
+        className="text-sm mb-9 max-w-sm leading-relaxed"
+        style={{ color: "rgba(255,255,255,0.40)" }}
+      >
+        Everything stays on your device. Ask me what changed, what you spent, or what your statements say.
       </motion.p>
 
       <motion.div
@@ -98,15 +116,16 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
             whileHover={{ y: -2, scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
             onClick={() => onQuestion(q)}
-            className="px-4 py-3 text-left text-sm font-medium rounded-2xl transition-colors duration-150"
+            className="px-4 py-3 text-left text-sm font-medium rounded-2xl transition-all duration-150"
             style={{
-              background: "rgba(255,255,255,0.85)",
-              border: "1px solid rgba(205,237,246,0.65)",
-              color: "rgba(11,60,93,0.75)",
-              boxShadow: "0 2px 8px rgba(11,60,93,0.06)",
+              background: "rgba(3,17,31,0.65)",
+              backdropFilter: "blur(12px)",
+              border: "1px solid rgba(34,211,238,0.16)",
+              color: "rgba(255,255,255,0.75)",
+              boxShadow: "0 2px 12px rgba(3,17,31,0.40)",
             }}
           >
-            <Sparkles size={11} className="inline mb-0.5 mr-1.5 text-coral" />
+            <Sparkles size={11} className="inline mb-0.5 mr-1.5" style={{ color: "rgba(255,122,90,0.80)" }} />
             {q}
           </motion.button>
         ))}
@@ -142,9 +161,9 @@ function IngestionBadge() {
         exit={{ opacity: 0, scale: 0.9 }}
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium"
         style={{
-          background: "rgba(205,237,246,0.6)",
-          border: "1px solid rgba(205,237,246,0.8)",
-          color: "rgba(11,60,93,0.65)",
+          background: "rgba(34,211,238,0.10)",
+          border: "1px solid rgba(34,211,238,0.20)",
+          color: "rgba(34,211,238,0.80)",
         }}
       >
         <Loader2 size={11} className="animate-spin" />
@@ -160,9 +179,9 @@ function IngestionBadge() {
       exit={{ opacity: 0, scale: 0.9 }}
       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium"
       style={{
-        background: "rgba(220,252,230,0.6)",
-        border: "1px solid rgba(180,235,200,0.8)",
-        color: "rgba(20,100,40,0.7)",
+        background: "rgba(76,175,147,0.10)",
+        border: "1px solid rgba(76,175,147,0.22)",
+        color: "rgba(76,175,147,0.85)",
       }}
     >
       <CheckCircle2 size={11} />
@@ -173,7 +192,6 @@ function IngestionBadge() {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-// How close to the bottom (px) before we consider the user "at the bottom"
 const SCROLL_THRESHOLD = 80;
 
 export function ChatPage() {
@@ -198,12 +216,10 @@ export function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
 
-  // Auto-scroll only when already near the bottom
   useEffect(() => {
     if (isNearBottom()) scrollToBottom();
   }, [chatHistory, loading, isNearBottom, scrollToBottom]);
 
-  // Track scroll position to show/hide "Jump to latest"
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -238,7 +254,7 @@ export function ChatPage() {
       const apiErr = err instanceof ApiError ? err : null;
       addChatMessage({
         role: "assistant",
-        content: `Sorry, something went wrong: ${apiErr?.detail ?? (err instanceof Error ? err.message : "Unknown error")}`,
+        content: `Coral could not find matching data yet. Try widening the date range or reprocessing your statements. (${apiErr?.detail ?? (err instanceof Error ? err.message : "Unknown error")})`,
         error_request_id: apiErr?.request_id,
       });
     } finally {
@@ -264,21 +280,21 @@ export function ChatPage() {
         transition={{ duration: 0.35 }}
         className="shrink-0 px-6 py-4 flex items-center justify-between"
         style={{
-          borderBottom: "1px solid rgba(205,237,246,0.55)",
-          background: "rgba(255,255,255,0.60)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(34,211,238,0.10)",
+          background: "rgba(3,17,31,0.72)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
         }}
       >
         {/* Brand */}
         <div className="flex items-center gap-3">
           <CoralMascot size="sm" animated={false} className="shrink-0" />
           <div>
-            <h1 className="text-[16px] font-bold text-ocean-deep leading-tight tracking-tight">
-              Coral
+            <h1 className="text-[16px] font-bold text-white leading-tight tracking-tight">
+              Chat with Coral
             </h1>
-            <p className="text-[11px] text-ocean/40 font-medium">
-              Chat with your financial life — locally.
+            <p className="text-[11px] font-medium" style={{ color: "rgba(34,211,238,0.60)" }}>
+              Ask anything about your finances
             </p>
           </div>
         </div>
@@ -289,46 +305,44 @@ export function ChatPage() {
             <IngestionBadge />
           </AnimatePresence>
 
-          {/* Documents button */}
           <button
             onClick={() => setDocsOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-ocean/50 hover:text-ocean/80 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
             style={{
-              background: "rgba(11,60,93,0.05)",
-              border: "1px solid rgba(11,60,93,0.08)",
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.10)",
+              color: "rgba(255,255,255,0.50)",
             }}
           >
             <FileText size={12} />
             Docs
           </button>
 
-          {/* Bulk Upload button */}
           <button
             onClick={() => setBulkUploadOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-ocean/60 hover:text-ocean/80 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
             style={{
-              background: "rgba(11,60,93,0.05)",
-              border: "1px solid rgba(11,60,93,0.08)",
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.10)",
+              color: "rgba(255,255,255,0.55)",
             }}
           >
             <Layers size={12} />
             Bulk
           </button>
 
-          {/* Upload button */}
           <button
             onClick={() => setUploadOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all"
             style={{
               background: "linear-gradient(135deg, #FF7A5A, #FFA38F)",
-              boxShadow: "0 4px 12px rgba(255,122,90,0.30)",
+              boxShadow: "0 4px 12px rgba(255,122,90,0.35)",
             }}
           >
             <Upload size={12} />
             Upload
           </button>
 
-          {/* Clear chat */}
           <AnimatePresence>
             {chatHistory.length > 0 && (
               <motion.button
@@ -338,10 +352,11 @@ export function ChatPage() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={clearChat}
-                className="flex items-center gap-1.5 text-xs text-ocean/35 hover:text-negative/70 transition-colors px-2.5 py-1.5 rounded-xl"
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl transition-colors"
                 style={{
-                  background: "rgba(11,60,93,0.05)",
-                  border: "1px solid rgba(11,60,93,0.08)",
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  color: "rgba(255,255,255,0.35)",
                 }}
               >
                 <Trash2 size={11} />
@@ -386,7 +401,7 @@ export function ChatPage() {
               className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold text-white shadow-lg"
               style={{
                 background: "linear-gradient(135deg, #FF7A5A, #FFA38F)",
-                boxShadow: "0 4px 16px rgba(255,122,90,0.40)",
+                boxShadow: "0 4px 16px rgba(255,122,90,0.45)",
               }}
             >
               <ChevronDown size={13} />
@@ -403,21 +418,21 @@ export function ChatPage() {
         transition={{ delay: 0.2, duration: 0.35 }}
         className="shrink-0 px-6 py-4"
         style={{
-          borderTop: "1px solid rgba(205,237,246,0.55)",
-          background: "rgba(255,255,255,0.60)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
+          borderTop: "1px solid rgba(34,211,238,0.10)",
+          background: "rgba(3,17,31,0.72)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
         }}
       >
         <div className="flex gap-3 max-w-2xl mx-auto items-end">
           <div
             className="flex-1 flex items-end rounded-2xl overflow-hidden transition-all duration-200"
             style={{
-              background: "rgba(255,255,255,0.95)",
-              border: `1px solid ${input.trim() ? "rgba(255,122,90,0.50)" : "rgba(205,237,246,0.70)"}`,
+              background: "rgba(3,17,31,0.80)",
+              border: `1px solid ${input.trim() ? "rgba(255,122,90,0.50)" : "rgba(34,211,238,0.20)"}`,
               boxShadow: input.trim()
                 ? "0 0 0 3px rgba(255,122,90,0.10)"
-                : "0 2px 8px rgba(11,60,93,0.06)",
+                : "0 2px 8px rgba(3,17,31,0.30)",
             }}
           >
             <textarea
@@ -427,8 +442,12 @@ export function ChatPage() {
               onKeyDown={handleKeyDown}
               placeholder="Ask about your finances…"
               rows={1}
-              className="flex-1 px-4 py-3 text-sm text-ocean-deep bg-transparent placeholder:text-ocean/30 focus:outline-none resize-none leading-relaxed"
-              style={{ minHeight: "44px", maxHeight: "120px" }}
+              className="flex-1 px-4 py-3 text-sm bg-transparent focus:outline-none resize-none leading-relaxed"
+              style={{
+                minHeight: "44px",
+                maxHeight: "120px",
+                color: "rgba(255,255,255,0.90)",
+              }}
               disabled={loading}
             />
           </div>
@@ -442,22 +461,22 @@ export function ChatPage() {
             style={{
               background: canSend
                 ? "linear-gradient(135deg, #FF7A5A, #FFA38F)"
-                : "rgba(11,60,93,0.08)",
-              boxShadow: canSend ? "0 4px 16px rgba(255,122,90,0.35)" : "none",
+                : "rgba(255,255,255,0.06)",
+              boxShadow: canSend ? "0 4px 16px rgba(255,122,90,0.40)" : "none",
             }}
           >
             {loading ? (
               <Loader2 size={16} className="animate-spin text-white" />
             ) : (
-              <Send size={15} className={canSend ? "text-white" : "text-ocean/30"} />
+              <Send size={15} className={canSend ? "text-white" : "text-white/30"} />
             )}
           </motion.button>
         </div>
 
         {/* Privacy footer */}
         <div className="flex items-center justify-center gap-1.5 mt-2.5">
-          <Lock size={9} className="text-ocean/20" />
-          <p className="text-[10px] text-ocean/25 font-medium">
+          <Lock size={9} style={{ color: "rgba(255,255,255,0.18)" }} />
+          <p className="text-[10px] font-medium" style={{ color: "rgba(255,255,255,0.22)" }}>
             All data stays on your device · Enter to send · Shift+Enter for new line
           </p>
         </div>

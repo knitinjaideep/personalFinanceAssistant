@@ -18,63 +18,65 @@
     font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #0B3C5D;
-    color: #2E2E2E;
+    background: #03111f;
+    color: rgba(255, 255, 255, 0.90);
     overflow-x: hidden;
   }
 }
 
 @layer components {
-  /* Glass card surface */
+  /* ── Dark glass card (primary) ───────────────────────────────────────── */
   .glass {
-    background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(3, 17, 31, 0.60);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(34, 211, 238, 0.14);
   }
 
   .glass-dark {
-    background: rgba(11, 60, 93, 0.70);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(3, 17, 31, 0.75);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(34, 211, 238, 0.12);
   }
 
   .glass-light {
-    background: rgba(255, 255, 255, 0.75);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(205, 237, 246, 0.6);
-  }
-
-  /* Premium card base */
-  .card-premium {
-    @apply rounded-3xl shadow-glass border border-white/25;
-    background: rgba(255, 255, 255, 0.88);
+    background: rgba(255, 255, 255, 0.06);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+  }
+
+  /* ── Premium card base ───────────────────────────────────────────────── */
+  .card-premium {
+    @apply rounded-3xl;
+    background: rgba(3, 17, 31, 0.62);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(34, 211, 238, 0.14);
+    box-shadow: 0 16px 60px rgba(3, 17, 31, 0.50);
     transition: box-shadow 0.25s ease, transform 0.25s ease;
   }
 
   .card-premium:hover {
-    @apply shadow-glass-hover;
     transform: translateY(-2px);
+    box-shadow: 0 24px 80px rgba(3, 17, 31, 0.65);
   }
 
-  /* Skeleton loader */
+  /* ── Skeleton loader ─────────────────────────────────────────────────── */
   .skeleton {
     background: linear-gradient(
       90deg,
-      rgba(205, 237, 246, 0.4) 0%,
-      rgba(255, 255, 255, 0.7) 50%,
-      rgba(205, 237, 246, 0.4) 100%
+      rgba(34, 211, 238, 0.06) 0%,
+      rgba(34, 211, 238, 0.12) 50%,
+      rgba(34, 211, 238, 0.06) 100%
     );
     background-size: 200% 100%;
     animation: shimmer 1.8s ease-in-out infinite;
     border-radius: 8px;
   }
 
-  /* Gradient text */
+  /* ── Gradient text ───────────────────────────────────────────────────── */
   .text-gradient-coral {
     background: linear-gradient(135deg, #FF7A5A, #FFA38F);
     -webkit-background-clip: text;
@@ -83,26 +85,26 @@
   }
 
   .text-gradient-ocean {
-    background: linear-gradient(135deg, #0B3C5D, #5FA8D3);
+    background: linear-gradient(135deg, #22d3ee, #5FA8D3);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
-  /* Glow effects */
+  /* ── Glow effects ────────────────────────────────────────────────────── */
   .glow-coral {
-    box-shadow: 0 0 24px rgba(255, 122, 90, 0.25), 0 4px 16px rgba(255, 122, 90, 0.15);
+    box-shadow: 0 0 24px rgba(255, 122, 90, 0.30), 0 4px 16px rgba(255, 122, 90, 0.18);
   }
 
   .glow-ocean {
-    box-shadow: 0 0 24px rgba(31, 111, 139, 0.25), 0 4px 16px rgba(31, 111, 139, 0.15);
+    box-shadow: 0 0 24px rgba(34, 211, 238, 0.25), 0 4px 16px rgba(34, 211, 238, 0.15);
   }
 
   .glow-positive {
     box-shadow: 0 0 24px rgba(76, 175, 147, 0.25), 0 4px 16px rgba(76, 175, 147, 0.15);
   }
 
-  /* Pulse ring for success states */
+  /* ── Pulse ring ──────────────────────────────────────────────────────── */
   .pulse-ring {
     position: relative;
   }
@@ -116,40 +118,40 @@
     animation: pulseRing 1.5s ease-out infinite;
   }
 
-  /* Upload zone states */
+  /* ── Upload zone states ──────────────────────────────────────────────── */
   .upload-idle {
-    border: 2px dashed rgba(95, 168, 211, 0.4);
-    background: rgba(255, 255, 255, 0.85);
+    border: 2px dashed rgba(34, 211, 238, 0.25);
+    background: rgba(3, 17, 31, 0.55);
     transition: all 0.25s ease;
   }
 
   .upload-idle:hover {
-    border-color: rgba(255, 122, 90, 0.5);
-    background: rgba(255, 245, 242, 0.9);
+    border-color: rgba(255, 122, 90, 0.50);
+    background: rgba(255, 122, 90, 0.05);
   }
 
   .upload-active {
     border: 2px dashed #FF7A5A;
-    background: rgba(255, 245, 242, 0.95);
+    background: rgba(255, 122, 90, 0.08);
     transform: scale(1.01);
   }
 
   .upload-success {
-    border: 2px solid rgba(76, 175, 147, 0.5);
-    background: rgba(76, 175, 147, 0.05);
+    border: 2px solid rgba(76, 175, 147, 0.50);
+    background: rgba(76, 175, 147, 0.06);
   }
 
-  /* Button variants */
+  /* ── Button variants ─────────────────────────────────────────────────── */
   .btn-coral {
     background: linear-gradient(135deg, #FF7A5A, #FFA38F);
     color: white;
     border: none;
-    box-shadow: 0 4px 16px rgba(255, 122, 90, 0.30);
+    box-shadow: 0 4px 16px rgba(255, 122, 90, 0.35);
     transition: all 0.2s ease;
   }
 
   .btn-coral:hover:not(:disabled) {
-    box-shadow: 0 6px 24px rgba(255, 122, 90, 0.45);
+    box-shadow: 0 6px 24px rgba(255, 122, 90, 0.50);
     transform: scale(1.02) translateY(-1px);
   }
 
@@ -158,61 +160,62 @@
   }
 
   .btn-glass {
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(205, 237, 246, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.75);
     transition: all 0.2s ease;
   }
 
   .btn-glass:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 4px 16px rgba(11, 60, 93, 0.12);
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(3, 17, 31, 0.40);
     transform: translateY(-1px);
   }
 
-  /* Gradient backgrounds */
+  /* ── Gradient backgrounds ────────────────────────────────────────────── */
   .gradient-coral {
     background: linear-gradient(135deg, #FF7A5A, #FFA38F);
   }
 
   .gradient-ocean {
-    background: linear-gradient(180deg, #0B3C5D, #1F6F8B);
+    background: linear-gradient(180deg, #03111f, #06263a);
   }
 
   .gradient-light {
-    background: linear-gradient(180deg, #CDEDF6, #FAFAFA);
+    background: linear-gradient(180deg, rgba(34,211,238,0.08), rgba(3,17,31,0.80));
   }
 
   .gradient-sidebar {
-    background: linear-gradient(180deg, #0B3C5D 0%, #1F6F8B 60%, #3D8FB5 100%);
+    background: linear-gradient(180deg, rgba(3,17,31,0.94) 0%, rgba(4,22,38,0.92) 100%);
   }
 
   .gradient-ocean-page {
-    background: linear-gradient(180deg, #0B3C5D 0%, #1F6F8B 40%, #5FA8D3 100%);
+    background: linear-gradient(180deg, #03111f 0%, #06263a 40%, #0b3c5d 100%);
     min-height: 100vh;
   }
 }
 
 @layer utilities {
-  /* Sun ray overlay effect */
+  /* Sun/light ray overlay */
   .sun-rays {
-    background: radial-gradient(ellipse at 50% 0%, rgba(95, 168, 211, 0.25) 0%, transparent 65%);
+    background: radial-gradient(ellipse at 50% 0%, rgba(34, 211, 238, 0.22) 0%, transparent 65%);
     pointer-events: none;
   }
 
-  /* Smooth number font */
+  /* Tabular numbers */
   .tabular {
     font-variant-numeric: tabular-nums;
   }
 
   /* Frosted overlay */
   .frosted {
-    background: rgba(240, 249, 252, 0.6);
-    backdrop-filter: blur(4px);
+    background: rgba(3, 17, 31, 0.55);
+    backdrop-filter: blur(8px);
   }
 }
 
-/* Scrollbar styling */
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -223,21 +226,21 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(95, 168, 211, 0.35);
+  background: rgba(34, 211, 238, 0.25);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(95, 168, 211, 0.65);
+  background: rgba(34, 211, 238, 0.45);
 }
 
-/* Selection */
+/* ── Selection ───────────────────────────────────────────────────────────── */
 ::selection {
-  background: rgba(255, 122, 90, 0.2);
-  color: #0B3C5D;
+  background: rgba(255, 122, 90, 0.25);
+  color: white;
 }
 
-/* Keyframes */
+/* ── Keyframes ───────────────────────────────────────────────────────────── */
 @keyframes pulseRing {
   0% { transform: scale(1); opacity: 0.8; }
   100% { transform: scale(1.5); opacity: 0; }
@@ -248,7 +251,7 @@
   100% { background-position: 200% 0; }
 }
 
-/* ── Coral mascot motion ───────────────────────────────────────────────── */
+/* ── Coral mascot motion ─────────────────────────────────────────────────── */
 @keyframes coralFloat {
   0%, 100% { transform: translateY(0px); }
   50%      { transform: translateY(-8px); }
@@ -264,9 +267,7 @@
   50%      { transform: translateY(-4px) rotate(-3deg); }
 }
 
-/* ── Water-droplet bubble mascot ──────────────────────────────────────── */
-
-/* Organic morphing float — shape + position animate together */
+/* ── Water-droplet bubble mascot ─────────────────────────────────────────── */
 @keyframes coralDropletFloat {
   0%, 100% {
     transform: translateY(0px) rotate(-0.8deg) scale(1);
@@ -282,19 +283,20 @@
   }
 }
 
-/* ── Overview feature cards gentle float ─────────────────────────────────── */
+/* ── Bubble drift (underwater particles) ─────────────────────────────────── */
+@keyframes coralBubbleDrift {
+  0%    { transform: translateY(0) translateX(0) scale(1); opacity: 0.7; }
+  50%   { transform: translateY(-30px) translateX(8px) scale(1.05); opacity: 1; }
+  100%  { transform: translateY(-60px) translateX(-4px) scale(0.95); opacity: 0; }
+}
+
+/* ── Feature card float ──────────────────────────────────────────────────── */
 @keyframes coralFeatureFloat {
   0%, 100% { transform: translateY(0px); }
   50%      { transform: translateY(-7px); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  [style*="coralFeatureFloat"] {
-    animation: none !important;
-  }
-}
-
-/* Glossy highlight shimmers gently inside the bubble */
+/* ── Shimmer glow ────────────────────────────────────────────────────────── */
 @keyframes coralBubbleShimmer {
   0%, 100% {
     opacity: 0.45;
@@ -306,11 +308,30 @@
   }
 }
 
-/* Glow halo pulses in sync with the float */
 @keyframes coralBubbleGlow {
   0%, 100% { opacity: 0.55; transform: scale(0.96); }
   50%      { opacity: 0.85; transform: scale(1.05); }
 }
+
+/* ── Category bubble cards ───────────────────────────────────────────────── */
+@keyframes coralCategoryFloat {
+  0%, 100% { transform: translateY(0px);  }
+  50%      { transform: translateY(-9px); }
+}
+
+/* ── Glow pulse for teal accents ─────────────────────────────────────────── */
+@keyframes coralGlowCyan {
+  0%, 100% { box-shadow: 0 0 12px rgba(34,211,238,0.30); }
+  50%      { box-shadow: 0 0 28px rgba(34,211,238,0.55); }
+}
+
+/* ── Shimmer for cards ───────────────────────────────────────────────────── */
+@keyframes coralShimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── CSS classes ─────────────────────────────────────────────────────────── */
 
 .coral-float {
   animation: coralFloat 4.5s ease-in-out infinite;
@@ -342,20 +363,17 @@
   will-change: opacity, transform;
 }
 
-/* ── Category bubble cards ────────────────────────────────────────────── */
-
-/* Gentle full-card float for the four Overview category bubbles */
-@keyframes coralCategoryFloat {
-  0%, 100% { transform: translateY(0px);  }
-  50%      { transform: translateY(-9px); }
-}
-
 .coral-category-float {
   animation: coralCategoryFloat 5s ease-in-out infinite;
   will-change: transform;
 }
 
-/* Hover: pause the float and scale the card up; raise shadow */
+.coral-bubble-drift {
+  animation: coralBubbleDrift 4s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Feature card float with hover pause */
 .coral-category-bubble {
   transition: transform 0.30s cubic-bezier(0.34, 1.56, 0.64, 1),
               box-shadow  0.30s ease;
@@ -363,16 +381,15 @@
 
 .coral-category-bubble:hover,
 .coral-category-bubble:focus-visible {
-  /* pause the float so the hover scale isn't fighting the keyframe */
   animation-play-state: paused;
   transform: translateY(-6px) scale(1.055) !important;
   box-shadow:
-    0 28px 80px rgba(255,122,90,0.20),
-    0 8px 32px rgba(11,60,93,0.14),
-    inset 0 1px 0 rgba(255,255,255,0.98) !important;
+    0 28px 80px rgba(255,122,90,0.22),
+    0 8px 32px rgba(3,17,31,0.50),
+    inset 0 1px 0 rgba(255,255,255,0.08) !important;
 }
 
-/* Hover magnify for droplet images inside category and other cards */
+/* Hover magnify for droplet images */
 .coral-hover-magnify {
   transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
               border-radius 0.28s ease;
@@ -383,19 +400,20 @@
   animation-play-state: paused;
 }
 
-/* Respect users who prefer reduced motion — freeze the mascot gracefully */
+/* ── Respect prefers-reduced-motion ──────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .coral-animated,
   .coral-float,
+  .coral-feature-float,
   .coral-glow-pulse,
   .coral-peek,
   .coral-droplet-float,
   .coral-bubble-shimmer,
   .coral-bubble-glow,
   .coral-category-float,
+  .coral-bubble-drift,
   .coral-hover-magnify {
     animation: none !important;
-    /* Reset any mid-animation border-radius to the static droplet shape */
     border-radius: 45% 55% 52% 48% / 48% 42% 58% 52%;
   }
 

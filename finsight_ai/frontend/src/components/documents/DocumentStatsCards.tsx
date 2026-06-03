@@ -39,15 +39,18 @@ export function DocumentStatsCards({ stats, liveProcessing = false }: Props) {
             key={key}
             className="rounded-2xl p-3.5 text-center"
             style={{
-              background: "rgba(255,255,255,0.82)",
-              border: "1px solid rgba(205,237,246,0.60)",
+              background: "rgba(3,17,31,0.55)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              border: "1px solid rgba(34,211,238,0.12)",
+              boxShadow: "0 4px 20px rgba(3,17,31,0.30)",
             }}
           >
             <div className="flex items-center justify-center mb-1" style={{ color }}>
               {icon(live)}
             </div>
-            <p className="text-[20px] font-bold text-ocean-deep tabular leading-none">{value}</p>
-            <p className="text-[10px] text-ocean/40 font-medium mt-1">{label}</p>
+            <p className="text-[20px] font-bold text-white tabular leading-none">{value}</p>
+            <p className="text-[10px] font-medium mt-1" style={{ color: "rgba(255,255,255,0.40)" }}>{label}</p>
           </div>
         );
       })}

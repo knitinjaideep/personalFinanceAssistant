@@ -23,37 +23,37 @@ export function CheckingAccountPanel({ data, last6Months }: Props) {
 
   return (
     <div
-      className="rounded-xl p-4 space-y-4"
+      className="rounded-2xl p-4 space-y-4"
       style={{
-        background: "rgba(255,255,255,0.70)",
-        border: "1px solid rgba(205,237,246,0.55)",
+        background: "rgba(3,17,31,0.50)",
+        border: "1px solid rgba(34,211,238,0.10)",
       }}
     >
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-[14px] font-bold text-ocean-deep">{config.displayName}</p>
+          <p className="text-[14px] font-bold text-white">{config.displayName}</p>
           {cardSummary && (
-            <p className="text-[11px] text-ocean/40 mt-0.5">
+            <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>
               {cardSummary.transaction_count} transactions
             </p>
           )}
         </div>
         {total > 0 && (
           <div className="text-right">
-            <p className="text-[13px] font-bold text-coral">{fmtUSD(total)}</p>
-            <p className="text-[10px] text-ocean/35">total activity</p>
+            <p className="text-[13px] font-bold" style={{ color: "#FF7A5A" }}>{fmtUSD(total)}</p>
+            <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.30)" }}>total activity</p>
           </div>
         )}
       </div>
 
       {!hasData && dataHealth.warning && (
         <div
-          className="rounded-lg px-3 py-2 flex items-start gap-2"
-          style={{ background: "rgba(255,209,102,0.10)", border: "1px solid rgba(255,209,102,0.25)" }}
+          className="rounded-xl px-3 py-2 flex items-start gap-2"
+          style={{ background: "rgba(255,209,102,0.08)", border: "1px solid rgba(255,209,102,0.20)" }}
         >
-          <AlertCircle size={13} style={{ color: "#c89a00" }} className="shrink-0 mt-0.5" />
-          <p className="text-[11px] leading-relaxed" style={{ color: "#a07800" }}>
+          <AlertCircle size={13} style={{ color: "#FFD166" }} className="shrink-0 mt-0.5" />
+          <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,209,102,0.80)" }}>
             {dataHealth.warning}
           </p>
         </div>
@@ -61,7 +61,7 @@ export function CheckingAccountPanel({ data, last6Months }: Props) {
 
       {/* Cash flow chart */}
       <div>
-        <p className="text-[11px] font-semibold text-ocean/50 uppercase tracking-wide mb-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "rgba(255,255,255,0.38)" }}>
           Inflow vs Outflow — Last 6 Months
         </p>
         <CashFlowChart
