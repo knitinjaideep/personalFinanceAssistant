@@ -10,9 +10,9 @@ interface Props {
 
 function Skeleton() {
   return (
-    <div className="rounded-2xl p-5 animate-pulse" style={{ background: "rgba(3,17,31,0.60)", border: "1px solid rgba(34,211,238,0.10)" }}>
-      <div className="w-28 h-2.5 rounded mb-4" style={{ background: "rgba(34,211,238,0.10)" }} />
-      <div className="w-24 h-7 rounded" style={{ background: "rgba(34,211,238,0.10)" }} />
+    <div className="rounded-2xl p-5 animate-pulse" style={{ background: "var(--panel-bg-alt)", border: "1px solid var(--panel-border)" }}>
+      <div className="w-28 h-2.5 rounded mb-4" style={{ background: "var(--empty-bg)" }} />
+      <div className="w-24 h-7 rounded" style={{ background: "var(--empty-bg)" }} />
     </div>
   );
 }
@@ -26,15 +26,15 @@ export function DownPaymentWidget({ savedAmount, goalAmount, asOf, loading }: Pr
     <div
       className="rounded-2xl p-5"
       style={{
-        background: "rgba(3,17,31,0.60)",
+        background: "var(--panel-bg-alt)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
-        border: "1px solid rgba(34,211,238,0.12)",
-        boxShadow: "0 8px 32px rgba(3,17,31,0.40)",
+        border: "1px solid var(--panel-border-accent)",
+        boxShadow: "var(--panel-shadow)",
       }}
     >
       <div className="flex items-start justify-between mb-3">
-        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
           Down Payment
         </span>
         <div className="p-2 rounded-xl" style={{ background: "rgba(255,209,102,0.14)", color: "#FFD166" }}>
@@ -44,9 +44,9 @@ export function DownPaymentWidget({ savedAmount, goalAmount, asOf, loading }: Pr
 
       {savedAmount <= 0 ? (
         <div className="flex flex-col items-center gap-2 py-3 text-center">
-          <AlertCircle size={16} style={{ color: "rgba(255,255,255,0.18)" }} />
-          <p className="text-[12px]" style={{ color: "rgba(255,255,255,0.38)" }}>No down payment data found</p>
-          <p className="text-[10px] max-w-[160px] leading-relaxed" style={{ color: "rgba(255,255,255,0.25)" }}>
+          <AlertCircle size={16} style={{ color: "var(--empty-icon)" }} />
+          <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>No down payment data found</p>
+          <p className="text-[10px] max-w-[160px] leading-relaxed" style={{ color: "var(--text-dim)" }}>
             Upload Marcus savings statements to track progress.
           </p>
         </div>
@@ -56,16 +56,16 @@ export function DownPaymentWidget({ savedAmount, goalAmount, asOf, loading }: Pr
             {fmtUSD(savedAmount)}
           </p>
           {asOf && (
-            <p className="text-[10px] mt-1" style={{ color: "rgba(255,255,255,0.30)" }}>As of {asOf}</p>
+            <p className="text-[10px] mt-1" style={{ color: "var(--text-dim)" }}>As of {asOf}</p>
           )}
 
           {pct !== null && goalAmount ? (
             <div className="mt-3">
-              <div className="flex items-center justify-between text-[10px] mb-1" style={{ color: "rgba(255,255,255,0.40)" }}>
+              <div className="flex items-center justify-between text-[10px] mb-1" style={{ color: "var(--text-muted)" }}>
                 <span>{pct.toFixed(0)}% of goal</span>
                 <span>{fmtUSD(goalAmount)}</span>
               </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(34,211,238,0.10)" }}>
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--insight-bg)" }}>
                 <div
                   className="h-full rounded-full transition-all"
                   style={{
@@ -76,7 +76,7 @@ export function DownPaymentWidget({ savedAmount, goalAmount, asOf, loading }: Pr
               </div>
             </div>
           ) : (
-            <p className="text-[10px] mt-2" style={{ color: "rgba(255,255,255,0.28)" }}>
+            <p className="text-[10px] mt-2" style={{ color: "var(--text-dim)" }}>
               No goal set — tracking savings total from linked accounts.
             </p>
           )}

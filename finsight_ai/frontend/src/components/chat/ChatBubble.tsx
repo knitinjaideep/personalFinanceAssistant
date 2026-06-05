@@ -2,6 +2,7 @@
 import { motion } from "framer-motion";
 import { userBubbleVariants, assistantBubbleVariants } from "../../design/motion";
 import { CoralMascot } from "../CoralMascot";
+import { useAppStore } from "../../store/appStore";
 
 const VITE_DEBUG = import.meta.env.VITE_DEBUG === "true";
 
@@ -17,6 +18,9 @@ function formatTime(iso: string): string {
 }
 
 export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBubbleProps) {
+  const theme = useAppStore((s) => s.theme);
+  const isLight = theme === "light";
+
   if (role === "user") {
     return (
       <motion.div
@@ -35,7 +39,7 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
           {content}
         </div>
         {timestamp && (
-          <span className="text-[10px] text-ocean/25 mr-1">{formatTime(timestamp)}</span>
+          <span className="text-[10px] mr-1" style={{ color: "var(--text-muted)" }}>{formatTime(timestamp)}</span>
         )}
       </motion.div>
     );
@@ -50,33 +54,35 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
     >
       <CoralMascot variant="main" size="xs" animated={false} className="mt-0.5 shrink-0" />
       <div className="flex flex-col items-start gap-1 min-w-0">
-      <div
-        className="max-w-2xl px-4 py-3 rounded-3xl rounded-bl-lg text-sm text-ocean-deep leading-relaxed"
-        style={{
-          background: "rgba(255,255,255,0.88)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
-          border: "1px solid rgba(205,237,246,0.8)",
-          boxShadow: "0 4px 20px rgba(11,60,93,0.10)",
-        }}
-      >
-        {content}
-      </div>
-      {VITE_DEBUG && errorRequestId && (
         <div
-          className="mt-1 px-3 py-2 rounded-xl text-[10px] font-mono text-ocean/60"
+          className="max-w-2xl px-4 py-3 rounded-3xl rounded-bl-lg text-sm leading-relaxed"
           style={{
-            background: "rgba(240,249,252,0.70)",
-            border: "1px solid rgba(205,237,246,0.65)",
+            background: isLight ? "rgba(255,255,255,0.82)" : "rgba(7,24,38,0.70)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            border: `1px solid var(--border-accent)`,
+            boxShadow: `0 4px 20px var(--card-shadow)`,
+            color: "var(--text-primary)",
           }}
         >
-          <span className="font-semibold text-ocean/40">request_id</span>
-          <span className="ml-2 text-ocean/55">{errorRequestId}</span>
+          {content}
         </div>
-      )}
-      {timestamp && (
-        <span className="text-[10px] text-ocean/25 ml-1">{formatTime(timestamp)}</span>
-      )}
+        {VITE_DEBUG && errorRequestId && (
+          <div
+            className="mt-1 px-3 py-2 rounded-xl text-[10px] font-mono"
+            style={{
+              background: "var(--glass-bg)",
+              border: `1px solid var(--border-accent)`,
+              color: "rgba(34,211,238,0.55)",
+            }}
+          >
+            <span className="font-semibold" style={{ color: "rgba(34,211,238,0.40)" }}>request_id</span>
+            <span className="ml-2" style={{ color: "rgba(34,211,238,0.55)" }}>{errorRequestId}</span>
+          </div>
+        )}
+        {timestamp && (
+          <span className="text-[10px] ml-1" style={{ color: "var(--text-muted)" }}>{formatTime(timestamp)}</span>
+        )}
       </div>
     </motion.div>
   );

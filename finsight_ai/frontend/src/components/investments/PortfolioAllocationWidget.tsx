@@ -1,17 +1,9 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { AlertCircle } from "lucide-react";
 import type { InvestmentsDashboard } from "../../api/dashboard";
+import { useAppStore } from "../../store/appStore";
 
 const CHART_COLORS = ["#1F6F8B", "#FF7A5A", "#4CAF93", "#FFD166", "#5FA8D3", "#FFA38F", "#0B3C5D"];
-
-const tooltipStyle = {
-  borderRadius: 10,
-  fontSize: 12,
-  background: "rgba(3,17,31,0.92)",
-  border: "1px solid rgba(34,211,238,0.22)",
-  boxShadow: "0 4px 16px rgba(3,17,31,0.50)",
-  color: "rgba(255,255,255,0.85)",
-};
 
 interface Props {
   allocation: InvestmentsDashboard["allocation"];
@@ -19,11 +11,20 @@ interface Props {
 }
 
 export function PortfolioAllocationWidget({ allocation, loading }: Props) {
+  const isLight = useAppStore((s) => s.theme === "light");
+  const tooltipStyle = {
+    borderRadius: 10, fontSize: 12,
+    background: isLight ? "rgba(255,255,255,0.97)" : "rgba(3,17,31,0.92)",
+    border: isLight ? "1px solid rgba(31,111,139,0.20)" : "1px solid rgba(34,211,238,0.22)",
+    boxShadow: isLight ? "0 4px 16px rgba(11,60,93,0.15)" : "0 4px 16px rgba(3,17,31,0.50)",
+    color: isLight ? "rgba(11,40,65,0.85)" : "rgba(255,255,255,0.85)",
+  };
+
   if (loading) {
     return (
-      <div className="rounded-2xl p-5 animate-pulse" style={{ background: "rgba(3,17,31,0.60)", border: "1px solid rgba(34,211,238,0.10)" }}>
-        <div className="w-32 h-2.5 rounded mb-4" style={{ background: "rgba(34,211,238,0.10)" }} />
-        <div className="w-full h-36 rounded" style={{ background: "rgba(34,211,238,0.07)" }} />
+      <div className="rounded-2xl p-5 animate-pulse" style={{ background: "var(--panel-bg-alt)", border: "1px solid var(--panel-border)" }}>
+        <div className="w-32 h-2.5 rounded mb-4" style={{ background: "var(--empty-bg)" }} />
+        <div className="w-full h-36 rounded" style={{ background: "var(--row-bg)" }} />
       </div>
     );
   }
@@ -39,20 +40,20 @@ export function PortfolioAllocationWidget({ allocation, loading }: Props) {
     <div
       className="rounded-2xl p-5"
       style={{
-        background: "rgba(3,17,31,0.60)",
+        background: "var(--panel-bg-alt)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
-        border: "1px solid rgba(34,211,238,0.12)",
-        boxShadow: "0 8px 32px rgba(3,17,31,0.40)",
+        border: "1px solid var(--panel-border-accent)",
+        boxShadow: "var(--panel-shadow)",
       }}
     >
-      <p className="text-[13px] font-semibold text-white mb-1">Portfolio Allocation</p>
-      <p className="text-[11px] mb-4" style={{ color: "rgba(255,255,255,0.38)" }}>% of total by account</p>
+      <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Portfolio Allocation</p>
+      <p className="text-[11px] mb-4" style={{ color: "var(--text-muted)" }}>% of total by account</p>
 
       {slices.length < 2 ? (
         <div className="flex flex-col items-center gap-2 py-6 text-center">
-          <AlertCircle size={16} style={{ color: "rgba(255,255,255,0.18)" }} />
-          <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.30)" }}>Need 2+ accounts to show allocation</p>
+          <AlertCircle size={16} style={{ color: "var(--empty-icon)" }} />
+          <p className="text-[11px]" style={{ color: "var(--empty-text)" }}>Need 2+ accounts to show allocation</p>
         </div>
       ) : (
         <>
@@ -81,7 +82,7 @@ export function PortfolioAllocationWidget({ allocation, loading }: Props) {
           </ResponsiveContainer>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
             {slices.map((d, i) => (
-              <span key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: "rgba(255,255,255,0.50)" }}>
+              <span key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: "var(--text-secondary)" }}>
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: d.color }} />
                 {d.name}
               </span>

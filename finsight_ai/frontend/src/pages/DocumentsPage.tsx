@@ -45,85 +45,50 @@ function PageHeader({
   const secondaryBtn =
     "flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-all disabled:opacity-50";
   const secondaryStyle: React.CSSProperties = {
-    background: "rgba(255,255,255,0.08)",
+    background: "var(--btn-glass-bg)",
     backdropFilter: "blur(8px)",
     WebkitBackdropFilter: "blur(8px)",
-    border: "1px solid rgba(255,255,255,0.14)",
-    color: "rgba(255,255,255,0.75)",
+    border: "1px solid var(--btn-glass-border)",
+    color: "var(--btn-glass-color)",
   };
   return (
-    <div
-      className="relative shrink-0 overflow-hidden"
-      style={{ minHeight: "160px" }}
-    >
-      {/* Background image */}
-      <img
-        src="/backgrounds/documents-bg.png"
-        alt=""
-        aria-hidden
-        className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
-        style={{ zIndex: 0 }}
-      />
-      {/* Directional overlay — heavy left for text, lighter right to show scene */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: "linear-gradient(135deg, rgba(3,17,31,0.88) 0%, rgba(6,38,58,0.60) 55%, rgba(3,17,31,0.70) 100%)",
-          zIndex: 1,
-        }}
-      />
-      {/* Teal light ray */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: "radial-gradient(ellipse at 70% 0%, rgba(34,211,238,0.14) 0%, transparent 55%)",
-          zIndex: 1,
-        }}
-      />
-      {/* Bottom fade blend into content */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none"
-        style={{ background: "linear-gradient(to bottom, transparent, rgba(3,17,31,0.65))", zIndex: 2 }}
-      />
-      {/* Content */}
-      <div className="relative flex items-center justify-between px-8 py-7" style={{ zIndex: 3 }}>
-        <div className="flex items-center gap-4">
-          <CoralMascot variant="documents" size="md" className="shrink-0" />
-          <div>
-            <h1 className="text-[24px] font-extrabold text-white tracking-tight leading-none">Documents</h1>
-            <p className="text-[12.5px] mt-1.5 font-medium" style={{ color: "rgba(34,211,238,0.75)" }}>
-              {count > 0
-                ? `${count} statement${count !== 1 ? "s" : ""} · Upload statements and track parsing.`
-                : "Upload statements and track parsing."}
-            </p>
-          </div>
+    <div className="shrink-0 px-8 pt-10 pb-4 flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <CoralMascot variant="documents" size="md" className="shrink-0" />
+        <div>
+          <h1 className="text-[24px] font-extrabold tracking-tight leading-none" style={{ color: "var(--text-primary)" }}>Documents</h1>
+          <p className="text-[12.5px] mt-1.5 font-medium" style={{ color: "var(--text-secondary)" }}>
+            {count > 0
+              ? `${count} statement${count !== 1 ? "s" : ""} · Upload statements and track parsing.`
+              : "Upload statements and track parsing."}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onRefresh}
-            disabled={refreshing}
-            className={secondaryBtn}
-            style={secondaryStyle}
-            title="Refresh documents and ingestion health"
-          >
-            <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
-            Refresh
-          </button>
-          <button onClick={onBulkUpload} className={secondaryBtn} style={secondaryStyle} title="Upload multiple PDFs">
-            <FolderUp size={13} />
-            Bulk Upload
-          </button>
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={onUpload}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white"
-            style={{ background: "linear-gradient(135deg, #FF7A5A, #FFA38F)", boxShadow: "0 4px 18px rgba(255,122,90,0.40)" }}
-          >
-            <Upload size={13} />
-            Upload
-          </motion.button>
-        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className={secondaryBtn}
+          style={secondaryStyle}
+          title="Refresh documents and ingestion health"
+        >
+          <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
+          Refresh
+        </button>
+        <button onClick={onBulkUpload} className={secondaryBtn} style={secondaryStyle} title="Upload multiple PDFs">
+          <FolderUp size={13} />
+          Bulk Upload
+        </button>
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={onUpload}
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white"
+          style={{ background: "linear-gradient(135deg, #FF7A5A, #FFA38F)", boxShadow: "0 4px 18px rgba(255,122,90,0.40)" }}
+        >
+          <Upload size={13} />
+          Upload
+        </motion.button>
       </div>
     </div>
   );
@@ -306,7 +271,7 @@ export function DocumentsPage() {
                 <div
                   key={i}
                   className="rounded-2xl h-16 animate-pulse"
-                  style={{ background: "rgba(34,211,238,0.06)" }}
+                  style={{ background: "var(--empty-bg)" }}
                 />
               ))}
             </div>
@@ -357,9 +322,9 @@ function EmptyAll({ onUpload }: { onUpload: () => void }) {
       <div
         className="rounded-3xl"
         style={{
-          background: "rgba(3,17,31,0.55)",
+          background: "var(--panel-bg)",
           backdropFilter: "blur(16px)",
-          border: "1px dashed rgba(34,211,238,0.18)",
+          border: "1px dashed var(--empty-border)",
         }}
       >
         <CoralEmptyState
@@ -380,21 +345,21 @@ function NoMatches({ filtersActive, onClear }: { filtersActive: boolean; onClear
       <div
         className="rounded-3xl px-6 py-10 text-center"
         style={{
-          background: "rgba(3,17,31,0.55)",
+          background: "var(--panel-bg)",
           backdropFilter: "blur(16px)",
-          border: "1px dashed rgba(34,211,238,0.18)",
+          border: "1px dashed var(--empty-border)",
         }}
       >
-        <p className="text-[13px] font-semibold text-white/80 mb-1">No documents match your filters</p>
-        <p className="text-[11.5px] mb-4" style={{ color: "rgba(255,255,255,0.38)" }}>Try a different search term, institution, year, or status.</p>
+        <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>No documents match your filters</p>
+        <p className="text-[11.5px] mb-4" style={{ color: "var(--text-muted)" }}>Try a different search term, institution, year, or status.</p>
         {filtersActive && (
           <button
             onClick={onClear}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[12px] font-medium"
             style={{
-              background: "rgba(255,255,255,0.08)",
-              border: "1px solid rgba(34,211,238,0.18)",
-              color: "rgba(255,255,255,0.65)",
+              background: "var(--btn-glass-bg)",
+              border: "1px solid var(--panel-border-accent)",
+              color: "var(--text-secondary)",
             }}
           >
             Clear filters

@@ -1,12 +1,5 @@
 /**
  * AnswerCard — premium answer rendering for the chat interface.
- *
- * 5 card types:
- *   numeric    → MetricAnswer    (big number + context)
- *   table      → TableAnswer or RankedListAnswer
- *   prose      → SummaryAnswer
- *   comparison → ComparisonAnswer
- *   no_data    → NoDataAnswer
  */
 
 import { useState } from "react";
@@ -20,6 +13,7 @@ import {
 import { assistantBubbleVariants, staggerContainer, staggerChild } from "../../design/motion";
 import type { StructuredAnswer, ChartPayload } from "../../types";
 import { DebugPanel } from "./DebugPanel";
+import { useAppStore } from "../../store/appStore";
 
 // ── Column label map ─────────────────────────────────────────────────────────
 
@@ -43,15 +37,33 @@ function fmtUSD(v: number): string {
 // ── Chart colors ──────────────────────────────────────────────────────────────
 
 const CHART_COLORS = [
-  "#5FA8D3", "#FF7A5A", "#4CAF93", "#F2C94C", "#9B59B6",
+  "#22d3ee", "#FF7A5A", "#4CAF93", "#F2C94C", "#9B59B6",
   "#E67E22", "#2ECC71", "#E74C3C", "#3498DB", "#1ABC9C",
 ];
+
+function useTooltipStyle() {
+  const isLight = useAppStore((s) => s.theme === "light");
+  return {
+    borderRadius: 10, fontSize: 12,
+    background: isLight ? "rgba(255,255,255,0.97)" : "rgba(3,17,31,0.92)",
+    border: isLight ? "1px solid rgba(31,111,139,0.20)" : "1px solid rgba(34,211,238,0.22)",
+    boxShadow: isLight ? "0 4px 16px rgba(11,60,93,0.15)" : "0 4px 16px rgba(3,17,31,0.50)",
+    color: isLight ? "rgba(11,40,65,0.85)" : "rgba(255,255,255,0.85)",
+  };
+}
+
+function useAxisColor() {
+  const isLight = useAppStore((s) => s.theme === "light");
+  return isLight ? "rgba(11,40,65,0.45)" : "rgba(255,255,255,0.38)";
+}
 
 // ── AnswerChart ───────────────────────────────────────────────────────────────
 
 function AnswerChart({ payload }: { payload: ChartPayload }) {
   const { type, title, labels, datasets, currency } = payload;
   const fmt = currency ? fmtUSD : (v: number) => String(v);
+  const tooltipStyle = useTooltipStyle();
+  const axisColor = useAxisColor();
 
   if (type === "pie") {
     const data = labels.map((name, i) => ({
@@ -59,8 +71,8 @@ function AnswerChart({ payload }: { payload: ChartPayload }) {
       value: datasets[0]?.data[i] ?? 0,
     }));
     return (
-      <div className="px-5 py-4 border-t border-ocean-50/70">
-        <p className="text-xs font-semibold text-ocean/40 mb-3 flex items-center gap-1.5">
+      <div className="px-5 py-4" style={{ borderTop: "1px solid var(--answer-divider)" }}>
+        <p className="text-xs font-semibold mb-3 flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
           <BarChart3 size={11} />
           {title}
         </p>
@@ -80,7 +92,7 @@ function AnswerChart({ payload }: { payload: ChartPayload }) {
                 <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={(v: number) => fmt(v)} />
+            <Tooltip formatter={(v: number) => fmt(v)} contentStyle={tooltipStyle} />
           </PieChart>
         </ResponsiveContainer>
       </div>
@@ -93,16 +105,16 @@ function AnswerChart({ payload }: { payload: ChartPayload }) {
       value: datasets[0]?.data[i] ?? 0,
     }));
     return (
-      <div className="px-5 py-4 border-t border-ocean-50/70">
-        <p className="text-xs font-semibold text-ocean/40 mb-3 flex items-center gap-1.5">
+      <div className="px-5 py-4" style={{ borderTop: "1px solid var(--answer-divider)" }}>
+        <p className="text-xs font-semibold mb-3 flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
           <BarChart3 size={11} />
           {title}
         </p>
         <ResponsiveContainer width="100%" height={Math.max(180, data.length * 32)}>
           <BarChart layout="vertical" data={data} margin={{ left: 8, right: 24, top: 4, bottom: 4 }}>
-            <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 10 }} />
-            <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(v: number) => fmt(v)} />
+            <XAxis type="number" tickFormatter={fmt} tick={{ fontSize: 10, fill: axisColor }} />
+            <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 10, fill: axisColor }} />
+            <Tooltip formatter={(v: number) => fmt(v)} contentStyle={tooltipStyle} />
             <Bar dataKey="value" radius={[0, 4, 4, 0]}>
               {data.map((_, i) => (
                 <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
@@ -121,17 +133,19 @@ function AnswerChart({ payload }: { payload: ChartPayload }) {
     return entry;
   });
   return (
-    <div className="px-5 py-4 border-t border-ocean-50/70">
-      <p className="text-xs font-semibold text-ocean/40 mb-3 flex items-center gap-1.5">
+    <div className="px-5 py-4" style={{ borderTop: "1px solid var(--answer-divider)" }}>
+      <p className="text-xs font-semibold mb-3 flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
         <BarChart3 size={11} />
         {title}
       </p>
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={data} margin={{ left: 8, right: 8, top: 4, bottom: 4 }}>
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-          <YAxis tickFormatter={fmt} tick={{ fontSize: 10 }} />
-          <Tooltip formatter={(v: number) => fmt(v)} />
-          {datasets.length > 1 && <Legend />}
+          <XAxis dataKey="name" tick={{ fontSize: 10, fill: axisColor }} />
+          <YAxis tickFormatter={fmt} tick={{ fontSize: 10, fill: axisColor }} />
+          <Tooltip formatter={(v: number) => fmt(v)} contentStyle={tooltipStyle} />
+          {datasets.length > 1 && (
+            <Legend wrapperStyle={{ fontSize: 10, color: "var(--text-secondary)" }} />
+          )}
           {datasets.map((ds, i) => (
             <Bar key={ds.label} dataKey={ds.label} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
           ))}
@@ -148,10 +162,11 @@ function SqlDisclosure({ sql, rowCount }: { sql: string[]; rowCount: number }) {
   if (!sql.length) return null;
 
   return (
-    <div className="border-t border-ocean-50/60">
+    <div style={{ borderTop: "1px solid var(--answer-divider)" }}>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-5 py-2 flex items-center justify-between text-[10px] text-ocean/25 hover:text-ocean/45 transition-colors"
+        className="w-full px-5 py-2 flex items-center justify-between text-[10px] transition-colors"
+        style={{ color: "var(--text-dim)" }}
       >
         <span className="flex items-center gap-1.5">
           <Code2 size={9} />
@@ -172,9 +187,9 @@ function SqlDisclosure({ sql, rowCount }: { sql: string[]; rowCount: number }) {
             <pre
               className="mx-5 mb-4 px-3 py-2.5 rounded-xl text-[10px] leading-relaxed overflow-x-auto"
               style={{
-                background: "rgba(11,60,93,0.04)",
-                border: "1px solid rgba(205,237,246,0.6)",
-                color: "rgba(11,60,93,0.55)",
+                background: "var(--answer-sql-bg)",
+                border: "1px solid var(--panel-border-accent)",
+                color: "rgba(34,211,238,0.65)",
                 fontFamily: "ui-monospace, SFMono-Regular, monospace",
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
@@ -196,10 +211,11 @@ function SourcesDrawer({ citations }: { citations: StructuredAnswer["citations"]
   if (citations.length === 0) return null;
 
   return (
-    <div className="border-t border-ocean-50/80">
+    <div style={{ borderTop: "1px solid var(--answer-divider)" }}>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-5 py-2.5 flex items-center justify-between text-xs text-ocean/30 hover:text-ocean/50 transition-colors"
+        className="w-full px-5 py-2.5 flex items-center justify-between text-xs transition-colors"
+        style={{ color: "var(--text-dim)" }}
       >
         <span className="flex items-center gap-1.5">
           <FileText size={10} />
@@ -223,12 +239,12 @@ function SourcesDrawer({ citations }: { citations: StructuredAnswer["citations"]
                   key={i}
                   className="p-3 rounded-2xl text-xs"
                   style={{
-                    background: "rgba(240,249,252,0.7)",
-                    border: "1px solid rgba(205,237,246,0.6)",
+                    background: "var(--row-bg)",
+                    border: "1px solid var(--panel-border-accent)",
                   }}
                 >
-                  <p className="font-semibold text-ocean">{c.source}</p>
-                  <p className="text-slate/50 mt-1 leading-relaxed">
+                  <p className="font-semibold" style={{ color: "rgba(34,211,238,0.75)" }}>{c.source}</p>
+                  <p className="mt-1 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                     {c.text.length > 200 ? `${c.text.slice(0, 200)}…` : c.text}
                   </p>
                 </div>
@@ -244,17 +260,18 @@ function SourcesDrawer({ citations }: { citations: StructuredAnswer["citations"]
 function FollowUps({ questions, onSelect }: { questions: string[]; onSelect: (q: string) => void }) {
   if (questions.length === 0) return null;
   return (
-    <div className="px-5 py-3.5 border-t border-ocean-50/80 flex flex-wrap gap-2">
+    <div className="px-5 py-3.5 flex flex-wrap gap-2" style={{ borderTop: "1px solid var(--answer-divider)" }}>
       {questions.map((q) => (
         <motion.button
           key={q}
           whileHover={{ scale: 1.03, y: -1 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => onSelect(q)}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-ocean/60 rounded-full transition-colors duration-150"
+          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-full transition-colors duration-150"
           style={{
-            background: "rgba(240,249,252,0.8)",
-            border: "1px solid rgba(205,237,246,0.7)",
+            background: "var(--answer-followup-bg)",
+            border: "1px solid var(--answer-followup-border)",
+            color: "var(--answer-followup-color)",
           }}
         >
           {q}
@@ -268,9 +285,9 @@ function FollowUps({ questions, onSelect }: { questions: string[]; onSelect: (q:
 function CaveatBar({ caveats }: { caveats: string[] }) {
   if (caveats.length === 0) return null;
   return (
-    <div className="px-5 py-2.5 border-t border-highlight/20" style={{ background: "rgba(255,209,102,0.08)" }}>
+    <div className="px-5 py-2.5" style={{ borderTop: "1px solid var(--warn-border)", background: "var(--warn-bg)" }}>
       {caveats.map((c, i) => (
-        <p key={i} className="text-xs text-yellow-700/70">⚠ {c}</p>
+        <p key={i} className="text-xs" style={{ color: "var(--warn-text)" }}>⚠ {c}</p>
       ))}
     </div>
   );
@@ -292,11 +309,11 @@ function CardShell({ children, className, chartPayload, sqlUsed, rowsUsed }: Car
       animate="visible"
       className={clsx("max-w-2xl rounded-3xl overflow-hidden", className)}
       style={{
-        background: "rgba(255,255,255,0.90)",
+        background: "var(--answer-bg)",
         backdropFilter: "blur(14px)",
         WebkitBackdropFilter: "blur(14px)",
-        border: "1px solid rgba(205,237,246,0.70)",
-        boxShadow: "0 6px 32px rgba(11,60,93,0.10), inset 0 1px 0 rgba(255,255,255,0.5)",
+        border: "1px solid var(--answer-border)",
+        boxShadow: "var(--answer-shadow)",
       }}
     >
       {children}
@@ -321,25 +338,29 @@ function MetricAnswer({ answer, onFollowup }: CardExtraProps) {
   const bullets = answer.highlights.slice(0, 4);
   return (
     <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
-      <div className="px-5 py-4 border-b border-ocean-50/70">
-        <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
+      <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
       </div>
 
       {answer.primary_value && (
         <div
-          className="px-5 py-5 border-b border-ocean-50/60"
-          style={{ background: "linear-gradient(135deg, rgba(11,60,93,0.04), rgba(95,168,211,0.04))" }}
+          className="px-5 py-5"
+          style={{
+            borderBottom: "1px solid var(--answer-divider)",
+            background: "var(--answer-metric-bg)",
+          }}
         >
           <motion.p
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1, duration: 0.4, ease: [0.34, 1.1, 0.64, 1] }}
-            className="text-3xl font-bold text-ocean-deep tracking-tight tabular"
+            className="text-3xl font-bold tracking-tight tabular"
+            style={{ color: "var(--text-primary)" }}
           >
             {answer.primary_value}
           </motion.p>
           {answer.summary && (
-            <p className="text-sm text-slate/60 mt-1.5 leading-relaxed">{answer.summary}</p>
+            <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--text-secondary)" }}>{answer.summary}</p>
           )}
         </div>
       )}
@@ -349,13 +370,14 @@ function MetricAnswer({ answer, onFollowup }: CardExtraProps) {
           variants={staggerContainer}
           initial="hidden"
           animate="visible"
-          className="px-5 py-4 space-y-2 border-b border-ocean-50/60"
+          className="px-5 py-4 space-y-2"
+          style={{ borderBottom: "1px solid var(--answer-divider)" }}
         >
           {bullets.map((h, i) => (
             <motion.div key={i} variants={staggerChild} className="flex items-baseline gap-2 text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-ocean-sea shrink-0 mt-[5px]" />
-              <span className="text-slate/50">{h.label}:</span>
-              <span className="font-semibold text-ocean-deep">{h.value}</span>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-[5px]" style={{ background: "#22d3ee" }} />
+              <span style={{ color: "var(--text-muted)" }}>{h.label}:</span>
+              <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{h.value}</span>
             </motion.div>
           ))}
         </motion.div>
@@ -373,21 +395,21 @@ function MetricAnswer({ answer, onFollowup }: CardExtraProps) {
 function SummaryAnswer({ answer, onFollowup }: CardExtraProps) {
   return (
     <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
-      <div className="px-5 py-4 border-b border-ocean-50/70">
-        <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
+      <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
       </div>
 
       <div className="px-5 py-4">
-        <p className="text-sm text-slate/80 leading-relaxed whitespace-pre-wrap">{answer.summary}</p>
+        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{answer.summary}</p>
       </div>
 
       {answer.highlights.length > 0 && (
-        <div className="px-5 pb-4 pt-3 space-y-1.5 border-t border-ocean-50/60">
+        <div className="px-5 pb-4 pt-3 space-y-1.5" style={{ borderTop: "1px solid var(--answer-divider)" }}>
           {answer.highlights.slice(0, 4).map((h, i) => (
             <div key={i} className="flex items-baseline gap-2 text-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-coral shrink-0 mt-[5px]" />
-              <span className="text-slate/50">{h.label}:</span>
-              <span className="font-semibold text-slate">{h.value}</span>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-[5px]" style={{ background: "#FF7A5A" }} />
+              <span style={{ color: "var(--text-muted)" }}>{h.label}:</span>
+              <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{h.value}</span>
             </div>
           ))}
         </div>
@@ -417,13 +439,14 @@ function RankedListAnswer({ answer, onFollowup }: CardExtraProps) {
           <motion.div
             key={i}
             variants={staggerChild}
-            className="flex items-center justify-between py-2.5 border-b border-ocean-50/50 last:border-0"
+            className="flex items-center justify-between py-2.5 last:border-0"
+            style={{ borderBottom: "1px solid var(--row-border)" }}
           >
             <div className="flex items-center gap-3">
-              <span className="w-5 text-xs text-ocean/25 font-bold text-right shrink-0">{i + 1}</span>
-              <span className="text-sm text-slate/80">{label}</span>
+              <span className="w-5 text-xs font-bold text-right shrink-0" style={{ color: "var(--text-dim)" }}>{i + 1}</span>
+              <span className="text-sm" style={{ color: "var(--text-secondary)" }}>{label}</span>
             </div>
-            {value && <span className="text-sm font-bold text-ocean-deep">{value}</span>}
+            {value && <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{value}</span>}
           </motion.div>
         );
       });
@@ -432,13 +455,14 @@ function RankedListAnswer({ answer, onFollowup }: CardExtraProps) {
       <motion.div
         key={i}
         variants={staggerChild}
-        className="flex items-center justify-between py-2.5 border-b border-ocean-50/50 last:border-0"
+        className="flex items-center justify-between py-2.5 last:border-0"
+        style={{ borderBottom: "1px solid var(--row-border)" }}
       >
         <div className="flex items-center gap-3">
-          <span className="w-5 text-xs text-ocean/25 font-bold text-right shrink-0">{i + 1}</span>
-          <span className="text-sm text-slate/80">{h.label}</span>
+          <span className="w-5 text-xs font-bold text-right shrink-0" style={{ color: "var(--text-dim)" }}>{i + 1}</span>
+          <span className="text-sm" style={{ color: "var(--text-secondary)" }}>{h.label}</span>
         </div>
-        <span className="text-sm font-bold text-ocean-deep">{h.value}</span>
+        <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{h.value}</span>
       </motion.div>
     ));
   };
@@ -447,9 +471,9 @@ function RankedListAnswer({ answer, onFollowup }: CardExtraProps) {
 
   return (
     <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
-      <div className="px-5 py-4 border-b border-ocean-50/70">
-        <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
-        {answer.summary && <p className="text-xs text-slate/45 mt-1">{answer.summary}</p>}
+      <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
+        {answer.summary && <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{answer.summary}</p>}
       </div>
 
       <motion.div
@@ -462,7 +486,7 @@ function RankedListAnswer({ answer, onFollowup }: CardExtraProps) {
       </motion.div>
 
       {totalRows > 10 && (
-        <p className="px-5 pb-3 text-xs text-ocean/35">Showing top 10 of {totalRows}</p>
+        <p className="px-5 pb-3 text-xs" style={{ color: "var(--text-dim)" }}>Showing top 10 of {totalRows}</p>
       )}
 
       <CaveatBar caveats={answer.caveats} />
@@ -479,23 +503,21 @@ function TableAnswer({ answer, onFollowup }: CardExtraProps) {
 
   return (
     <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
-      <div className="px-5 py-4 border-b border-ocean-50/70">
-        <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
-        {answer.summary && <p className="text-xs text-slate/45 mt-1">{answer.summary}</p>}
+      <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
+        {answer.summary && <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{answer.summary}</p>}
       </div>
 
       {section && section.rows && section.columns ? (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr
-                className="border-b border-ocean-50/80"
-                style={{ background: "rgba(240,249,252,0.5)" }}
-              >
+              <tr style={{ background: "var(--table-row-alt)", borderBottom: "1px solid var(--row-border-strong)" }}>
                 {(section.columns as string[]).map((col) => (
                   <th
                     key={col}
-                    className="px-4 py-2.5 text-left font-semibold text-ocean/40 uppercase tracking-wide text-[10px]"
+                    className="px-4 py-2.5 text-left font-semibold uppercase tracking-wide text-[10px]"
+                    style={{ color: "rgba(34,211,238,0.65)" }}
                   >
                     {friendlyLabel(col)}
                   </th>
@@ -509,10 +531,11 @@ function TableAnswer({ answer, onFollowup }: CardExtraProps) {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: i * 0.03 }}
-                  className="border-b border-ocean-50/40 hover:bg-ocean-50/30 transition-colors"
+                  className="transition-colors"
+                  style={{ borderBottom: "1px solid var(--row-border)" }}
                 >
                   {(section.columns as string[]).map((col) => (
-                    <td key={col} className="px-4 py-2.5 text-slate/75">
+                    <td key={col} className="px-4 py-2.5" style={{ color: "var(--text-secondary)" }}>
                       {row[col] != null ? String(row[col]) : "—"}
                     </td>
                   ))}
@@ -521,14 +544,14 @@ function TableAnswer({ answer, onFollowup }: CardExtraProps) {
             </tbody>
           </table>
           {(section.rows as unknown[]).length > 15 && (
-            <p className="px-4 py-2 text-xs text-ocean/35 border-t border-ocean-50/50">
+            <p className="px-4 py-2 text-xs" style={{ borderTop: "1px solid var(--row-border)", color: "var(--text-dim)" }}>
               Showing 15 of {(section.rows as unknown[]).length} rows
             </p>
           )}
         </div>
       ) : (
         <div className="px-5 py-4">
-          <p className="text-sm text-slate/60">{answer.summary}</p>
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>{answer.summary}</p>
         </div>
       )}
 
@@ -544,8 +567,8 @@ function TableAnswer({ answer, onFollowup }: CardExtraProps) {
 function ComparisonAnswer({ answer, onFollowup }: CardExtraProps) {
   return (
     <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
-      <div className="px-5 py-4 border-b border-ocean-50/70">
-        <h3 className="text-sm font-semibold text-ocean-deep">{answer.title}</h3>
+      <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
       </div>
 
       {answer.highlights.length > 0 && (
@@ -553,12 +576,13 @@ function ComparisonAnswer({ answer, onFollowup }: CardExtraProps) {
           variants={staggerContainer}
           initial="hidden"
           animate="visible"
-          className="px-5 py-4 grid grid-cols-2 gap-4 border-b border-ocean-50/60"
+          className="px-5 py-4 grid grid-cols-2 gap-4"
+          style={{ borderBottom: "1px solid var(--answer-divider)" }}
         >
           {answer.highlights.slice(0, 6).map((h, i) => (
             <motion.div key={i} variants={staggerChild} className="space-y-0.5">
-              <p className="text-xs text-ocean/38">{h.label}</p>
-              <p className="text-base font-bold text-ocean-deep tabular">{h.value}</p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>{h.label}</p>
+              <p className="text-base font-bold tabular" style={{ color: "var(--text-primary)" }}>{h.value}</p>
             </motion.div>
           ))}
         </motion.div>
@@ -566,7 +590,7 @@ function ComparisonAnswer({ answer, onFollowup }: CardExtraProps) {
 
       {answer.summary && (
         <div className="px-5 py-4">
-          <p className="text-sm text-slate/70 leading-relaxed">{answer.summary}</p>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{answer.summary}</p>
         </div>
       )}
 
@@ -590,8 +614,8 @@ function NoDataAnswer({ answer, onFollowup }: CardExtraProps) {
         >
           🔍
         </motion.div>
-        <h3 className="text-sm font-semibold text-ocean-deep mb-1.5">{answer.title}</h3>
-        <p className="text-sm text-slate/50 leading-relaxed max-w-xs mx-auto">
+        <h3 className="text-sm font-semibold mb-1.5" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
+        <p className="text-sm leading-relaxed max-w-xs mx-auto" style={{ color: "var(--text-secondary)" }}>
           {answer.summary || "No data found. Try uploading relevant statements first."}
         </p>
       </div>
@@ -636,7 +660,7 @@ export function AnswerCard({ answer, onFollowup, timestamp }: AnswerCardProps) {
       {card}
       <DebugPanel answer={answer} />
       {timestamp && (
-        <span className="text-[10px] text-ocean/25 ml-1">{formatTime(timestamp)}</span>
+        <span className="text-[10px] ml-1" style={{ color: "var(--text-dim)" }}>{formatTime(timestamp)}</span>
       )}
     </div>
   );

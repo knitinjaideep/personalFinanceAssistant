@@ -32,32 +32,33 @@ export function DebugPanel({ answer }: DebugPanelProps) {
     <div
       className="mt-2 max-w-2xl rounded-xl text-[10px] font-mono overflow-hidden"
       style={{
-        background: "rgba(240,249,252,0.70)",
-        border: "1px solid rgba(205,237,246,0.65)",
+        background: "rgba(3,17,31,0.70)",
+        border: "1px solid rgba(34,211,238,0.14)",
       }}
     >
       {/* Toggle */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left transition-colors hover:bg-ocean-50/40"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left transition-colors"
+        style={{ color: "rgba(34,211,238,0.40)" }}
       >
-        <Bug size={10} className="text-ocean/40 shrink-0" />
-        <span className="flex-1 text-ocean/40">
+        <Bug size={10} className="shrink-0" />
+        <span className="flex-1">
           Show Debug Info
-          {request_id && <span className="text-ocean/30"> · {request_id.slice(0, 8)}…</span>}
-          {intent && <span className="text-ocean/30"> · {intent}</span>}
-          {query_path && <span className="text-ocean/25"> → {query_path}</span>}
+          {request_id && <span style={{ color: "rgba(34,211,238,0.28)" }}> · {request_id.slice(0, 8)}…</span>}
+          {intent && <span style={{ color: "rgba(34,211,238,0.28)" }}> · {intent}</span>}
+          {query_path && <span style={{ color: "rgba(34,211,238,0.22)" }}> → {query_path}</span>}
         </span>
         {open
-          ? <ChevronUp size={10} className="text-ocean/35" />
-          : <ChevronDown size={10} className="text-ocean/35" />}
+          ? <ChevronUp size={10} style={{ color: "rgba(34,211,238,0.30)" }} />
+          : <ChevronDown size={10} style={{ color: "rgba(34,211,238,0.30)" }} />}
       </button>
 
       {/* Detail — scrollable */}
       {open && (
         <div
-          className="px-3 pb-3 pt-1 grid grid-cols-2 gap-x-6 gap-y-0.5 overflow-y-auto border-t border-ocean-50/60"
-          style={{ maxHeight: "320px" }}
+          className="px-3 pb-3 pt-1 grid grid-cols-2 gap-x-6 gap-y-0.5 overflow-y-auto"
+          style={{ maxHeight: "320px", borderTop: "1px solid rgba(34,211,238,0.10)" }}
         >
           {/* Identity */}
           <SectionHeader label="Identity" />
@@ -87,10 +88,11 @@ export function DebugPanel({ answer }: DebugPanelProps) {
               {sql_used.map((s, i) => (
                 <pre
                   key={i}
-                  className="col-span-2 text-[9px] whitespace-pre-wrap break-all rounded-lg px-2 py-1.5 text-ocean/55"
+                  className="col-span-2 text-[9px] whitespace-pre-wrap break-all rounded-lg px-2 py-1.5"
                   style={{
-                    background: "rgba(11,60,93,0.04)",
-                    border: "1px solid rgba(205,237,246,0.6)",
+                    background: "rgba(3,17,31,0.60)",
+                    border: "1px solid rgba(34,211,238,0.12)",
+                    color: "rgba(34,211,238,0.55)",
                   }}
                 >
                   {s}
@@ -115,7 +117,7 @@ export function DebugPanel({ answer }: DebugPanelProps) {
 
 function SectionHeader({ label }: { label: string }) {
   return (
-    <div className="col-span-2 mt-2 mb-0.5 uppercase tracking-widest text-[8px] font-semibold text-ocean/30">
+    <div className="col-span-2 mt-2 mb-0.5 uppercase tracking-widest text-[8px] font-semibold" style={{ color: "rgba(34,211,238,0.30)" }}>
       {label}
     </div>
   );
@@ -129,10 +131,13 @@ function Row({ label, value, full, bold }: {
 }) {
   return (
     <>
-      <span className={`text-ocean/35 ${full ? "col-span-2" : ""}`}>
+      <span className={`${full ? "col-span-2" : ""}`} style={{ color: "rgba(34,211,238,0.32)" }}>
         {label}:
       </span>
-      <span className={`break-all ${full ? "col-span-2 -mt-0.5" : ""} ${bold ? "font-semibold text-ocean/70" : "text-ocean/55"}`}>
+      <span
+        className={`break-all ${full ? "col-span-2 -mt-0.5" : ""}`}
+        style={{ color: bold ? "rgba(34,211,238,0.65)" : "rgba(34,211,238,0.50)" }}
+      >
         {value}
       </span>
     </>

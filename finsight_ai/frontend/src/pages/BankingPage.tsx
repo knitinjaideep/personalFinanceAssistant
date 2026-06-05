@@ -15,64 +15,33 @@ import { useAppStore } from "../store/appStore";
 
 function PageHeader() {
   return (
-    <div
-      className="relative shrink-0 overflow-hidden"
-      style={{ minHeight: "140px" }}
-    >
-      {/* Background image */}
-      <img
-        src="/backgrounds/banking-bg.png"
-        alt=""
-        aria-hidden
-        className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
-        style={{ zIndex: 0 }}
-      />
-      {/* Overlay */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: "linear-gradient(135deg, rgba(3,17,31,0.80) 0%, rgba(6,38,58,0.60) 50%, rgba(3,17,31,0.88) 100%)",
-          zIndex: 1,
-        }}
-      />
-      {/* Bottom fade to page */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-10 pointer-events-none"
-        style={{
-          background: "linear-gradient(to bottom, transparent, rgba(3,17,31,0.55))",
-          zIndex: 2,
-        }}
-      />
-
-      {/* Content */}
-      <div className="relative flex items-center justify-between px-8 py-7" style={{ zIndex: 3 }}>
-        <div className="flex items-center gap-4">
-          <CoralMascot variant="banking" size="sm" className="shrink-0" />
-          <div>
-            <h1 className="text-[22px] font-extrabold text-white tracking-tight leading-none">
-              Banking
-            </h1>
-            <p className="text-[12px] mt-1 font-medium" style={{ color: "rgba(34,211,238,0.70)" }}>
-              Credit cards, checking, savings, and cash flow.
-            </p>
-          </div>
+    <div className="shrink-0 px-8 pt-10 pb-4">
+      <div className="flex items-center gap-4">
+        <CoralMascot variant="banking" size="sm" className="shrink-0" />
+        <div>
+          <h1 className="text-[22px] font-extrabold tracking-tight leading-none" style={{ color: "var(--text-primary)" }}>
+            Banking
+          </h1>
+          <p className="text-[12px] mt-1 font-medium" style={{ color: "var(--text-secondary)" }}>
+            Credit cards, checking, savings, and cash flow.
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Accordion wrapper styling for dark theme ──────────────────────────────────
+// ── Accordion wrapper ─────────────────────────────────────────────────────────
 
-function DarkAccordionWrapper({ children }: { children: React.ReactNode }) {
+function AccordionWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div
       className="rounded-3xl overflow-hidden"
       style={{
-        background: "rgba(3,17,31,0.55)",
+        background: "var(--panel-bg)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
-        border: "1px solid rgba(34,211,238,0.10)",
+        border: "1px solid var(--panel-border)",
       }}
     >
       {children}
@@ -125,10 +94,10 @@ export function BankingPage() {
             <div
               className="rounded-3xl"
               style={{
-                background: "rgba(3,17,31,0.55)",
+                background: "var(--panel-bg)",
                 backdropFilter: "blur(16px)",
                 WebkitBackdropFilter: "blur(16px)",
-                border: "1px dashed rgba(34,211,238,0.18)",
+                border: "1px dashed var(--empty-border)",
               }}
             >
               <CoralEmptyState
@@ -144,7 +113,7 @@ export function BankingPage() {
 
         {/* ── Credit Cards accordion ─────────────────────────────────────── */}
         <motion.div variants={staggerChild}>
-          <DarkAccordionWrapper>
+          <AccordionWrapper>
             <BankingAccordion
               title="Credit Cards"
               subtitle="Chase, Amex, and Macy's credit cards"
@@ -154,7 +123,7 @@ export function BankingPage() {
             >
               <div className="flex items-center gap-1.5 mb-3 mt-1">
                 <CreditCard size={12} style={{ color: "#FF7A5A" }} />
-                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.35)" }}>
+                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                   {creditCards.length} accounts configured
                 </span>
               </div>
@@ -176,12 +145,12 @@ export function BankingPage() {
                 ))}
               </motion.div>
             </BankingAccordion>
-          </DarkAccordionWrapper>
+          </AccordionWrapper>
         </motion.div>
 
         {/* ── Checking accordion ─────────────────────────────────────────── */}
         <motion.div variants={staggerChild}>
-          <DarkAccordionWrapper>
+          <AccordionWrapper>
             <BankingAccordion
               title="Checking"
               subtitle="Chase and Bank of America checking accounts"
@@ -191,7 +160,7 @@ export function BankingPage() {
             >
               <div className="flex items-center gap-1.5 mb-3 mt-1">
                 <Landmark size={12} style={{ color: "#22d3ee" }} />
-                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.35)" }}>
+                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                   {checkingAccounts.length} accounts configured
                 </span>
               </div>
@@ -209,12 +178,12 @@ export function BankingPage() {
                 ))}
               </motion.div>
             </BankingAccordion>
-          </DarkAccordionWrapper>
+          </AccordionWrapper>
         </motion.div>
 
         {/* ── Savings accordion ──────────────────────────────────────────── */}
         <motion.div variants={staggerChild}>
-          <DarkAccordionWrapper>
+          <AccordionWrapper>
             <BankingAccordion
               title="Savings"
               subtitle="Marcus by Goldman Sachs high-yield savings"
@@ -224,7 +193,7 @@ export function BankingPage() {
             >
               <div className="flex items-center gap-1.5 mb-3 mt-1">
                 <PiggyBank size={12} style={{ color: "#4CAF93" }} />
-                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.35)" }}>
+                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
                   Marcus Goldman Sachs
                 </span>
               </div>
@@ -242,7 +211,7 @@ export function BankingPage() {
                 ))}
               </motion.div>
             </BankingAccordion>
-          </DarkAccordionWrapper>
+          </AccordionWrapper>
         </motion.div>
 
         <div className="h-3" />

@@ -28,7 +28,7 @@ export function BankingAccordion({
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-3 px-5 py-4 text-left transition-colors"
-        style={{ background: open ? "rgba(34,211,238,0.05)" : "transparent" }}
+        style={{ background: open ? "var(--accordion-open-bg)" : "transparent" }}
         aria-expanded={open}
       >
         {/* Accent bar */}
@@ -39,7 +39,7 @@ export function BankingAccordion({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[15px] font-bold text-white">{title}</span>
+            <span className="text-[15px] font-bold" style={{ color: "var(--text-primary)" }}>{title}</span>
             {badge && (
               <span
                 className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
@@ -54,7 +54,7 @@ export function BankingAccordion({
             )}
           </div>
           {subtitle && (
-            <p className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>{subtitle}</p>
+            <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{subtitle}</p>
           )}
         </div>
 
@@ -63,7 +63,7 @@ export function BankingAccordion({
           transition={{ duration: 0.2, ease: "easeInOut" }}
           className="shrink-0"
         >
-          <ChevronDown size={16} style={{ color: "rgba(255,255,255,0.35)" }} />
+          <ChevronDown size={16} style={{ color: "var(--text-muted)" }} />
         </motion.div>
       </button>
 
@@ -80,7 +80,7 @@ export function BankingAccordion({
           >
             <div
               className="px-5 pb-5 pt-2"
-              style={{ borderTop: "1px solid rgba(34,211,238,0.10)" }}
+              style={{ borderTop: "1px solid var(--panel-border)" }}
             >
               {children}
             </div>

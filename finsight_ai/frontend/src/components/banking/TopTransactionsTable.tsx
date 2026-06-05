@@ -24,7 +24,7 @@ export function TopTransactionsTable({ transactions, limit = 5 }: Props) {
 
   if (rows.length === 0) {
     return (
-      <p className="text-[11px] text-ocean/35 italic py-3 text-center">
+      <p className="text-[11px] italic py-3 text-center" style={{ color: "var(--empty-text)" }}>
         No transaction data available.
       </p>
     );
@@ -36,7 +36,7 @@ export function TopTransactionsTable({ transactions, limit = 5 }: Props) {
         <thead>
           <tr
             className="border-b"
-            style={{ borderColor: "rgba(205,237,246,0.60)", color: "rgba(11,60,93,0.38)" }}
+            style={{ borderColor: "var(--row-border-strong)", color: "var(--table-head)" }}
           >
             <th className="text-left py-2 pr-3 font-semibold">Date</th>
             <th className="text-left py-2 px-2 font-semibold">Description</th>
@@ -49,16 +49,16 @@ export function TopTransactionsTable({ transactions, limit = 5 }: Props) {
             <tr
               key={i}
               className="border-b last:border-0 transition-colors"
-              style={{ borderColor: "rgba(205,237,246,0.35)" }}
+              style={{ borderColor: "var(--row-border)" }}
             >
-              <td className="py-2 pr-3 text-ocean/45 whitespace-nowrap">{fmtDate(tx.date)}</td>
-              <td className="py-2 px-2 font-medium text-ocean-deep max-w-[140px] truncate">
+              <td className="py-2 pr-3 whitespace-nowrap" style={{ color: "var(--text-muted)" }}>{fmtDate(tx.date)}</td>
+              <td className="py-2 px-2 font-medium max-w-[140px] truncate" style={{ color: "var(--text-primary)" }}>
                 {tx.description}
               </td>
-              <td className="py-2 px-2 text-ocean/40 hidden sm:table-cell">
+              <td className="py-2 px-2 hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>
                 {fmtCategory(tx.category)}
               </td>
-              <td className="py-2 pl-2 text-right font-semibold tabular" style={{ color: "#CC5A40" }}>
+              <td className="py-2 pl-2 text-right font-semibold tabular" style={{ color: "#FF7A5A" }}>
                 ${tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </td>
             </tr>

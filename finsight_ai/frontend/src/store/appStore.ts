@@ -5,6 +5,8 @@
 import { create } from "zustand";
 import type { ChatMessage } from "../types";
 
+export type Theme = "dark" | "light";
+
 export interface IngestionJob {
   document_id: string;
   filename: string;
@@ -21,9 +23,25 @@ export type ActivePage =
   | "documents"
   | "chat";
 
+function getInitialTheme(): Theme {
+  try {
+    const stored = localStorage.getItem("coral-theme");
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {}
+  return "dark";
+}
+
+function applyTheme(theme: Theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("coral-theme", theme); } catch {}
+}
+
 interface AppState {
   activePage: ActivePage;
   setActivePage: (page: ActivePage) => void;
+
+  theme: Theme;
+  toggleTheme: () => void;
 
   chatHistory: ChatMessage[];
   addChatMessage: (message: ChatMessage) => void;
@@ -35,9 +53,19 @@ interface AppState {
   clearFinishedJobs: () => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+const initialTheme = getInitialTheme();
+applyTheme(initialTheme);
+
+export const useAppStore = create<AppState>((set, get) => ({
   activePage: "overview",
   setActivePage: (page) => set({ activePage: page }),
+
+  theme: initialTheme,
+  toggleTheme: () => {
+    const next: Theme = get().theme === "dark" ? "light" : "dark";
+    applyTheme(next);
+    set({ theme: next });
+  },
 
   chatHistory: [],
   addChatMessage: (message) =>

@@ -161,29 +161,24 @@ function NextBestActions() {
       <motion.div
         className="group relative h-full min-h-[280px] rounded-[28px] p-6 lg:p-7"
         style={{
-          background: "rgba(7,24,38,0.50)",
-          backdropFilter: "blur(1px)",
-          WebkitBackdropFilter: "blur(1px)",
-          border: "1px solid rgba(34,211,238,0.32)",
-          boxShadow: "0 24px 80px rgba(4,14,26,0.38), 0 4px 16px rgba(4,14,26,0.22), 0 0 0 1px rgba(34,211,238,0.08), inset 0 1px 0 rgba(34,211,238,0.18)",
+          background: "var(--panel-bg)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          border: "1px solid var(--panel-border-accent)",
+          boxShadow: "var(--panel-shadow)",
           animation: "coralFeatureFloat 5.2s ease-in-out infinite",
           animationDelay: "0ms",
         }}
         whileHover={{ scale: 1.025, y: -5, transition: { type: "spring", stiffness: 280, damping: 22 } }}
         whileTap={{ scale: 0.98, transition: { duration: 0.12 } }}
       >
-        {/* Top light wash — matches feature cards */}
-        <div
-          className="absolute inset-0 rounded-[28px] pointer-events-none"
-          style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%)" }}
-        />
-        {/* Hover glow ring — matches feature cards */}
+        {/* Hover glow ring */}
         <div
           className="absolute inset-0 rounded-[28px] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-          style={{ boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.22), 0 0 50px rgba(95,168,211,0.22)" }}
+          style={{ boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.12), 0 0 50px rgba(95,168,211,0.15)" }}
         />
 
-        <h2 className="relative flex items-center gap-1.5 text-[13px] font-bold text-white mb-4">
+        <h2 className="relative flex items-center gap-1.5 text-[13px] font-bold mb-4" style={{ color: "var(--text-primary)" }}>
           <Sparkles size={13} style={{ color: "rgba(255,122,90,0.85)" }} />
           ✦ Next best actions
         </h2>
@@ -195,18 +190,18 @@ function NextBestActions() {
               onClick={() => setActivePage(action.page)}
               className="w-full flex items-center justify-between rounded-2xl text-left transition-all hover:scale-[1.01] group/row"
               style={{
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(34,211,238,0.22)",
+                background: "var(--row-bg)",
+                border: "1px solid var(--row-border-strong)",
                 backdropFilter: "blur(2px)",
                 WebkitBackdropFilter: "blur(2px)",
                 padding: "13px 16px",
               }}
             >
               <div>
-                <p className="text-[13px] font-semibold" style={{ color: "rgba(255,255,255,0.90)" }}>
+                <p className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
                   {action.title}
                 </p>
-                <p className="text-[11px] mt-0.5" style={{ color: "rgba(186,230,255,0.50)" }}>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
                   {action.description}
                 </p>
               </div>
@@ -228,7 +223,7 @@ function NextBestActions() {
 function StatusBadge({ status }: { status: "ok" | "missing" | "loading" }) {
   if (status === "loading") {
     return (
-      <span className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: "rgba(255,255,255,0.35)" }}>
+      <span className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: "var(--text-muted)" }}>
         <Clock size={10} />
         Loading…
       </span>
@@ -268,43 +263,38 @@ function DataAtAGlance() {
       <motion.div
         className="group relative h-full min-h-[280px] rounded-[28px] p-6 lg:p-7"
         style={{
-          background: "rgba(7,24,38,0.50)",
-          backdropFilter: "blur(1px)",
-          WebkitBackdropFilter: "blur(1px)",
-          border: "1px solid rgba(34,211,238,0.32)",
-          boxShadow: "0 24px 80px rgba(4,14,26,0.38), 0 4px 16px rgba(4,14,26,0.22), 0 0 0 1px rgba(34,211,238,0.08), inset 0 1px 0 rgba(34,211,238,0.18)",
+          background: "var(--panel-bg)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          border: "1px solid var(--panel-border-accent)",
+          boxShadow: "var(--panel-shadow)",
           animation: "coralFeatureFloat 5.2s ease-in-out infinite",
           animationDelay: "400ms",
         }}
         whileHover={{ scale: 1.025, y: -5, transition: { type: "spring", stiffness: 280, damping: 22 } }}
         whileTap={{ scale: 0.98, transition: { duration: 0.12 } }}
       >
-        {/* Top light wash */}
-        <div
-          className="absolute inset-0 rounded-[28px] pointer-events-none"
-          style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%)" }}
-        />
         {/* Hover glow ring */}
         <div
           className="absolute inset-0 rounded-[28px] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-          style={{ boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.22), 0 0 50px rgba(95,168,211,0.22)" }}
+          style={{ boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.12), 0 0 50px rgba(95,168,211,0.15)" }}
         />
 
-        <h2 className="relative text-[13px] font-bold text-white mb-4">Your data at a glance</h2>
+        <h2 className="relative text-[13px] font-bold mb-4" style={{ color: "var(--text-primary)" }}>Your data at a glance</h2>
         <div className="relative space-y-4">
           {rows.map((row) => (
             <div
               key={row.label}
               className="flex items-center justify-between rounded-2xl"
               style={{
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(34,211,238,0.22)",
+                background: "var(--row-bg)",
+                border: "1px solid var(--row-border-strong)",
                 backdropFilter: "blur(2px)",
                 WebkitBackdropFilter: "blur(2px)",
                 padding: "13px 16px",
               }}
             >
-              <span className="text-[13px] font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
+              <span className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
                 {row.label}
               </span>
               <StatusBadge status={row.status} />

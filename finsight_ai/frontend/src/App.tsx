@@ -39,12 +39,15 @@ function PageContent() {
 }
 
 export default function App() {
+  const theme = useAppStore((s) => s.theme);
+  const isLight = theme === "light";
+
   return (
     <div
       className="relative min-h-screen w-full overflow-hidden"
-      style={{ background: "#03111f" }}
+      style={{ background: "var(--bg-base)", transition: "background 0.3s ease" }}
     >
-      {/* Full-viewport underwater photo background — fixed, z-0, never blocks clicks */}
+      {/* Full-viewport photo background — fixed, z-0, never blocks clicks */}
       <CoralPageBackground />
 
       {/* App shell — full screen, sits above background */}
@@ -60,7 +63,7 @@ export default function App() {
           className="relative flex-1 flex flex-col min-w-0 min-h-screen"
           style={{
             background: "transparent",
-            borderLeft: "1px solid rgba(34,211,238,0.08)",
+            borderLeft: `1px solid var(--main-border)`,
           }}
         >
           <div className="relative z-10 flex-1 flex flex-col min-h-0" style={{ background: "transparent" }}>
@@ -77,16 +80,26 @@ export default function App() {
         toastOptions={{
           style: {
             borderRadius: "14px",
-            background: "rgba(6,26,42,0.92)",
+            background: isLight ? "rgba(255,255,255,0.96)" : "rgba(6,26,42,0.92)",
             backdropFilter: "blur(16px)",
-            color: "rgba(255,255,255,0.90)",
-            border: "1px solid rgba(34,211,238,0.20)",
-            boxShadow: "0 8px 32px rgba(3,17,31,0.50)",
+            color: isLight ? "rgba(11,40,65,0.90)" : "rgba(255,255,255,0.90)",
+            border: isLight ? "1px solid rgba(31,111,139,0.20)" : "1px solid rgba(34,211,238,0.20)",
+            boxShadow: isLight ? "0 8px 32px rgba(11,60,93,0.15)" : "0 8px 32px rgba(3,17,31,0.50)",
             fontSize: "13px",
             fontWeight: "500",
           },
-          success: { iconTheme: { primary: "#4CAF93", secondary: "rgba(6,26,42,0.92)" } },
-          error:   { iconTheme: { primary: "#E45757", secondary: "rgba(6,26,42,0.92)" } },
+          success: {
+            iconTheme: {
+              primary: "#4CAF93",
+              secondary: isLight ? "rgba(255,255,255,0.96)" : "rgba(6,26,42,0.92)",
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: "#E45757",
+              secondary: isLight ? "rgba(255,255,255,0.96)" : "rgba(6,26,42,0.92)",
+            },
+          },
         }}
       />
     </div>

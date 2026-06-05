@@ -39,11 +39,8 @@ export function CreditCardAccountPanel({ data, subscriptions, last6Months }: Pro
 
   const { config, cardSummary, dataHealth } = data;
 
-  // Build 6-month spend from the card summary total (backend doesn't return per-month per-card)
-  // We use the aggregated total as a single last-month placeholder, or zero-fill
   const monthlySpend = calculateMonthlySpend([], last6Months);
 
-  // If we have card-level total, put it in the most recent month as an approximation
   if (cardSummary?.total_spend && monthlySpend.length > 0) {
     monthlySpend[monthlySpend.length - 1].spend = Math.round(cardSummary.total_spend);
   }
@@ -61,8 +58,8 @@ export function CreditCardAccountPanel({ data, subscriptions, last6Months }: Pro
     <div
       className="rounded-2xl overflow-hidden"
       style={{
-        background: "rgba(3,17,31,0.50)",
-        border: "1px solid rgba(34,211,238,0.10)",
+        background: "var(--row-bg)",
+        border: "1px solid var(--row-border)",
       }}
     >
       {/* Card header */}
@@ -81,11 +78,11 @@ export function CreditCardAccountPanel({ data, subscriptions, last6Months }: Pro
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-semibold text-white leading-tight truncate">
+          <p className="text-[13px] font-semibold leading-tight truncate" style={{ color: "var(--text-primary)" }}>
             {config.displayName}
           </p>
           {cardSummary && (
-            <p className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.38)" }}>
+            <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>
               {cardSummary.transaction_count} transactions · ${cardSummary.total_spend_fmt}
             </p>
           )}
@@ -97,7 +94,7 @@ export function CreditCardAccountPanel({ data, subscriptions, last6Months }: Pro
             animate={{ rotate: expanded ? 0 : -90 }}
             transition={{ duration: 0.2 }}
           >
-            <ChevronDown size={14} style={{ color: "rgba(255,255,255,0.35)" }} />
+            <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />
           </motion.div>
         </div>
       </button>
@@ -115,14 +112,14 @@ export function CreditCardAccountPanel({ data, subscriptions, last6Months }: Pro
           >
             <div
               className="px-4 pb-4 space-y-4"
-              style={{ borderTop: "1px solid rgba(34,211,238,0.10)" }}
+              style={{ borderTop: "1px solid var(--row-border)" }}
             >
               {/* Payment due date */}
               <div className="flex items-center gap-1.5 pt-3">
-                <Calendar size={11} style={{ color: "rgba(255,255,255,0.28)" }} />
-                <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.40)" }}>
+                <Calendar size={11} style={{ color: "var(--text-dim)" }} />
+                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
                   Payment due:{" "}
-                  <span className="font-medium text-white/70">
+                  <span className="font-medium" style={{ color: "var(--text-secondary)" }}>
                     {cardSummary?.latest_statement ?? "Not available"}
                   </span>
                 </span>
@@ -131,10 +128,10 @@ export function CreditCardAccountPanel({ data, subscriptions, last6Months }: Pro
               {!hasAnyData && (
                 <div
                   className="rounded-xl px-3 py-3 flex items-start gap-2"
-                  style={{ background: "rgba(255,209,102,0.08)", border: "1px solid rgba(255,209,102,0.20)" }}
+                  style={{ background: "var(--warn-bg)", border: "1px solid var(--warn-border)" }}
                 >
                   <AlertCircle size={13} style={{ color: "#FFD166" }} className="shrink-0 mt-0.5" />
-                  <p className="text-[11px] leading-relaxed" style={{ color: "rgba(255,209,102,0.80)" }}>
+                  <p className="text-[11px] leading-relaxed" style={{ color: "var(--warn-text)" }}>
                     {dataHealth.warning ?? "No data found for this card. Upload or reprocess statements."}
                   </p>
                 </div>
@@ -142,7 +139,7 @@ export function CreditCardAccountPanel({ data, subscriptions, last6Months }: Pro
 
               {/* 6-month spend chart */}
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "rgba(255,255,255,0.38)" }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
                   6-Month Spend
                 </p>
                 <MonthlySpendChart
@@ -154,7 +151,7 @@ export function CreditCardAccountPanel({ data, subscriptions, last6Months }: Pro
 
               {/* Recurring subscriptions */}
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "rgba(255,255,255,0.38)" }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
                   Recurring Charges
                 </p>
                 <RecurringTransactionsTable

@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import type { CoralMascotVariant } from "../../lib/mascots";
 import { getCoralFeatureIcon, type CoralFeatureIconKey } from "../../lib/coralFeatureIcons";
+import { useAppStore } from "../../store/appStore";
 
 export interface CoralImageFeatureCardProps {
   title: string;
@@ -23,7 +24,8 @@ export function CoralImageFeatureCard({
   floatDelay = "0ms",
   className,
 }: CoralImageFeatureCardProps) {
-  const icon = getCoralFeatureIcon(iconKey);
+  const isLight = useAppStore((s) => s.theme === "light");
+  const icon = getCoralFeatureIcon(iconKey, isLight);
 
   return (
     <motion.button
@@ -33,12 +35,11 @@ export function CoralImageFeatureCard({
       className={`group relative overflow-hidden rounded-[28px] text-left cursor-pointer w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${className ?? ""}`}
       style={{
         minHeight: "280px",
-        background: "rgba(7,24,38,0.50)",
-        backdropFilter: "blur(1px)",
-        WebkitBackdropFilter: "blur(1px)",
-        border: "1px solid rgba(34,211,238,0.32)",
-        boxShadow:
-          "0 24px 80px rgba(4,14,26,0.38), 0 4px 16px rgba(4,14,26,0.22), 0 0 0 1px rgba(34,211,238,0.08), inset 0 1px 0 rgba(34,211,238,0.18)",
+        background: "var(--panel-bg)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        border: "1px solid var(--panel-border-accent)",
+        boxShadow: "var(--panel-shadow)",
         animation: `coralFeatureFloat 4.8s ease-in-out infinite`,
         animationDelay: floatDelay,
       }}
@@ -69,14 +70,14 @@ export function CoralImageFeatureCard({
         </div>
 
         {/* Title */}
-        <h3 className="text-[20px] font-extrabold leading-tight tracking-tight text-white">
+        <h3 className="text-[20px] font-extrabold leading-tight tracking-tight" style={{ color: "var(--text-primary)" }}>
           {title}
         </h3>
 
         {/* Description */}
         <p
           className="mt-2 text-[13px] leading-relaxed flex-1"
-          style={{ color: "rgba(186,230,255,0.65)" }}
+          style={{ color: "var(--text-secondary)" }}
         >
           {description}
         </p>

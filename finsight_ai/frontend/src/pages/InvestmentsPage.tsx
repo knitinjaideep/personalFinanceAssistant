@@ -15,73 +15,38 @@ import { useInvestmentData } from "../hooks/useInvestmentData";
 import { useAppStore } from "../store/appStore";
 import { fmtDate } from "../lib/financeDataAdapters";
 
-const tooltipStyle = {
-  borderRadius: 10,
-  fontSize: 12,
-  background: "rgba(3,17,31,0.92)",
-  border: "1px solid rgba(34,211,238,0.22)",
-  boxShadow: "0 4px 16px rgba(3,17,31,0.50)",
-  color: "rgba(255,255,255,0.85)",
-};
-
-// ── Underwater page header ────────────────────────────────────────────────────
+// ── Page header ───────────────────────────────────────────────────────────────
 
 function PageHeader() {
   return (
-    <div
-      className="relative shrink-0 overflow-hidden"
-      style={{ minHeight: "140px" }}
-    >
-      <img
-        src="/backgrounds/investments-bg.png"
-        alt=""
-        aria-hidden
-        className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none select-none"
-        style={{ zIndex: 0 }}
-      />
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: "linear-gradient(135deg, rgba(3,17,31,0.85) 0%, rgba(6,38,58,0.65) 50%, rgba(3,17,31,0.92) 100%)",
-          zIndex: 1,
-        }}
-      />
-      <div
-        className="absolute bottom-0 left-0 right-0 h-10 pointer-events-none"
-        style={{
-          background: "linear-gradient(to bottom, transparent, rgba(3,17,31,0.55))",
-          zIndex: 2,
-        }}
-      />
-      <div className="relative flex items-center justify-between px-8 py-7" style={{ zIndex: 3 }}>
-        <div className="flex items-center gap-4">
-          <CoralMascot variant="investments" size="sm" className="shrink-0" />
-          <div>
-            <h1 className="text-[22px] font-extrabold text-white tracking-tight leading-none">
-              Investments
-            </h1>
-            <p className="text-[12px] mt-1 font-medium" style={{ color: "rgba(34,211,238,0.70)" }}>
-              Portfolio value, holdings, and performance.
-            </p>
-          </div>
+    <div className="shrink-0 px-8 pt-10 pb-4">
+      <div className="flex items-center gap-4">
+        <CoralMascot variant="investments" size="sm" className="shrink-0" />
+        <div>
+          <h1 className="text-[22px] font-extrabold tracking-tight leading-none" style={{ color: "var(--text-primary)" }}>
+            Investments
+          </h1>
+          <p className="text-[12px] mt-1 font-medium" style={{ color: "var(--text-secondary)" }}>
+            Portfolio value, holdings, and performance.
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Dark glass card ───────────────────────────────────────────────────────────
+// ── Themed card ───────────────────────────────────────────────────────────────
 
-function DarkCard({ children, className }: { children: React.ReactNode; className?: string }) {
+function Panel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div
       className={`rounded-2xl p-5 ${className ?? ""}`}
       style={{
-        background: "rgba(3,17,31,0.60)",
+        background: "var(--panel-bg-alt)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
-        border: "1px solid rgba(34,211,238,0.12)",
-        boxShadow: "0 8px 32px rgba(3,17,31,0.40), inset 0 1px 0 rgba(255,255,255,0.04)",
+        border: "1px solid var(--panel-border-accent)",
+        boxShadow: "var(--panel-shadow)",
       }}
     >
       {children}
@@ -90,17 +55,17 @@ function DarkCard({ children, className }: { children: React.ReactNode; classNam
 }
 
 function Skeleton({ h = 160 }: { h?: number }) {
-  return <div className="rounded-xl animate-pulse" style={{ height: h, background: "rgba(34,211,238,0.06)" }} />;
+  return <div className="rounded-xl animate-pulse" style={{ height: h, background: "var(--empty-bg)" }} />;
 }
 
 function EmptyBox({ message }: { message: string }) {
   return (
     <div
       className="rounded-xl flex flex-col items-center justify-center gap-2 py-8"
-      style={{ background: "rgba(34,211,238,0.04)", border: "1px dashed rgba(34,211,238,0.18)" }}
+      style={{ background: "var(--empty-bg)", border: "1px dashed var(--empty-border)" }}
     >
-      <AlertCircle size={16} style={{ color: "rgba(255,255,255,0.20)" }} />
-      <p className="text-[11px] text-center max-w-[220px] leading-relaxed" style={{ color: "rgba(255,255,255,0.30)" }}>{message}</p>
+      <AlertCircle size={16} style={{ color: "var(--empty-icon)" }} />
+      <p className="text-[11px] text-center max-w-[220px] leading-relaxed" style={{ color: "var(--empty-text)" }}>{message}</p>
     </div>
   );
 }
@@ -115,9 +80,9 @@ function DataFreshnessPanel({
   onReprocess: () => void;
 }) {
   return (
-    <DarkCard>
-      <p className="text-[13px] font-semibold text-white mb-1">Data Freshness</p>
-      <p className="text-[11px] mb-4" style={{ color: "rgba(255,255,255,0.38)" }}>Latest available statements per institution</p>
+    <Panel>
+      <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Data Freshness</p>
+      <p className="text-[11px] mb-4" style={{ color: "var(--text-muted)" }}>Latest available statements per institution</p>
       <div className="space-y-2.5">
         {freshness.map((f) => (
           <div key={f.institutionKey} className="flex items-center justify-between">
@@ -126,11 +91,11 @@ function DataFreshnessPanel({
                 className="w-2 h-2 rounded-full shrink-0"
                 style={{ background: f.isMissing ? "#E45757" : "#4CAF93" }}
               />
-              <span className="text-[13px] font-medium text-white/80">{f.displayName}</span>
+              <span className="text-[13px] font-medium" style={{ color: "var(--text-secondary)" }}>{f.displayName}</span>
             </div>
             <div className="text-right">
               {f.latestStatement ? (
-                <div className="flex items-center gap-1 text-[11px]" style={{ color: "rgba(255,255,255,0.38)" }}>
+                <div className="flex items-center gap-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
                   <Calendar size={10} />
                   <span>{fmtDate(f.latestStatement)}</span>
                 </div>
@@ -149,7 +114,7 @@ function DataFreshnessPanel({
           </div>
         ))}
       </div>
-    </DarkCard>
+    </Panel>
   );
 }
 
@@ -172,14 +137,14 @@ function CoralInsightCard({ freshness }: { freshness: ReturnType<typeof useInves
     <div
       className="flex items-start gap-3 rounded-2xl px-5 py-4"
       style={{
-        background: "rgba(34,211,238,0.06)",
-        border: "1px solid rgba(34,211,238,0.16)",
+        background: "var(--insight-bg)",
+        border: "1px solid var(--insight-border)",
       }}
     >
       <Sparkles size={15} style={{ color: "rgba(34,211,238,0.70)" }} className="shrink-0 mt-0.5" />
       <div>
-        <p className="text-[12px] font-semibold text-white/85">Coral insight</p>
-        <p className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: "rgba(255,255,255,0.50)" }}>{insight}</p>
+        <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>Coral insight</p>
+        <p className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: "var(--text-secondary)" }}>{insight}</p>
       </div>
     </div>
   );
@@ -194,6 +159,17 @@ function PortfolioHistoryChart({
   data: ReturnType<typeof useInvestmentData>["raw"];
   loading: boolean;
 }) {
+  const isLight = useAppStore((s) => s.theme === "light");
+  const axisColor = isLight ? "rgba(11,40,65,0.45)" : "rgba(255,255,255,0.38)";
+  const gridColor = isLight ? "rgba(31,111,139,0.10)" : "rgba(34,211,238,0.07)";
+  const tooltipStyle = {
+    borderRadius: 10, fontSize: 12,
+    background: isLight ? "rgba(255,255,255,0.97)" : "rgba(3,17,31,0.92)",
+    border: isLight ? "1px solid rgba(31,111,139,0.20)" : "1px solid rgba(34,211,238,0.22)",
+    boxShadow: isLight ? "0 4px 16px rgba(11,60,93,0.15)" : "0 4px 16px rgba(3,17,31,0.50)",
+    color: isLight ? "rgba(11,40,65,0.85)" : "rgba(255,255,255,0.85)",
+  };
+
   const historyByDate: Record<string, number> = {};
   for (const pt of data?.balance_history ?? []) {
     historyByDate[pt.date] = (historyByDate[pt.date] ?? 0) + pt.total_value;
@@ -203,9 +179,9 @@ function PortfolioHistoryChart({
     .map(([date, value]) => ({ date: date.slice(0, 7), value: Math.round(value) }));
 
   return (
-    <DarkCard>
-      <p className="text-[13px] font-semibold text-white mb-1">Portfolio History</p>
-      <p className="text-[11px] mb-4" style={{ color: "rgba(255,255,255,0.38)" }}>Total value across all accounts</p>
+    <Panel>
+      <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Portfolio History</p>
+      <p className="text-[11px] mb-4" style={{ color: "var(--text-muted)" }}>Total value across all accounts</p>
       {loading ? (
         <Skeleton h={180} />
       ) : historyData.length < 2 ? (
@@ -213,15 +189,15 @@ function PortfolioHistoryChart({
       ) : (
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={historyData} barSize={14}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(34,211,238,0.07)" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 10, fill: "rgba(255,255,255,0.38)" }}
+              tick={{ fontSize: 10, fill: axisColor }}
               tickLine={false}
               axisLine={false}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: "rgba(255,255,255,0.38)" }}
+              tick={{ fontSize: 10, fill: axisColor }}
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
@@ -232,7 +208,7 @@ function PortfolioHistoryChart({
           </BarChart>
         </ResponsiveContainer>
       )}
-    </DarkCard>
+    </Panel>
   );
 }
 
@@ -241,17 +217,17 @@ function PortfolioHistoryChart({
 function HoldingsTable({ holdings, loading }: { holdings: ReturnType<typeof useInvestmentData>["holdings"]; loading: boolean }) {
   if (loading) {
     return (
-      <DarkCard>
-        <p className="text-[13px] font-semibold text-white mb-4">Top Holdings</p>
+      <Panel>
+        <p className="text-[13px] font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Top Holdings</p>
         <Skeleton h={200} />
-      </DarkCard>
+      </Panel>
     );
   }
 
   return (
-    <DarkCard>
-      <p className="text-[13px] font-semibold text-white mb-1">Top Holdings</p>
-      <p className="text-[11px] mb-4" style={{ color: "rgba(255,255,255,0.38)" }}>
+    <Panel>
+      <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Top Holdings</p>
+      <p className="text-[11px] mb-4" style={{ color: "var(--text-muted)" }}>
         {holdings.length > 0 ? `${holdings.length} positions` : "No holdings data"}
       </p>
       {holdings.length === 0 ? (
@@ -260,7 +236,7 @@ function HoldingsTable({ holdings, loading }: { holdings: ReturnType<typeof useI
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b" style={{ borderColor: "rgba(34,211,238,0.12)", color: "rgba(255,255,255,0.35)" }}>
+              <tr className="border-b" style={{ borderColor: "var(--row-border-strong)", color: "var(--table-head)" }}>
                 <th className="text-left py-2 pr-3 font-semibold">Symbol / Name</th>
                 <th className="text-right py-2 px-2 font-semibold hidden sm:table-cell">Qty</th>
                 <th className="text-right py-2 px-2 font-semibold">Value</th>
@@ -275,26 +251,26 @@ function HoldingsTable({ holdings, loading }: { holdings: ReturnType<typeof useI
                   <tr
                     key={i}
                     className="border-b last:border-0 transition-colors"
-                    style={{ borderColor: "rgba(34,211,238,0.08)" }}
+                    style={{ borderColor: "var(--row-border)" }}
                   >
                     <td className="py-2 pr-3">
-                      <span className="font-semibold text-white/85">{h.symbol ?? "–"}</span>
+                      <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{h.symbol ?? "–"}</span>
                       {h.description && (
-                        <span className="block text-[10px] truncate max-w-[130px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                        <span className="block text-[10px] truncate max-w-[130px]" style={{ color: "var(--text-muted)" }}>
                           {h.description.slice(0, 22)}
                         </span>
                       )}
                     </td>
-                    <td className="text-right py-2 px-2 tabular hidden sm:table-cell" style={{ color: "rgba(255,255,255,0.40)" }}>
+                    <td className="text-right py-2 px-2 tabular hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>
                       {h.quantity !== null ? h.quantity.toFixed(2) : "–"}
                     </td>
-                    <td className="text-right py-2 px-2 font-semibold text-white/80 tabular">
+                    <td className="text-right py-2 px-2 font-semibold tabular" style={{ color: "var(--text-secondary)" }}>
                       ${h.market_value_fmt}
                     </td>
                     <td className={`text-right py-2 px-2 font-semibold tabular hidden md:table-cell ${glPos ? "text-positive" : "text-coral"}`}>
                       {glPos ? "+" : ""}${h.unrealized_gain_loss_fmt}
                     </td>
-                    <td className="text-right py-2 pl-2 tabular hidden sm:table-cell" style={{ color: "rgba(255,255,255,0.38)" }}>
+                    <td className="text-right py-2 pl-2 tabular hidden sm:table-cell" style={{ color: "var(--text-muted)" }}>
                       {h.portfolio_weight !== null ? `${h.portfolio_weight}%` : "–"}
                     </td>
                   </tr>
@@ -304,7 +280,7 @@ function HoldingsTable({ holdings, loading }: { holdings: ReturnType<typeof useI
           </table>
         </div>
       )}
-    </DarkCard>
+    </Panel>
   );
 }
 
@@ -315,7 +291,7 @@ function AccountCardsGrid({ accounts, loading }: { accounts: ReturnType<typeof u
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {[0, 1].map((i) => (
-          <div key={i} className="rounded-2xl p-4 animate-pulse" style={{ background: "rgba(3,17,31,0.60)", border: "1px solid rgba(34,211,238,0.10)", height: 88 }} />
+          <div key={i} className="rounded-2xl p-4 animate-pulse" style={{ background: "var(--panel-bg)", border: "1px solid var(--panel-border)", height: 88 }} />
         ))}
       </div>
     );
@@ -332,18 +308,18 @@ function AccountCardsGrid({ accounts, loading }: { accounts: ReturnType<typeof u
             key={i}
             className="rounded-2xl p-4"
             style={{
-              background: "rgba(3,17,31,0.55)",
+              background: "var(--panel-bg)",
               backdropFilter: "blur(12px)",
               WebkitBackdropFilter: "blur(12px)",
-              border: "1px solid rgba(34,211,238,0.10)",
+              border: "1px solid var(--panel-border)",
             }}
           >
             <div className="flex items-start justify-between mb-2">
               <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-white/85 truncate">{acct.account_name}</p>
-                <p className="text-[10px] capitalize" style={{ color: "rgba(255,255,255,0.38)" }}>{acct.institution_type}</p>
+                <p className="text-[13px] font-semibold truncate" style={{ color: "var(--text-primary)" }}>{acct.account_name}</p>
+                <p className="text-[10px] capitalize" style={{ color: "var(--text-muted)" }}>{acct.institution_type}</p>
               </div>
-              <p className="text-[15px] font-bold text-white shrink-0 ml-2">${acct.total_value_fmt}</p>
+              <p className="text-[15px] font-bold shrink-0 ml-2" style={{ color: "var(--text-primary)" }}>${acct.total_value_fmt}</p>
             </div>
             <div className="flex items-center justify-between text-[11px]">
               <span className={`font-semibold ${glPos ? "text-positive" : "text-coral"}`}>
@@ -353,7 +329,7 @@ function AccountCardsGrid({ accounts, loading }: { accounts: ReturnType<typeof u
                 )}
               </span>
               {acct.latest_statement_date && (
-                <span style={{ color: "rgba(255,255,255,0.28)" }}>as of {acct.latest_statement_date}</span>
+                <span style={{ color: "var(--text-dim)" }}>as of {acct.latest_statement_date}</span>
               )}
             </div>
           </div>
@@ -459,9 +435,9 @@ export function InvestmentsPage() {
               <CoralInsightCard freshness={dataFreshness} />
 
               {hasData && iraAccounts.length > 0 && (
-                <DarkCard>
-                  <p className="text-[13px] font-semibold text-white mb-1">Retirement vs Taxable</p>
-                  <p className="text-[11px] mb-3" style={{ color: "rgba(255,255,255,0.38)" }}>IRA vs brokerage accounts</p>
+                <Panel>
+                  <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Retirement vs Taxable</p>
+                  <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>IRA vs brokerage accounts</p>
                   <div className="space-y-2">
                     {[
                       { label: "IRA / Retirement", value: totals.iraTotal, total: totals.combined, color: "#4CAF93" },
@@ -471,17 +447,17 @@ export function InvestmentsPage() {
                       return (
                         <div key={label}>
                           <div className="flex items-center justify-between text-[12px] mb-1">
-                            <span className="font-medium" style={{ color: "rgba(255,255,255,0.55)" }}>{label}</span>
+                            <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{label}</span>
                             <span className="font-semibold tabular" style={{ color }}>{pct}%</span>
                           </div>
-                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(34,211,238,0.10)" }}>
+                          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--insight-bg)" }}>
                             <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                </DarkCard>
+                </Panel>
               )}
             </div>
           </motion.div>
@@ -493,9 +469,9 @@ export function InvestmentsPage() {
             <div
               className="rounded-3xl"
               style={{
-                background: "rgba(3,17,31,0.55)",
+                background: "var(--panel-bg)",
                 backdropFilter: "blur(16px)",
-                border: "1px dashed rgba(34,211,238,0.18)",
+                border: "1px dashed var(--empty-border)",
               }}
             >
               <CoralEmptyState

@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { clsx } from "clsx";
 import {
   Home, Landmark, TrendingUp,
-  FileText, MessageSquare, Lock, Shield, ArrowRight,
+  FileText, MessageSquare, Lock, Shield, ArrowRight, Sun, Moon,
 } from "lucide-react";
 import { useAppStore, type ActivePage } from "../../store/appStore";
 import { CoralMascot } from "../CoralMascot";
@@ -39,12 +39,12 @@ function SidebarBrand({ onClick }: { onClick: () => void }) {
         </span>
 
         <div>
-          <div className="font-bold text-[16px] text-white leading-none tracking-tight">
+          <div className="font-bold text-[16px] leading-none tracking-tight" style={{ color: "var(--text-primary)" }}>
             Coral
           </div>
           <div
             className="text-[10px] font-medium tracking-wide mt-0.5"
-            style={{ color: "rgba(34,211,238,0.55)" }}
+            style={{ color: "rgba(34,211,238,0.65)" }}
           >
             Local financial intelligence
           </div>
@@ -67,6 +67,9 @@ function NavItem({
   onClick: () => void;
   delay: number;
 }) {
+  const theme = useAppStore((s) => s.theme);
+  const isLight = theme === "light";
+
   return (
     <motion.button
       initial={{ opacity: 0, x: -8 }}
@@ -77,9 +80,14 @@ function NavItem({
       className={clsx(
         "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-[13px] font-medium",
         "relative transition-colors duration-150",
-        active ? "text-white" : "hover:text-white/80",
       )}
-      style={{ color: active ? undefined : "rgba(255,255,255,0.38)" }}
+      style={{
+        color: active
+          ? "white"
+          : isLight
+            ? "rgba(11,40,65,0.55)"
+            : "rgba(255,255,255,0.38)",
+      }}
     >
       {active && (
         <motion.span
@@ -99,6 +107,70 @@ function NavItem({
   );
 }
 
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useAppStore();
+  const isLight = theme === "light";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.50, duration: 0.35 }}
+      className="mx-3 mb-2"
+    >
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl transition-all duration-200"
+        style={{
+          background: "var(--privacy-bg)",
+          border: "1px solid var(--privacy-border)",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          {isLight
+            ? <Sun size={12} style={{ color: "rgba(255,160,20,0.85)" }} />
+            : <Moon size={12} style={{ color: "rgba(34,211,238,0.75)" }} />
+          }
+          <span className="text-[11px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+            {isLight ? "Light mode" : "Dark mode"}
+          </span>
+        </div>
+
+        {/* Toggle pill */}
+        <div
+          className="relative flex items-center rounded-full transition-all duration-300"
+          style={{
+            width: 32,
+            height: 18,
+            background: isLight
+              ? "rgba(255,160,20,0.25)"
+              : "rgba(34,211,238,0.20)",
+            border: `1px solid ${isLight ? "rgba(255,160,20,0.40)" : "rgba(34,211,238,0.35)"}`,
+          }}
+        >
+          <motion.div
+            layout
+            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            className="absolute rounded-full"
+            style={{
+              width: 12,
+              height: 12,
+              left: isLight ? 16 : 2,
+              background: isLight ? "rgba(255,160,20,0.90)" : "rgba(34,211,238,0.85)",
+              boxShadow: isLight
+                ? "0 0 6px rgba(255,160,20,0.60)"
+                : "0 0 6px rgba(34,211,238,0.55)",
+            }}
+          />
+        </div>
+      </button>
+    </motion.div>
+  );
+}
+
 // ── Privacy card ──────────────────────────────────────────────────────────────
 
 function PrivacyCard() {
@@ -109,15 +181,15 @@ function PrivacyCard() {
       transition={{ delay: 0.55, duration: 0.35 }}
       className="mx-3 mb-3 rounded-2xl px-3.5 py-3"
       style={{
-        background: "rgba(34,211,238,0.06)",
-        border: "1px solid rgba(34,211,238,0.14)",
+        background: "var(--privacy-bg)",
+        border: "1px solid var(--privacy-border)",
       }}
     >
       <div className="flex items-center gap-2 mb-1.5">
         <Shield size={11} style={{ color: "rgba(34,211,238,0.70)" }} />
-        <span className="text-[11px] font-bold text-white/80">100% private</span>
+        <span className="text-[11px] font-bold" style={{ color: "var(--text-secondary)" }}>100% private</span>
       </div>
-      <p className="text-[10px] leading-relaxed mb-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+      <p className="text-[10px] leading-relaxed mb-2" style={{ color: "var(--text-muted)" }}>
         All data stays on your device.
       </p>
       <button
@@ -141,16 +213,16 @@ function SidebarFooter() {
       transition={{ delay: 0.65, duration: 0.35 }}
       className="mx-3 mb-4 px-3 py-2 rounded-xl flex items-center justify-center gap-1.5"
       style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: "var(--footer-bg)",
+        border: "1px solid var(--footer-border)",
       }}
     >
       <span
         className="w-1.5 h-1.5 rounded-full shrink-0"
         style={{ background: "#4CAF93", boxShadow: "0 0 6px rgba(76,175,147,0.70)" }}
       />
-      <Lock size={8} style={{ color: "rgba(255,255,255,0.18)" }} />
-      <span className="text-[9px] font-medium tracking-wide" style={{ color: "rgba(255,255,255,0.22)" }}>
+      <Lock size={8} style={{ color: "var(--text-dim)" }} />
+      <span className="text-[9px] font-medium tracking-wide" style={{ color: "var(--text-dim)" }}>
         All data stays on device
       </span>
     </motion.div>
@@ -160,7 +232,8 @@ function SidebarFooter() {
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 export function Sidebar() {
-  const { activePage, setActivePage } = useAppStore();
+  const { activePage, setActivePage, theme } = useAppStore();
+  const isLight = theme === "light";
 
   return (
     <motion.aside
@@ -170,18 +243,23 @@ export function Sidebar() {
       className="flex flex-col shrink-0"
       style={{
         width: "260px",
-        background: "linear-gradient(180deg, rgba(3,17,31,0.92) 0%, rgba(4,22,38,0.90) 100%)",
+        background: isLight
+          ? "linear-gradient(180deg, rgba(240,247,252,0.94) 0%, rgba(220,238,250,0.92) 100%)"
+          : "linear-gradient(180deg, rgba(3,17,31,0.92) 0%, rgba(4,22,38,0.90) 100%)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
-        borderRight: "1px solid rgba(34,211,238,0.08)",
-        boxShadow: "4px 0 32px rgba(3,17,31,0.55)",
+        borderRight: `1px solid var(--border-subtle)`,
+        boxShadow: isLight
+          ? "4px 0 32px rgba(11,60,93,0.12)"
+          : "4px 0 32px rgba(3,17,31,0.55)",
         minHeight: "100vh",
+        transition: "background 0.3s ease, box-shadow 0.3s ease",
       }}
     >
       <SidebarBrand onClick={() => setActivePage("overview")} />
 
       {/* Hairline divider */}
-      <div className="mx-4 h-px mb-4" style={{ background: "rgba(34,211,238,0.08)" }} />
+      <div className="mx-4 h-px mb-4" style={{ background: "var(--border-subtle)" }} />
 
       {/* Nav */}
       <nav className="flex-1 px-2 space-y-1 overflow-y-auto">
@@ -196,8 +274,9 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Privacy card + footer */}
+      {/* Theme toggle + privacy card + footer */}
       <div className="mt-auto">
+        <ThemeToggle />
         <PrivacyCard />
         <SidebarFooter />
       </div>

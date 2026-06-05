@@ -39,10 +39,10 @@ function TypingIndicator() {
       <div
         className="flex items-center gap-1.5 px-4 py-3 rounded-3xl rounded-bl-lg"
         style={{
-          background: "rgba(3,17,31,0.75)",
+          background: "var(--glass-dark-bg)",
           backdropFilter: "blur(12px)",
-          border: "1px solid rgba(34,211,238,0.18)",
-          boxShadow: "0 4px 16px rgba(3,17,31,0.40)",
+          border: "1px solid var(--border-accent)",
+          boxShadow: "0 4px 16px var(--card-shadow)",
         }}
       >
         {[0, 1, 2].map((i) => (
@@ -55,7 +55,7 @@ function TypingIndicator() {
           />
         ))}
       </div>
-      <span className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.40)" }}>Coral is thinking…</span>
+      <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Coral is thinking…</span>
     </motion.div>
   );
 }
@@ -82,7 +82,8 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
 
       <motion.h2
         variants={staggerChild}
-        className="text-[22px] font-bold text-white mb-2 leading-tight"
+        className="text-[22px] font-bold mb-2 leading-tight"
+        style={{ color: "var(--text-primary)" }}
       >
         Chat with Coral
       </motion.h2>
@@ -98,7 +99,7 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
       <motion.p
         variants={staggerChild}
         className="text-sm mb-9 max-w-sm leading-relaxed"
-        style={{ color: "rgba(255,255,255,0.40)" }}
+        style={{ color: "var(--text-secondary)" }}
       >
         Everything stays on your device. Ask me what changed, what you spent, or what your statements say.
       </motion.p>
@@ -118,11 +119,11 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
             onClick={() => onQuestion(q)}
             className="px-4 py-3 text-left text-sm font-medium rounded-2xl transition-all duration-150"
             style={{
-              background: "rgba(3,17,31,0.65)",
+              background: "var(--panel-bg)",
               backdropFilter: "blur(12px)",
-              border: "1px solid rgba(34,211,238,0.16)",
-              color: "rgba(255,255,255,0.75)",
-              boxShadow: "0 2px 12px rgba(3,17,31,0.40)",
+              border: "1px solid var(--panel-border-accent)",
+              color: "var(--text-secondary)",
+              boxShadow: "var(--panel-shadow)",
             }}
           >
             <Sparkles size={11} className="inline mb-0.5 mr-1.5" style={{ color: "rgba(255,122,90,0.80)" }} />
@@ -195,7 +196,8 @@ function IngestionBadge() {
 const SCROLL_THRESHOLD = 80;
 
 export function ChatPage() {
-  const { chatHistory, addChatMessage, clearChat } = useAppStore();
+  const { chatHistory, addChatMessage, clearChat, theme } = useAppStore();
+  const isLight = theme === "light";
   const [input, setInput]               = useState("");
   const [loading, setLoading]           = useState(false);
   const [uploadOpen, setUploadOpen]     = useState(false);
@@ -278,10 +280,10 @@ export function ChatPage() {
         initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
-        className="shrink-0 px-6 py-4 flex items-center justify-between"
+        className="shrink-0 px-6 pt-8 pb-4 flex items-center justify-between"
         style={{
-          borderBottom: "1px solid rgba(34,211,238,0.10)",
-          background: "rgba(3,17,31,0.72)",
+          borderBottom: `1px solid var(--border-subtle)`,
+          background: isLight ? "rgba(240,247,252,0.60)" : "rgba(3,17,31,0.45)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
         }}
@@ -290,7 +292,7 @@ export function ChatPage() {
         <div className="flex items-center gap-3">
           <CoralMascot size="sm" animated={false} className="shrink-0" />
           <div>
-            <h1 className="text-[16px] font-bold text-white leading-tight tracking-tight">
+            <h1 className="text-[16px] font-bold leading-tight tracking-tight" style={{ color: "var(--text-primary)" }}>
               Chat with Coral
             </h1>
             <p className="text-[11px] font-medium" style={{ color: "rgba(34,211,238,0.60)" }}>
@@ -309,9 +311,9 @@ export function ChatPage() {
             onClick={() => setDocsOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
             style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.10)",
-              color: "rgba(255,255,255,0.50)",
+              background: "var(--btn-glass-bg)",
+              border: "1px solid var(--btn-glass-border)",
+              color: "var(--text-secondary)",
             }}
           >
             <FileText size={12} />
@@ -322,9 +324,9 @@ export function ChatPage() {
             onClick={() => setBulkUploadOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
             style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.10)",
-              color: "rgba(255,255,255,0.55)",
+              background: "var(--btn-glass-bg)",
+              border: "1px solid var(--btn-glass-border)",
+              color: "var(--text-secondary)",
             }}
           >
             <Layers size={12} />
@@ -354,9 +356,9 @@ export function ChatPage() {
                 onClick={clearChat}
                 className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl transition-colors"
                 style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  color: "rgba(255,255,255,0.35)",
+                  background: "var(--btn-glass-bg)",
+                  border: "1px solid var(--btn-glass-border)",
+                  color: "var(--text-muted)",
                 }}
               >
                 <Trash2 size={11} />
@@ -418,8 +420,8 @@ export function ChatPage() {
         transition={{ delay: 0.2, duration: 0.35 }}
         className="shrink-0 px-6 py-4"
         style={{
-          borderTop: "1px solid rgba(34,211,238,0.10)",
-          background: "rgba(3,17,31,0.72)",
+          borderTop: `1px solid var(--border-subtle)`,
+          background: isLight ? "rgba(240,247,252,0.60)" : "rgba(3,17,31,0.45)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
         }}
@@ -428,11 +430,11 @@ export function ChatPage() {
           <div
             className="flex-1 flex items-end rounded-2xl overflow-hidden transition-all duration-200"
             style={{
-              background: "rgba(3,17,31,0.80)",
-              border: `1px solid ${input.trim() ? "rgba(255,122,90,0.50)" : "rgba(34,211,238,0.20)"}`,
+              background: isLight ? "rgba(255,255,255,0.88)" : "rgba(3,17,31,0.80)",
+              border: `1px solid ${input.trim() ? "rgba(255,122,90,0.50)" : "var(--border-accent)"}`,
               boxShadow: input.trim()
                 ? "0 0 0 3px rgba(255,122,90,0.10)"
-                : "0 2px 8px rgba(3,17,31,0.30)",
+                : `0 2px 8px var(--card-shadow)`,
             }}
           >
             <textarea
@@ -446,7 +448,7 @@ export function ChatPage() {
               style={{
                 minHeight: "44px",
                 maxHeight: "120px",
-                color: "rgba(255,255,255,0.90)",
+                color: "var(--text-primary)",
               }}
               disabled={loading}
             />
@@ -461,22 +463,22 @@ export function ChatPage() {
             style={{
               background: canSend
                 ? "linear-gradient(135deg, #FF7A5A, #FFA38F)"
-                : "rgba(255,255,255,0.06)",
+                : "var(--btn-glass-bg)",
               boxShadow: canSend ? "0 4px 16px rgba(255,122,90,0.40)" : "none",
             }}
           >
             {loading ? (
               <Loader2 size={16} className="animate-spin text-white" />
             ) : (
-              <Send size={15} className={canSend ? "text-white" : "text-white/30"} />
+              <Send size={15} style={{ color: canSend ? "white" : "var(--text-muted)" }} />
             )}
           </motion.button>
         </div>
 
         {/* Privacy footer */}
         <div className="flex items-center justify-center gap-1.5 mt-2.5">
-          <Lock size={9} style={{ color: "rgba(255,255,255,0.18)" }} />
-          <p className="text-[10px] font-medium" style={{ color: "rgba(255,255,255,0.22)" }}>
+          <Lock size={9} style={{ color: "var(--text-dim)" }} />
+          <p className="text-[10px] font-medium" style={{ color: "var(--text-dim)" }}>
             All data stays on your device · Enter to send · Shift+Enter for new line
           </p>
         </div>
