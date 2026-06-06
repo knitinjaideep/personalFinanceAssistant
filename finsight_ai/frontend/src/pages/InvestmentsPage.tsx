@@ -19,11 +19,15 @@ import { fmtDate } from "../lib/financeDataAdapters";
 
 function PageHeader() {
   return (
-    <div className="shrink-0 px-8 pt-10 pb-4">
+    <div className="shrink-0 px-8 pt-10 pb-4 relative">
+      {/* Glitter stars behind header */}
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(34,211,238,0.85)", top: "22%", left: "55%" }} />
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(255,122,90,0.75)", top: "70%", left: "80%" }} />
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(255,209,102,0.80)", top: "40%", left: "92%" }} />
       <div className="flex items-center gap-4">
         <CoralMascot variant="investments" size="sm" className="shrink-0" />
         <div>
-          <h1 className="text-[22px] font-extrabold tracking-tight leading-none" style={{ color: "var(--text-primary)" }}>
+          <h1 className="text-[24px] font-extrabold tracking-tight leading-none aurora-heading">
             Investments
           </h1>
           <p className="text-[12px] mt-1 font-medium" style={{ color: "var(--text-secondary)" }}>
@@ -40,13 +44,14 @@ function PageHeader() {
 function Panel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={`rounded-2xl p-5 ${className ?? ""}`}
+      className={`group rounded-2xl p-5 card-shimmer-hover caustic-overlay gradient-border-hover ${className ?? ""}`}
       style={{
         background: "var(--panel-bg-alt)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
         border: "1px solid var(--panel-border-accent)",
-        boxShadow: "var(--panel-shadow)",
+        boxShadow: "var(--panel-shadow), var(--panel-inset)",
+        transition: "box-shadow 0.28s ease, border-color 0.28s ease",
       }}
     >
       {children}
@@ -81,7 +86,7 @@ function DataFreshnessPanel({
 }) {
   return (
     <Panel>
-      <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Data Freshness</p>
+      <p className="text-[13px] font-semibold mb-1 aurora-heading">Data Freshness</p>
       <p className="text-[11px] mb-4" style={{ color: "var(--text-muted)" }}>Latest available statements per institution</p>
       <div className="space-y-2.5">
         {freshness.map((f) => (
@@ -89,7 +94,7 @@ function DataFreshnessPanel({
             <div className="flex items-center gap-2">
               <div
                 className="w-2 h-2 rounded-full shrink-0"
-                style={{ background: f.isMissing ? "#E45757" : "#4CAF93" }}
+                style={{ background: f.isMissing ? "#E45757" : "#3db886" }}
               />
               <span className="text-[13px] font-medium" style={{ color: "var(--text-secondary)" }}>{f.displayName}</span>
             </div>
@@ -135,16 +140,27 @@ function CoralInsightCard({ freshness }: { freshness: ReturnType<typeof useInves
 
   return (
     <div
-      className="flex items-start gap-3 rounded-2xl px-5 py-4"
+      className="relative flex items-start gap-3 rounded-2xl px-5 py-4 card-shimmer-hover gradient-border-hover glitter-container overflow-hidden"
       style={{
-        background: "var(--insight-bg)",
-        border: "1px solid var(--insight-border)",
+        background: "var(--panel-bg-alt)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        border: "1px solid var(--panel-border-accent)",
+        boxShadow: "var(--panel-shadow)",
       }}
     >
-      <Sparkles size={15} style={{ color: "rgba(34,211,238,0.70)" }} className="shrink-0 mt-0.5" />
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(34,211,238,0.85)" }} />
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(255,122,90,0.70)" }} />
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(255,209,102,0.80)" }} />
+      <div
+        className="shrink-0 mt-0.5 p-1.5 rounded-lg"
+        style={{ background: "var(--insight-bg)", border: "1px solid var(--insight-border)" }}
+      >
+        <Sparkles size={13} style={{ color: "var(--border-accent)" }} />
+      </div>
       <div>
-        <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>Coral insight</p>
-        <p className="text-[11.5px] mt-0.5 leading-relaxed" style={{ color: "var(--text-secondary)" }}>{insight}</p>
+        <p className="text-[13px] font-semibold" style={{ color: "var(--heading-primary)" }}>Coral insight</p>
+        <p className="text-[12px] mt-1 leading-relaxed" style={{ color: "var(--text-secondary)" }}>{insight}</p>
       </div>
     </div>
   );
@@ -160,14 +176,15 @@ function PortfolioHistoryChart({
   loading: boolean;
 }) {
   const isLight = useAppStore((s) => s.theme === "light");
-  const axisColor = isLight ? "rgba(11,40,65,0.45)" : "rgba(255,255,255,0.38)";
-  const gridColor = isLight ? "rgba(31,111,139,0.10)" : "rgba(34,211,238,0.07)";
+  // Use CSS-variable values matched to index.css tokens
+  const axisColor = isLight ? "rgba(7,31,51,0.55)"    : "rgba(220,242,250,0.55)";
+  const gridColor = isLight ? "rgba(31,111,139,0.12)" : "rgba(34,211,238,0.08)";
   const tooltipStyle = {
     borderRadius: 10, fontSize: 12,
-    background: isLight ? "rgba(255,255,255,0.97)" : "rgba(3,17,31,0.92)",
-    border: isLight ? "1px solid rgba(31,111,139,0.20)" : "1px solid rgba(34,211,238,0.22)",
-    boxShadow: isLight ? "0 4px 16px rgba(11,60,93,0.15)" : "0 4px 16px rgba(3,17,31,0.50)",
-    color: isLight ? "rgba(11,40,65,0.85)" : "rgba(255,255,255,0.85)",
+    background: isLight ? "rgba(255,255,255,0.97)"     : "rgba(5,20,36,0.94)",
+    border:     isLight ? "1px solid rgba(31,111,139,0.22)" : "1px solid rgba(34,211,238,0.22)",
+    boxShadow:  isLight ? "0 4px 16px rgba(11,60,93,0.15)" : "0 4px 24px rgba(3,17,31,0.55)",
+    color:      isLight ? "rgba(7,31,51,0.88)"         : "rgba(220,242,250,0.88)",
   };
 
   const historyByDate: Record<string, number> = {};
@@ -180,7 +197,7 @@ function PortfolioHistoryChart({
 
   return (
     <Panel>
-      <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Portfolio History</p>
+      <p className="text-[13px] font-semibold mb-1 aurora-heading">Portfolio History</p>
       <p className="text-[11px] mb-4" style={{ color: "var(--text-muted)" }}>Total value across all accounts</p>
       {loading ? (
         <Skeleton h={180} />
@@ -218,7 +235,7 @@ function HoldingsTable({ holdings, loading }: { holdings: ReturnType<typeof useI
   if (loading) {
     return (
       <Panel>
-        <p className="text-[13px] font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Top Holdings</p>
+        <p className="text-[13px] font-semibold mb-4 aurora-heading">Top Holdings</p>
         <Skeleton h={200} />
       </Panel>
     );
@@ -226,7 +243,7 @@ function HoldingsTable({ holdings, loading }: { holdings: ReturnType<typeof useI
 
   return (
     <Panel>
-      <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Top Holdings</p>
+      <p className="text-[13px] font-semibold mb-1 aurora-heading">Top Holdings</p>
       <p className="text-[11px] mb-4" style={{ color: "var(--text-muted)" }}>
         {holdings.length > 0 ? `${holdings.length} positions` : "No holdings data"}
       </p>
@@ -306,12 +323,13 @@ function AccountCardsGrid({ accounts, loading }: { accounts: ReturnType<typeof u
         return (
           <div
             key={i}
-            className="rounded-2xl p-4"
+            className="rounded-2xl p-4 card-shimmer-hover gradient-border-hover"
             style={{
               background: "var(--panel-bg)",
               backdropFilter: "blur(12px)",
               WebkitBackdropFilter: "blur(12px)",
               border: "1px solid var(--panel-border)",
+              transition: "box-shadow 0.25s ease, border-color 0.25s ease",
             }}
           >
             <div className="flex items-start justify-between mb-2">
@@ -436,11 +454,11 @@ export function InvestmentsPage() {
 
               {hasData && iraAccounts.length > 0 && (
                 <Panel>
-                  <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Retirement vs Taxable</p>
+                  <p className="text-[13px] font-semibold mb-1 aurora-heading">Retirement vs Taxable</p>
                   <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>IRA vs brokerage accounts</p>
                   <div className="space-y-2">
                     {[
-                      { label: "IRA / Retirement", value: totals.iraTotal, total: totals.combined, color: "#4CAF93" },
+                      { label: "IRA / Retirement", value: totals.iraTotal, total: totals.combined, color: "#3db886" },
                       { label: "Brokerage / Other", value: Math.max(0, totals.combined - totals.iraTotal), total: totals.combined, color: "#22d3ee" },
                     ].map(({ label, value, total, color }) => {
                       const pct = total > 0 ? ((value / total) * 100).toFixed(0) : "0";

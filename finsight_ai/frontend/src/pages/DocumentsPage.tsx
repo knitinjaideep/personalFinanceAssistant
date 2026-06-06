@@ -52,11 +52,15 @@ function PageHeader({
     color: "var(--btn-glass-color)",
   };
   return (
-    <div className="shrink-0 px-8 pt-10 pb-4 flex items-center justify-between">
+    <div className="relative shrink-0 px-8 pt-10 pb-4 flex items-center justify-between">
+      {/* Glitter accents */}
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(34,211,238,0.85)", top: "20%", left: "48%" }} />
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(255,122,90,0.70)", top: "65%", left: "72%" }} />
+      <span aria-hidden className="glitter-star" style={{ background: "rgba(255,209,102,0.80)", top: "38%", left: "90%" }} />
       <div className="flex items-center gap-4">
         <CoralMascot variant="documents" size="md" className="shrink-0" />
         <div>
-          <h1 className="text-[24px] font-extrabold tracking-tight leading-none" style={{ color: "var(--text-primary)" }}>Documents</h1>
+          <h1 className="text-[24px] font-extrabold tracking-tight leading-none aurora-heading">Documents</h1>
           <p className="text-[12.5px] mt-1.5 font-medium" style={{ color: "var(--text-secondary)" }}>
             {count > 0
               ? `${count} statement${count !== 1 ? "s" : ""} · Upload statements and track parsing.`

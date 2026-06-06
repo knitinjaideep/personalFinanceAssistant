@@ -1,5 +1,6 @@
 import { useAppStore } from "../store/appStore";
 import { coralPageBackgrounds, getBackgroundForPage } from "../lib/coralBackgrounds";
+import { BubbleField } from "./underwater/BubbleField";
 
 export function CoralPageBackground() {
   const activePage = useAppStore((s) => s.activePage);
@@ -71,6 +72,9 @@ export function CoralPageBackground() {
           transition: "background 0.4s ease",
         }}
       />
+
+      {/* Floating bubbles — very subtle, only in dark mode */}
+      {!isLight && <BubbleField intensity={0.65} />}
     </div>
   );
 }

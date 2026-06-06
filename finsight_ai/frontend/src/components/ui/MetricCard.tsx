@@ -14,37 +14,45 @@ interface MetricCardProps {
 
 const accentConfig = {
   coral: {
-    text:    "text-coral",
-    iconBg:  "bg-coral-50 text-coral-600",
-    glow:    "hover:shadow-glow",
-    badge:   "bg-coral-50 border-coral-100",
-    bg:      "bg-metric-coral",
+    valueColor: "#FF7A5A",
+    iconBg:     "rgba(255,122,90,0.12)",
+    iconBorder: "rgba(255,122,90,0.22)",
+    iconColor:  "#FF7A5A",
+    glow:       "0 0 28px rgba(255,122,90,0.22), 0 8px 24px rgba(255,122,90,0.12)",
+    hoverGlow:  "0 0 40px rgba(255,122,90,0.32), 0 12px 36px rgba(255,122,90,0.18)",
+    accentLine: "linear-gradient(90deg, rgba(255,122,90,0.70), transparent)",
   },
   ocean: {
-    text:    "text-ocean",
-    iconBg:  "bg-ocean-50 text-ocean",
-    glow:    "hover:shadow-glow-ocean",
-    badge:   "bg-ocean-50 border-ocean-100",
-    bg:      "bg-metric-ocean",
+    valueColor: "#22d3ee",
+    iconBg:     "rgba(34,211,238,0.10)",
+    iconBorder: "rgba(34,211,238,0.20)",
+    iconColor:  "#22d3ee",
+    glow:       "0 0 28px rgba(34,211,238,0.20), 0 8px 24px rgba(34,211,238,0.10)",
+    hoverGlow:  "0 0 40px rgba(34,211,238,0.30), 0 12px 36px rgba(34,211,238,0.16)",
+    accentLine: "linear-gradient(90deg, rgba(34,211,238,0.70), transparent)",
   },
   positive: {
-    text:    "text-positive",
-    iconBg:  "bg-positive/10 text-positive",
-    glow:    "hover:shadow-glow-positive",
-    badge:   "bg-positive/8 border-positive/20",
-    bg:      "bg-metric-positive",
+    valueColor: "#3db886",
+    iconBg:     "rgba(61,184,134,0.10)",
+    iconBorder: "rgba(61,184,134,0.20)",
+    iconColor:  "#3db886",
+    glow:       "0 0 28px rgba(61,184,134,0.20), 0 8px 24px rgba(61,184,134,0.10)",
+    hoverGlow:  "0 0 40px rgba(61,184,134,0.30), 0 12px 36px rgba(61,184,134,0.16)",
+    accentLine: "linear-gradient(90deg, rgba(61,184,134,0.70), transparent)",
   },
   highlight: {
-    text:    "text-yellow-600",
-    iconBg:  "bg-highlight/20 text-yellow-600",
-    glow:    "",
-    badge:   "bg-highlight/10 border-highlight/30",
-    bg:      "bg-metric-highlight",
+    valueColor: "#FFD166",
+    iconBg:     "rgba(255,209,102,0.10)",
+    iconBorder: "rgba(255,209,102,0.22)",
+    iconColor:  "#FFD166",
+    glow:       "0 0 28px rgba(255,209,102,0.18), 0 8px 24px rgba(255,209,102,0.10)",
+    hoverGlow:  "0 0 40px rgba(255,209,102,0.28), 0 12px 36px rgba(255,209,102,0.14)",
+    accentLine: "linear-gradient(90deg, rgba(255,209,102,0.70), transparent)",
   },
 };
 
-/** Counts up from 0 → target over ~600ms */
-function useCountUp(target: number, duration = 600) {
+/** Counts up from 0 → target over ~700ms with ease-out-quart */
+function useCountUp(target: number, duration = 700) {
   const [display, setDisplay] = useState(0);
   const raf = useRef<number>(0);
 
@@ -53,7 +61,6 @@ function useCountUp(target: number, duration = 600) {
     const tick = (now: number) => {
       const elapsed = now - start;
       const progress = Math.min(elapsed / duration, 1);
-      // ease-out-quart
       const eased = 1 - Math.pow(1 - progress, 4);
       setDisplay(Math.round(eased * target));
       if (progress < 1) raf.current = requestAnimationFrame(tick);
@@ -81,25 +88,56 @@ export function MetricCard({
   return (
     <motion.div
       variants={staggerChild}
-      whileHover={{ y: -3, transition: { type: "spring", stiffness: 350, damping: 25 } }}
+      whileHover={{
+        y: -4,
+        transition: { type: "spring", stiffness: 360, damping: 26 },
+      }}
       className={clsx(
-        "rounded-3xl p-5 flex flex-col gap-3",
-        "bg-white/88 border border-white/30",
-        "shadow-glass cursor-default",
-        cfg.glow,
-        "transition-shadow duration-250",
+        "group relative rounded-3xl p-6 flex flex-col gap-4",
+        "card-shimmer-hover",
         className
       )}
-      style={{ backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
+      style={{
+        background: "var(--card-bg)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        border: "1px solid var(--border-accent)",
+        boxShadow: `var(--panel-shadow), ${cfg.glow}`,
+        cursor: "default",
+        transition: "box-shadow 0.28s ease, border-color 0.28s ease",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLDivElement).style.boxShadow =
+          `0 28px 80px var(--card-hover-shadow), ${cfg.hoverGlow}`;
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).style.boxShadow =
+          `var(--panel-shadow), ${cfg.glow}`;
+      }}
     >
+      {/* Accent line at top */}
+      <div
+        aria-hidden
+        className="absolute top-0 left-6 right-6 rounded-full"
+        style={{ height: 2, background: cfg.accentLine, opacity: 0.60 }}
+      />
+
       {/* Top row: label + icon */}
-      <div className="flex items-start justify-between">
-        <span className="text-[11px] font-semibold text-ocean-deep/50 uppercase tracking-widest leading-tight">
+      <div className="flex items-start justify-between pt-1">
+        <span className="metric-label">
           {label}
         </span>
         <motion.div
           whileHover={{ rotate: [0, -8, 8, 0], transition: { duration: 0.4 } }}
-          className={clsx("p-2 rounded-xl border", cfg.iconBg, cfg.badge)}
+          aria-hidden
+          className="flex items-center justify-center rounded-xl"
+          style={{
+            width: 40,
+            height: 40,
+            background: cfg.iconBg,
+            border: `1px solid ${cfg.iconBorder}`,
+            color: cfg.iconColor,
+          }}
         >
           {icon}
         </motion.div>
@@ -107,17 +145,20 @@ export function MetricCard({
 
       {/* Value */}
       <div className="flex items-end justify-between">
-        <p className={clsx("text-3xl font-bold tracking-tight tabular", cfg.text)}>
+        <p
+          className="metric-value tabular"
+          style={{ color: cfg.valueColor }}
+        >
           {displayValue}
         </p>
         {trend && (
           <span
-            className={clsx(
-              "text-xs font-semibold px-2 py-0.5 rounded-full",
-              trend.up
-                ? "bg-positive/10 text-positive"
-                : "bg-negative/10 text-negative"
-            )}
+            className="text-xs font-semibold px-2.5 py-1 rounded-full mb-1"
+            style={{
+              background: trend.up ? "var(--success-soft)" : "var(--danger-soft)",
+              color: trend.up ? "#3db886" : "#E45757",
+              border: `1px solid ${trend.up ? "rgba(61,184,134,0.20)" : "rgba(228,87,87,0.20)"}`,
+            }}
           >
             {trend.up ? "↑" : "↓"} {trend.value}
           </span>

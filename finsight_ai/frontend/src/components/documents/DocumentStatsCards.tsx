@@ -5,7 +5,6 @@ import { staggerChild } from "../../design/motion";
 
 interface Props {
   stats: DocumentStats;
-  /** When true, the Processing card shows a subtle live indicator. */
   liveProcessing?: boolean;
 }
 
@@ -15,16 +14,16 @@ const CARDS: Array<{
   color: string;
   icon: (live: boolean) => React.ReactNode;
 }> = [
-  { key: "total", label: "Total", color: "#1F6F8B", icon: () => <FileText size={14} /> },
-  { key: "parsed", label: "Parsed", color: "#4CAF93", icon: () => <CheckCircle2 size={14} /> },
+  { key: "total",      label: "Total",      color: "#22d3ee", icon: () => <FileText size={14} /> },
+  { key: "parsed",     label: "Parsed",     color: "#3db886", icon: () => <CheckCircle2 size={14} /> },
   {
     key: "processing",
     label: "Processing",
     color: "#5FA8D3",
     icon: (live) => <Loader2 size={14} className={live ? "animate-spin" : ""} />,
   },
-  { key: "uploaded", label: "Uploaded", color: "#c89a00", icon: () => <Clock size={14} /> },
-  { key: "failed", label: "Failed", color: "#E45757", icon: () => <XCircle size={14} /> },
+  { key: "uploaded",  label: "Uploaded",  color: "#c89a00", icon: () => <Clock size={14} /> },
+  { key: "failed",    label: "Failed",    color: "#E45757", icon: () => <XCircle size={14} /> },
 ];
 
 export function DocumentStatsCards({ stats, liveProcessing = false }: Props) {
@@ -37,20 +36,25 @@ export function DocumentStatsCards({ stats, liveProcessing = false }: Props) {
         return (
           <div
             key={key}
-            className="rounded-2xl p-3.5 text-center"
+            className="relative rounded-2xl p-3.5 text-center card-shimmer-hover gradient-border-hover"
             style={{
-              background: "rgba(3,17,31,0.55)",
+              background: "var(--panel-bg)",
               backdropFilter: "blur(16px)",
               WebkitBackdropFilter: "blur(16px)",
-              border: "1px solid rgba(34,211,238,0.12)",
-              boxShadow: "0 4px 20px rgba(3,17,31,0.30)",
+              border: "1px solid var(--panel-border-accent)",
+              boxShadow: "var(--panel-shadow)",
+              transition: "box-shadow 0.25s ease, border-color 0.25s ease",
             }}
           >
-            <div className="flex items-center justify-center mb-1" style={{ color }}>
+            <div className="flex items-center justify-center mb-1.5" style={{ color }}>
               {icon(live)}
             </div>
-            <p className="text-[20px] font-bold text-white tabular leading-none">{value}</p>
-            <p className="text-[10px] font-medium mt-1" style={{ color: "rgba(255,255,255,0.40)" }}>{label}</p>
+            <p className="text-[20px] font-bold tabular leading-none" style={{ color }}>
+              {value}
+            </p>
+            <p className="text-[10px] font-semibold mt-1.5" style={{ color: "var(--text-muted)" }}>
+              {label}
+            </p>
           </div>
         );
       })}

@@ -1,29 +1,18 @@
 import { useState } from "react";
 import {
-  FileText,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Loader2,
-  RefreshCw,
-  Trash2,
-  AlertTriangle,
+  FileText, CheckCircle2, XCircle, Clock,
+  Loader2, RefreshCw, Trash2, AlertTriangle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { DocumentIssue, DocumentStatus, DocumentSummary } from "../../types";
 import { documentsApi } from "../../api/documents";
 import {
-  STATUS_LABELS,
-  normalizeStatus,
-  inferInstitution,
-  institutionLabel,
-  inferAccount,
-  periodLabel,
-  issueLabel,
+  STATUS_LABELS, normalizeStatus, inferInstitution, institutionLabel,
+  inferAccount, periodLabel, issueLabel,
 } from "../../utils/documentUtils";
 
 const STATUS_CONFIG: Record<DocumentStatus, { icon: React.ReactNode; color: string }> = {
-  parsed:     { icon: <CheckCircle2 size={12} />, color: "#4CAF93" },
+  parsed:     { icon: <CheckCircle2 size={12} />, color: "#3db886" },
   processing: { icon: <Loader2 size={12} className="animate-spin" />, color: "#22d3ee" },
   uploaded:   { icon: <Clock size={12} />, color: "#c89a00" },
   failed:     { icon: <XCircle size={12} />, color: "#E45757" },
@@ -38,14 +27,13 @@ interface Props {
 export function DocumentRow({ doc, onChanged, issue }: Props) {
   const status = normalizeStatus(doc.status);
   const cfg = STATUS_CONFIG[status];
-  const [deleting, setDeleting] = useState(false);
+  const [deleting, setDeleting]       = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
-  const [showIssues, setShowIssues] = useState(false);
+  const [showIssues, setShowIssues]   = useState(false);
 
   const instLabel = institutionLabel(inferInstitution(doc));
-  const account = inferAccount(doc);
-  const period = periodLabel(doc);
-
+  const account   = inferAccount(doc);
+  const period    = periodLabel(doc);
   const incomplete = status === "parsed" && !!issue && issue.issues.length > 0;
 
   const handleDelete = async () => {
@@ -81,50 +69,55 @@ export function DocumentRow({ doc, onChanged, issue }: Props) {
   return (
     <div
       className="flex items-center justify-between pl-12 pr-4 py-2.5 transition-colors group"
-      style={{ borderTop: "1px solid rgba(34,211,238,0.07)" }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(34,211,238,0.04)")}
+      style={{ borderTop: "1px solid var(--row-border)" }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--row-bg)")}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       <div className="flex items-center gap-3 min-w-0">
         <div
           className="p-1.5 rounded-lg shrink-0"
-          style={{ background: "rgba(34,211,238,0.10)", color: "rgba(34,211,238,0.70)" }}
+          style={{ background: "var(--insight-bg)", color: "var(--border-accent)" }}
         >
           <FileText size={13} />
         </div>
         <div className="min-w-0">
-          <p className="text-[12.5px] font-medium text-white truncate">{doc.filename}</p>
-          <p className="text-[10px] mt-0.5 flex items-center gap-1.5 flex-wrap" style={{ color: "rgba(255,255,255,0.38)" }}>
+          <p className="text-[12.5px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
+            {doc.filename}
+          </p>
+          <p
+            className="text-[10px] mt-0.5 flex items-center gap-1.5 flex-wrap"
+            style={{ color: "var(--text-muted)" }}
+          >
             <span>{instLabel}</span>
-            <span style={{ color: "rgba(255,255,255,0.18)" }}>·</span>
+            <span style={{ color: "var(--text-dim)" }}>·</span>
             <span>{account}</span>
             {period !== "—" && (
               <>
-                <span style={{ color: "rgba(255,255,255,0.18)" }}>·</span>
+                <span style={{ color: "var(--text-dim)" }}>·</span>
                 <span>{period}</span>
               </>
             )}
             {doc.page_count != null && (
               <>
-                <span style={{ color: "rgba(255,255,255,0.18)" }}>·</span>
+                <span style={{ color: "var(--text-dim)" }}>·</span>
                 <span>{doc.page_count}p</span>
               </>
             )}
             {doc.statement_count > 0 && (
               <>
-                <span style={{ color: "rgba(255,255,255,0.18)" }}>·</span>
+                <span style={{ color: "var(--text-dim)" }}>·</span>
                 <span>{doc.statement_count} stmt</span>
               </>
             )}
             {doc.upload_time && (
               <>
-                <span style={{ color: "rgba(255,255,255,0.18)" }}>·</span>
+                <span style={{ color: "var(--text-dim)" }}>·</span>
                 <span>{new Date(doc.upload_time).toLocaleDateString()}</span>
               </>
             )}
           </p>
           {status === "failed" && doc.error && (
-            <p className="text-[10px] mt-0.5 truncate" style={{ color: "rgba(228,87,87,0.75)" }} title={doc.error}>
+            <p className="text-[10px] mt-0.5 truncate" style={{ color: "rgba(228,87,87,0.80)" }} title={doc.error}>
               {doc.error}
             </p>
           )}
@@ -134,7 +127,7 @@ export function DocumentRow({ doc, onChanged, issue }: Props) {
                 <span
                   key={iss}
                   className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-                  style={{ background: "rgba(228,87,87,0.12)", color: "#E45757" }}
+                  style={{ background: "var(--danger-soft)", color: "#E45757" }}
                 >
                   {issueLabel(iss)}
                 </span>
@@ -149,7 +142,7 @@ export function DocumentRow({ doc, onChanged, issue }: Props) {
           <button
             onClick={() => setShowIssues((v) => !v)}
             className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full"
-            style={{ background: "rgba(255,209,102,0.14)", color: "#c89a00" }}
+            style={{ background: "var(--warning-soft)", color: "#c89a00" }}
             title="Parsed but incomplete — click for details"
           >
             <AlertTriangle size={11} />
@@ -170,9 +163,9 @@ export function DocumentRow({ doc, onChanged, issue }: Props) {
             onClick={handleReprocess}
             disabled={reprocessing}
             className="p-1.5 rounded-lg transition-colors disabled:opacity-40"
-            style={{ color: "rgba(34,211,238,0.45)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(34,211,238,0.85)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(34,211,238,0.45)")}
+            style={{ color: "var(--border-accent)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--border-accent)")}
             title="Reprocess this document"
           >
             {reprocessing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
@@ -182,9 +175,9 @@ export function DocumentRow({ doc, onChanged, issue }: Props) {
           onClick={handleDelete}
           disabled={deleting}
           className="p-1.5 rounded-lg transition-colors disabled:opacity-40 opacity-0 group-hover:opacity-100"
-          style={{ color: "rgba(255,255,255,0.28)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(228,87,87,0.80)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.28)")}
+          style={{ color: "var(--text-dim)" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(228,87,87,0.85)")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-dim)")}
           title="Delete"
         >
           {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
