@@ -63,7 +63,21 @@ export default {
         "content-panel": "inset 0 1px 0 rgba(255,255,255,0.8), 0 4px 24px rgba(11,60,93,0.08)",
       },
       fontFamily: {
-        sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
+        sans:    ['"Manrope"', '"Inter"', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['"Sora"', '"Manrope"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
+      fontSize: {
+        xs:   ["0.8125rem",  { lineHeight: "1.3rem" }],
+        sm:   ["0.9375rem",  { lineHeight: "1.5rem" }],
+        base: ["1rem",       { lineHeight: "1.7rem" }],
+        lg:   ["1.125rem",   { lineHeight: "1.85rem" }],
+        xl:   ["1.25rem",    { lineHeight: "1.95rem" }],
+        "2xl": ["1.5rem",    { lineHeight: "2.1rem" }],
+        "3xl": ["1.875rem",  { lineHeight: "2.35rem" }],
+        "4xl": ["2.25rem",   { lineHeight: "2.75rem" }],
+        "5xl": ["3rem",      { lineHeight: "1.08" }],
+        "6xl": ["3.75rem",   { lineHeight: "1.05" }],
+        "7xl": ["4.5rem",    { lineHeight: "1.02" }],
       },
       backdropBlur: {
         xs: "2px",

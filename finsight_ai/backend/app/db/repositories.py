@@ -79,19 +79,21 @@ async def delete_document_cascade(session: AsyncSession, doc_id: str) -> None:
     stmt_ids = [r[0] for r in stmt_result.fetchall()]
 
     if stmt_ids:
-        # Delete child records
+        # Delete child records — iterate per-ID so SQLite binding stays simple
         for model in [TransactionModel, FeeModel, HoldingModel, BalanceSnapshotModel]:
-            await session.execute(
-                text(f"DELETE FROM {model.__tablename__} WHERE statement_id IN :ids"),
-                {"ids": tuple(stmt_ids)}
-            )
+            for sid in stmt_ids:
+                await session.execute(
+                    text(f"DELETE FROM {model.__tablename__} WHERE statement_id = :sid"),
+                    {"sid": sid}
+                )
         # Delete bank-specific details
         for model in [MorganStanleyDetailModel, ChaseDetailModel, EtradeDetailModel,
                       AmexDetailModel, DiscoverDetailModel]:
-            await session.execute(
-                text(f"DELETE FROM {model.__tablename__} WHERE statement_id IN :ids"),
-                {"ids": tuple(stmt_ids)}
-            )
+            for sid in stmt_ids:
+                await session.execute(
+                    text(f"DELETE FROM {model.__tablename__} WHERE statement_id = :sid"),
+                    {"sid": sid}
+                )
         # Delete statements
         await session.execute(
             text("DELETE FROM statements WHERE document_id = :doc_id"),

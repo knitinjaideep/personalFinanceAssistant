@@ -39,7 +39,7 @@ export function IRATotalWidget({ iraAccounts, loading }: Props) {
       }}
     >
       <div className="flex items-start justify-between mb-3">
-        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+        <span className="coral-label" style={{ color: "var(--text-muted)" }}>
           IRA Accounts
         </span>
         <div className="p-2 rounded-xl" style={{ background: "rgba(76,175,147,0.15)", color: "#4CAF93" }}>
@@ -50,22 +50,22 @@ export function IRATotalWidget({ iraAccounts, loading }: Props) {
       {!hasData ? (
         <div className="flex flex-col items-center gap-2 py-3 text-center">
           <AlertCircle size={16} style={{ color: "var(--empty-icon)" }} />
-          <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>No IRA accounts found</p>
-          <p className="text-[10px] leading-relaxed" style={{ color: "var(--text-dim)" }}>
+          <p className="coral-muted" style={{ color: "var(--text-muted)" }}>No IRA accounts found</p>
+          <p className="coral-badge-text leading-relaxed" style={{ color: "var(--text-dim)" }}>
             Accounts with IRA, Roth, or Rollover in the name will appear here.
           </p>
         </div>
       ) : (
         <>
-          <p className="text-[26px] font-bold tracking-tight tabular" style={{ color: "#4CAF93" }}>
+          <p className="metric-value" style={{ color: "#4CAF93" }}>
             {fmtUSD(total)}
           </p>
           {latestDate && (
-            <p className="text-[10px] mt-1" style={{ color: "var(--text-dim)" }}>As of {fmtDate(latestDate)}</p>
+            <p className="coral-badge-text mt-1" style={{ color: "var(--text-dim)" }}>As of {fmtDate(latestDate)}</p>
           )}
           <div className="mt-3 space-y-1.5">
             {iraAccounts.map((a, i) => (
-              <div key={i} className="flex items-center justify-between text-[12px]">
+              <div key={i} className="flex items-center justify-between coral-table-text">
                 <span className="font-medium truncate max-w-[140px]" style={{ color: "var(--text-secondary)" }}>
                   {a.account_name}
                 </span>

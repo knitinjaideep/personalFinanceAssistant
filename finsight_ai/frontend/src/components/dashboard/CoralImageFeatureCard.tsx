@@ -32,7 +32,7 @@ export function CoralImageFeatureCard({
       type="button"
       onClick={onAction}
       aria-label={`${title} — ${description}`}
-      className={`group relative overflow-hidden rounded-[28px] text-left cursor-pointer w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${className ?? ""}`}
+      className={`group relative overflow-hidden rounded-[28px] text-left cursor-pointer w-full transform-gpu focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ${className ?? ""}`}
       style={{
         minHeight: "280px",
         background: "var(--panel-bg)",
@@ -43,7 +43,7 @@ export function CoralImageFeatureCard({
         animation: `coralFeatureFloat 4.8s ease-in-out infinite`,
         animationDelay: floatDelay,
       }}
-      whileHover={{ scale: 1.025, y: -5, transition: { type: "spring", stiffness: 280, damping: 22 } }}
+      whileHover={{ scale: 1.03, y: -6, transition: { type: "spring", stiffness: 260, damping: 20 } }}
       whileTap={{ scale: 0.98, transition: { duration: 0.12 } }}
     >
       {/* Top light wash */}
@@ -65,19 +65,19 @@ export function CoralImageFeatureCard({
           <img
             src={icon.src}
             alt={icon.alt}
-            className="h-28 w-28 object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.60)] transition-transform duration-300 group-hover:scale-110"
+            className="h-28 w-28 object-contain drop-shadow-[0_4px_16px_rgba(0,0,0,0.60)] transition-transform duration-300 ease-out group-hover:scale-[1.12]"
           />
         </div>
 
         {/* Title */}
-        <h3 className="text-[20px] font-extrabold leading-tight tracking-tight" style={{ color: "var(--text-primary)" }}>
+        <h3 className="font-display text-[20px] font-bold leading-tight tracking-[-0.025em]" style={{ color: "var(--text-primary)" }}>
           {title}
         </h3>
 
         {/* Description */}
         <p
-          className="mt-2 text-[13px] leading-relaxed flex-1"
-          style={{ color: "var(--text-secondary)" }}
+          className="mt-2 text-[13px] leading-[1.65] flex-1 font-sans"
+          style={{ color: "var(--text-muted)" }}
         >
           {description}
         </p>
@@ -85,12 +85,12 @@ export function CoralImageFeatureCard({
         {/* Action label */}
         <div
           className="mt-5 inline-flex items-center gap-1.5 text-[13px] font-bold"
-          style={{ color: "rgba(34,211,238,0.85)" }}
+          style={{ color: "rgba(34,211,238,0.90)" }}
         >
           <span>{actionLabel}</span>
           <ArrowRight
             size={14}
-            className="transition-transform duration-200 group-hover:translate-x-1"
+            className="transition-transform duration-300 ease-out group-hover:translate-x-1.5"
           />
         </div>
       </div>

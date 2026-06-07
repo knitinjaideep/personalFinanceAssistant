@@ -55,7 +55,7 @@ function TypingIndicator() {
           />
         ))}
       </div>
-      <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Coral is thinking…</span>
+      <span className="coral-muted font-medium" style={{ color: "var(--text-muted)" }}>Coral is thinking…</span>
     </motion.div>
   );
 }
@@ -82,7 +82,7 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
 
       <motion.h2
         variants={staggerChild}
-        className="text-[22px] font-bold mb-2 leading-tight"
+        className="text-2xl xl:text-3xl font-bold mb-2 leading-tight"
         style={{ color: "var(--text-primary)" }}
       >
         Chat with Coral
@@ -90,7 +90,7 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
 
       <motion.p
         variants={staggerChild}
-        className="text-[14px] mb-2 font-medium"
+        className="coral-card-body mb-2 font-medium"
         style={{ color: "rgba(34,211,238,0.70)" }}
       >
         Ask anything about your finances
@@ -98,7 +98,7 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
 
       <motion.p
         variants={staggerChild}
-        className="text-sm mb-9 max-w-sm leading-relaxed"
+        className="coral-card-body mb-9 max-w-sm leading-relaxed"
         style={{ color: "var(--text-secondary)" }}
       >
         Everything stays on your device. Ask me what changed, what you spent, or what your statements say.
@@ -117,7 +117,7 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
             whileHover={{ y: -2, scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
             onClick={() => onQuestion(q)}
-            className="px-4 py-3 text-left text-sm font-medium rounded-2xl transition-all duration-150"
+            className="px-4 py-3.5 text-left coral-table-text font-medium rounded-2xl transition-all duration-150"
             style={{
               background: "var(--panel-bg)",
               backdropFilter: "blur(12px)",
@@ -126,7 +126,7 @@ function ChatEmptyState({ onQuestion }: { onQuestion: (q: string) => void }) {
               boxShadow: "var(--panel-shadow)",
             }}
           >
-            <Sparkles size={11} className="inline mb-0.5 mr-1.5" style={{ color: "rgba(255,122,90,0.80)" }} />
+            <Sparkles size={12} className="inline mb-0.5 mr-1.5" style={{ color: "rgba(255,122,90,0.80)" }} />
             {q}
           </motion.button>
         ))}
@@ -160,14 +160,14 @@ function IngestionBadge() {
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-medium"
         style={{
           background: "rgba(34,211,238,0.10)",
           border: "1px solid rgba(34,211,238,0.20)",
           color: "rgba(34,211,238,0.80)",
         }}
       >
-        <Loader2 size={11} className="animate-spin" />
+        <Loader2 size={12} className="animate-spin" />
         {processing.length > 1 ? `${processing.length} ingesting…` : "Ingesting…"}
       </motion.div>
     );
@@ -178,14 +178,14 @@ function IngestionBadge() {
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-medium"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-medium"
       style={{
         background: "rgba(76,175,147,0.10)",
         border: "1px solid rgba(76,175,147,0.22)",
         color: "rgba(76,175,147,0.85)",
       }}
     >
-      <CheckCircle2 size={11} />
+      <CheckCircle2 size={12} />
       Ready for chat
     </motion.div>
   );
@@ -292,10 +292,10 @@ export function ChatPage() {
         <div className="flex items-center gap-3">
           <CoralMascot size="sm" animated={false} className="shrink-0" />
           <div>
-            <h1 className="text-[16px] font-bold leading-tight tracking-tight" style={{ color: "var(--text-primary)" }}>
+            <h1 className="text-lg font-bold leading-tight tracking-tight" style={{ color: "var(--text-primary)" }}>
               Chat with Coral
             </h1>
-            <p className="text-[11px] font-medium" style={{ color: "rgba(34,211,238,0.60)" }}>
+            <p className="text-sm font-medium" style={{ color: "rgba(34,211,238,0.60)" }}>
               Ask anything about your finances
             </p>
           </div>
@@ -309,39 +309,39 @@ export function ChatPage() {
 
           <button
             onClick={() => setDocsOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium transition-all"
             style={{
               background: "var(--btn-glass-bg)",
               border: "1px solid var(--btn-glass-border)",
               color: "var(--text-secondary)",
             }}
           >
-            <FileText size={12} />
+            <FileText size={13} />
             Docs
           </button>
 
           <button
             onClick={() => setBulkUploadOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium transition-all"
             style={{
               background: "var(--btn-glass-bg)",
               border: "1px solid var(--btn-glass-border)",
               color: "var(--text-secondary)",
             }}
           >
-            <Layers size={12} />
+            <Layers size={13} />
             Bulk
           </button>
 
           <button
             onClick={() => setUploadOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold text-white transition-all"
             style={{
               background: "linear-gradient(135deg, #FF7A5A, #FFA38F)",
               boxShadow: "0 4px 12px rgba(255,122,90,0.35)",
             }}
           >
-            <Upload size={12} />
+            <Upload size={13} />
             Upload
           </button>
 
@@ -354,7 +354,7 @@ export function ChatPage() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={clearChat}
-                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-xl transition-colors"
+                className="flex items-center gap-1.5 text-sm px-2.5 py-1.5 rounded-xl transition-colors"
                 style={{
                   background: "var(--btn-glass-bg)",
                   border: "1px solid var(--btn-glass-border)",
@@ -400,7 +400,7 @@ export function ChatPage() {
               exit={{ opacity: 0, y: 8, scale: 0.92 }}
               transition={{ duration: 0.18 }}
               onClick={() => scrollToBottom()}
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold text-white shadow-lg"
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-semibold text-white shadow-lg"
               style={{
                 background: "linear-gradient(135deg, #FF7A5A, #FFA38F)",
                 boxShadow: "0 4px 16px rgba(255,122,90,0.45)",
@@ -444,7 +444,7 @@ export function ChatPage() {
               onKeyDown={handleKeyDown}
               placeholder="Ask about your finances…"
               rows={1}
-              className="flex-1 px-4 py-3 text-sm bg-transparent focus:outline-none resize-none leading-relaxed"
+              className="flex-1 px-4 py-3 coral-card-body bg-transparent focus:outline-none resize-none leading-relaxed"
               style={{
                 minHeight: "44px",
                 maxHeight: "120px",
@@ -477,8 +477,8 @@ export function ChatPage() {
 
         {/* Privacy footer */}
         <div className="flex items-center justify-center gap-1.5 mt-2.5">
-          <Lock size={9} style={{ color: "var(--text-dim)" }} />
-          <p className="text-[10px] font-medium" style={{ color: "var(--text-dim)" }}>
+          <Lock size={10} style={{ color: "var(--text-dim)" }} />
+          <p className="coral-badge-text font-medium" style={{ color: "var(--text-dim)" }}>
             All data stays on your device · Enter to send · Shift+Enter for new line
           </p>
         </div>

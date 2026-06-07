@@ -40,7 +40,7 @@ export function InvestmentSummaryWidget({ totals, loading }: Props) {
       }}
     >
       <div className="flex items-start justify-between mb-3">
-        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+        <span className="coral-label" style={{ color: "var(--text-muted)" }}>
           Total Invested
         </span>
         <div className="p-2 rounded-xl" style={{ background: "rgba(34,211,238,0.10)", color: "#22d3ee" }}>
@@ -51,11 +51,11 @@ export function InvestmentSummaryWidget({ totals, loading }: Props) {
       {!hasData ? (
         <div className="flex flex-col items-center gap-2 py-3 text-center">
           <AlertCircle size={16} style={{ color: "var(--empty-icon)" }} />
-          <p className="text-[12px]" style={{ color: "var(--text-muted)" }}>Not available</p>
+          <p className="coral-muted" style={{ color: "var(--text-muted)" }}>Not available</p>
           <button
             type="button"
             onClick={() => setActivePage("documents")}
-            className="flex items-center gap-1 text-[11px] font-semibold"
+            className="flex items-center gap-1 coral-badge-text font-semibold"
             style={{ color: "#22d3ee" }}
           >
             <RefreshCw size={10} />
@@ -64,16 +64,16 @@ export function InvestmentSummaryWidget({ totals, loading }: Props) {
         </div>
       ) : (
         <>
-          <p className="text-[26px] font-bold tracking-tight tabular" style={{ color: "var(--text-primary)" }}>
+          <p className="metric-value" style={{ color: "var(--text-primary)" }}>
             {fmtUSD(totals.combined)}
           </p>
           {totals.asOf && (
-            <p className="text-[10px] mt-1" style={{ color: "var(--text-dim)" }}>As of {fmtDate(totals.asOf)}</p>
+            <p className="coral-badge-text mt-1" style={{ color: "var(--text-dim)" }}>As of {fmtDate(totals.asOf)}</p>
           )}
 
           <div className="mt-3 space-y-1.5">
             {totals.institutions.map((inst) => (
-              <div key={inst.institutionKey} className="flex items-center justify-between text-[12px]">
+              <div key={inst.institutionKey} className="flex items-center justify-between coral-table-text">
                 <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{inst.displayName}</span>
                 <span className="font-bold tabular" style={{ color: "var(--text-primary)" }}>
                   {fmtUSD(inst.totalValue)}

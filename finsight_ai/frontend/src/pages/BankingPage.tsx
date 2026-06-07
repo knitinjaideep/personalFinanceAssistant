@@ -1,50 +1,57 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { CreditCard, Landmark, PiggyBank } from "lucide-react";
-import { staggerContainer, staggerChild, contentPageVariants } from "../design/motion";
+import { contentPageVariants } from "../design/motion";
 import { CoralMascot } from "../components/CoralMascot";
-import { CoralEmptyState } from "../components/CoralEmptyState";
 import { CoralLoadingState } from "../components/CoralLoadingState";
-import { BankingAccordion } from "../components/banking/BankingAccordion";
-import { CreditCardAccountPanel } from "../components/banking/CreditCardAccountPanel";
-import { CheckingAccountPanel } from "../components/banking/CheckingAccountPanel";
-import { SavingsAccountPanel } from "../components/banking/SavingsAccountPanel";
+import { DashboardTabs } from "../components/dashboard/DashboardTabs";
+import { BankingDataFreshness } from "../components/banking/BankingDataFreshness";
+import { BankingOverviewTab } from "../components/banking/BankingOverviewTab";
+import { BankingAccountsTab } from "../components/banking/BankingAccountsTab";
+import { BankingRecurringTab } from "../components/banking/BankingRecurringTab";
+import { BankingTransactionsTab } from "../components/banking/BankingTransactionsTab";
+import { BankingStatementsTab } from "../components/banking/BankingStatementsTab";
 import { useBankingData } from "../hooks/useBankingData";
 import { useAppStore } from "../store/appStore";
+import {
+  buildBankingMetrics,
+  buildBankingInsights,
+  buildBankingFreshness,
+  buildCreditCardRows,
+  buildCheckingRows,
+  buildSavingsRows,
+  buildMonthlySpendChart,
+  buildCashFlowChart,
+  buildStatementCoverageGrid,
+  getSubscriptions,
+} from "../lib/bankingDashboard";
 
-// ── Underwater page header ────────────────────────────────────────────────────
+const TABS = [
+  { key: "overview", label: "Overview" },
+  { key: "accounts", label: "Accounts" },
+  { key: "recurring", label: "Recurring" },
+  { key: "transactions", label: "Transactions" },
+  { key: "statements", label: "Statements" },
+];
+
+// ── Page header ───────────────────────────────────────────────────────────────
 
 function PageHeader() {
   return (
-    <div className="shrink-0 px-8 pt-10 pb-4">
+    <div className="shrink-0 px-8 pt-10 pb-5">
       <div className="flex items-center gap-4">
         <CoralMascot variant="banking" size="sm" className="shrink-0" />
         <div>
-          <h1 className="text-[22px] font-extrabold tracking-tight leading-none" style={{ color: "var(--text-primary)" }}>
+          <h1
+            className="text-2xl xl:text-3xl font-extrabold tracking-tight leading-none"
+            style={{ color: "var(--text-primary)" }}
+          >
             Banking
           </h1>
-          <p className="text-[12px] mt-1 font-medium" style={{ color: "var(--text-secondary)" }}>
-            Credit cards, checking, savings, and cash flow.
+          <p className="coral-muted mt-1.5" style={{ color: "var(--text-secondary)" }}>
+            Checking, savings, credit cards, and monthly cash flow.
           </p>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Accordion wrapper ─────────────────────────────────────────────────────────
-
-function AccordionWrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="rounded-3xl overflow-hidden"
-      style={{
-        background: "var(--panel-bg)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        border: "1px solid var(--panel-border)",
-      }}
-    >
-      {children}
     </div>
   );
 }
@@ -53,15 +60,9 @@ function AccordionWrapper({ children }: { children: React.ReactNode }) {
 
 export function BankingPage() {
   const setActivePage = useAppStore((s) => s.setActivePage);
-  const {
-    loading,
-    creditCards,
-    checkingAccounts,
-    savingsAccounts,
-    subscriptions,
-    last6Months,
-    raw,
-  } = useBankingData();
+  const [activeTab, setActiveTab] = useState("overview");
+
+  const { loading, raw } = useBankingData();
 
   if (loading) {
     return (
@@ -74,10 +75,23 @@ export function BankingPage() {
     );
   }
 
-  const hasAnyData = !!raw;
-  const ccHasData = creditCards.some((c) => !!c.cardSummary);
-  const checkingHasData = checkingAccounts.some((c) => !!c.cardSummary || c.cashFlow.length > 0);
-  const savingsHasData = savingsAccounts.some((s) => !!s.cardSummary || s.cashFlow.length > 0);
+  // Compute dashboard data
+  const metrics = buildBankingMetrics(raw);
+  const insights = buildBankingInsights(raw);
+  const freshnessItems = buildBankingFreshness(raw);
+  const creditCardRows = buildCreditCardRows(raw);
+  const checkingRows = buildCheckingRows(raw);
+  const savingsRows = buildSavingsRows(raw);
+  const spendChart = buildMonthlySpendChart(raw, 6);
+  const cashFlowChart = buildCashFlowChart(raw, 6);
+  const { months: coverageMonths, rows: coverageRows } = buildStatementCoverageGrid(raw, 12);
+  const subscriptions = getSubscriptions(raw);
+
+  const parsedCount = raw?.coverage?.reduce((s, c) => s + (c.doc_count ?? 0), 0) ?? 0;
+  const accountsDetected = (raw?.card_summary?.length ?? 0);
+
+  const handleAskCoral = () => setActivePage("chat");
+  const handleDocuments = () => setActivePage("documents");
 
   return (
     <div className="flex flex-col min-h-full">
@@ -87,134 +101,66 @@ export function BankingPage() {
         variants={contentPageVariants}
         initial="hidden"
         animate="visible"
-        className="flex-1 overflow-y-auto px-7 py-6 space-y-4"
+        className="flex-1 overflow-y-auto px-7 pb-8 space-y-4"
       >
-        {!hasAnyData && (
-          <motion.div variants={staggerChild}>
-            <div
-              className="rounded-3xl"
-              style={{
-                background: "var(--panel-bg)",
-                backdropFilter: "blur(16px)",
-                WebkitBackdropFilter: "blur(16px)",
-                border: "1px dashed var(--empty-border)",
-              }}
-            >
-              <CoralEmptyState
-                variant="banking"
-                title="No banking data yet"
-                description="Upload Chase, Amex, Discover, or Bank of America statements to see spending trends and card activity."
-                actionLabel="Upload documents"
-                onAction={() => setActivePage("documents")}
-              />
-            </div>
-          </motion.div>
+        {/* Data freshness strip */}
+        <BankingDataFreshness
+          items={freshnessItems}
+          parsedCount={parsedCount}
+          accountsDetected={accountsDetected}
+        />
+
+        {/* Tabs */}
+        <DashboardTabs tabs={TABS} active={activeTab} onChange={setActiveTab} />
+
+        {/* Tab content */}
+        {activeTab === "overview" && (
+          <BankingOverviewTab
+            metrics={metrics}
+            insights={insights}
+            spendChart={spendChart}
+            cashFlowChart={cashFlowChart}
+            creditCardRows={creditCardRows}
+            checkingRows={checkingRows}
+            savingsRows={savingsRows}
+            onTabChange={setActiveTab}
+            onDocuments={handleDocuments}
+          />
         )}
 
-        {/* ── Credit Cards accordion ─────────────────────────────────────── */}
-        <motion.div variants={staggerChild}>
-          <AccordionWrapper>
-            <BankingAccordion
-              title="Credit Cards"
-              subtitle="Chase, Amex, and Macy's credit cards"
-              badge={ccHasData ? `${creditCards.filter((c) => c.cardSummary).length} active` : "No data"}
-              defaultOpen={ccHasData}
-              accentColor="#FF7A5A"
-            >
-              <div className="flex items-center gap-1.5 mb-3 mt-1">
-                <CreditCard size={12} style={{ color: "#FF7A5A" }} />
-                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  {creditCards.length} accounts configured
-                </span>
-              </div>
+        {activeTab === "accounts" && (
+          <BankingAccountsTab
+            creditCardRows={creditCardRows}
+            checkingRows={checkingRows}
+            savingsRows={savingsRows}
+            onAskCoral={handleAskCoral}
+            onViewDocuments={handleDocuments}
+          />
+        )}
 
-              <motion.div
-                variants={staggerContainer}
-                initial="hidden"
-                animate="visible"
-                className="space-y-3"
-              >
-                {creditCards.map((card) => (
-                  <motion.div key={card.config.key} variants={staggerChild}>
-                    <CreditCardAccountPanel
-                      data={card}
-                      subscriptions={subscriptions}
-                      last6Months={last6Months}
-                    />
-                  </motion.div>
-                ))}
-              </motion.div>
-            </BankingAccordion>
-          </AccordionWrapper>
-        </motion.div>
+        {activeTab === "recurring" && (
+          <BankingRecurringTab
+            subscriptions={subscriptions}
+            onDocuments={handleDocuments}
+          />
+        )}
 
-        {/* ── Checking accordion ─────────────────────────────────────────── */}
-        <motion.div variants={staggerChild}>
-          <AccordionWrapper>
-            <BankingAccordion
-              title="Checking"
-              subtitle="Chase and Bank of America checking accounts"
-              badge={checkingHasData ? "Active" : "No data"}
-              defaultOpen={checkingHasData}
-              accentColor="#22d3ee"
-            >
-              <div className="flex items-center gap-1.5 mb-3 mt-1">
-                <Landmark size={12} style={{ color: "#22d3ee" }} />
-                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  {checkingAccounts.length} accounts configured
-                </span>
-              </div>
+        {activeTab === "transactions" && (
+          <BankingTransactionsTab
+            raw={raw}
+            onDocuments={handleDocuments}
+          />
+        )}
 
-              <motion.div
-                variants={staggerContainer}
-                initial="hidden"
-                animate="visible"
-                className="grid grid-cols-1 lg:grid-cols-2 gap-3"
-              >
-                {checkingAccounts.map((acct) => (
-                  <motion.div key={acct.config.key} variants={staggerChild}>
-                    <CheckingAccountPanel data={acct} last6Months={last6Months} />
-                  </motion.div>
-                ))}
-              </motion.div>
-            </BankingAccordion>
-          </AccordionWrapper>
-        </motion.div>
+        {activeTab === "statements" && (
+          <BankingStatementsTab
+            months={coverageMonths}
+            rows={coverageRows}
+            onDocuments={handleDocuments}
+          />
+        )}
 
-        {/* ── Savings accordion ──────────────────────────────────────────── */}
-        <motion.div variants={staggerChild}>
-          <AccordionWrapper>
-            <BankingAccordion
-              title="Savings"
-              subtitle="Marcus by Goldman Sachs high-yield savings"
-              badge={savingsHasData ? "Active" : "No data"}
-              defaultOpen={savingsHasData}
-              accentColor="#4CAF93"
-            >
-              <div className="flex items-center gap-1.5 mb-3 mt-1">
-                <PiggyBank size={12} style={{ color: "#4CAF93" }} />
-                <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  Marcus Goldman Sachs
-                </span>
-              </div>
-
-              <motion.div
-                variants={staggerContainer}
-                initial="hidden"
-                animate="visible"
-                className="space-y-3"
-              >
-                {savingsAccounts.map((acct) => (
-                  <motion.div key={acct.config.key} variants={staggerChild}>
-                    <SavingsAccountPanel data={acct} last6Months={last6Months} />
-                  </motion.div>
-                ))}
-              </motion.div>
-            </BankingAccordion>
-          </AccordionWrapper>
-        </motion.div>
-
-        <div className="h-3" />
+        <div className="h-4" />
       </motion.div>
     </div>
   );

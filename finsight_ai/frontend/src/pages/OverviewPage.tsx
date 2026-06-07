@@ -70,17 +70,17 @@ function OpenHero() {
 
             {/* Main heading — shimmer class applied */}
             <h1
-              className="heading-coral text-5xl xl:text-6xl hero-shimmer-heading"
+              className="heading-coral coral-page-title hero-shimmer-heading font-display"
               style={{ color: c.heading, textShadow: c.dark ? "0 2px 24px rgba(3,17,31,0.80)" : "0 1px 12px rgba(244,251,255,0.60)" }}
             >
               Hi, I'm Coral <span className="inline-block">👋</span>
             </h1>
 
-            <p className="mt-5 text-xl font-semibold tracking-tight" style={{ color: c.tagline }}>
+            <p className="mt-5 text-xl xl:text-2xl font-semibold tracking-[-0.02em] font-display" style={{ color: c.tagline }}>
               Your local financial intelligence hub.
             </p>
 
-            <p className="mt-4 max-w-lg text-[15px] leading-relaxed" style={{ color: c.body }}>
+            <p className="mt-4 max-w-lg coral-card-body font-sans" style={{ color: c.body }}>
               Everything you need to understand your finances, all in one place.
               100% private — no cloud, no sharing, ever.
             </p>
@@ -91,16 +91,16 @@ function OpenHero() {
                 type="button"
                 onClick={() => setActivePage("chat")}
                 aria-label="Open Coral chat"
-                className="btn-coral btn-coral-breathe flex items-center gap-2.5 rounded-2xl px-6 py-3.5 text-sm font-semibold text-white"
+                className="btn-coral btn-coral-breathe flex items-center gap-2.5 rounded-2xl px-6 py-3.5 coral-button-text text-white transition-all duration-300 hover:-translate-y-1 hover:scale-[1.025] transform-gpu"
               >
-                <MessageSquare size={15} aria-hidden />
+                <MessageSquare size={17} aria-hidden />
                 Ask Coral
               </button>
               <button
                 type="button"
                 onClick={() => setActivePage("documents")}
                 aria-label="Upload financial documents"
-                className="flex items-center gap-2.5 rounded-2xl px-6 py-3.5 text-sm font-semibold transition-all hover:scale-[1.03] active:scale-[0.97]"
+                className="flex items-center gap-2.5 rounded-2xl px-6 py-3.5 coral-button-text transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.025] active:scale-[0.97] transform-gpu"
                 style={{
                   background: c.glassBtn,
                   backdropFilter: "blur(10px)",
@@ -109,14 +109,14 @@ function OpenHero() {
                   color: c.glassBtnText,
                 }}
               >
-                <Upload size={15} aria-hidden />
+                <Upload size={17} aria-hidden />
                 Upload Documents
               </button>
             </div>
 
             {/* Privacy line */}
             <div
-              className="mt-7 flex items-center gap-2 text-[12px] font-semibold tracking-widest uppercase"
+              className="mt-7 flex items-center gap-2 coral-label"
               style={{ color: c.privacy }}
             >
               <span aria-hidden className="inline-block h-2 w-2 rounded-full"
@@ -139,8 +139,8 @@ function OpenHero() {
 
 const NEXT_ACTIONS = [
   {
-    title: "Upload or reprocess recent statements",
-    description: "Keep your data fresh and up to date",
+    title: "Refresh your statement data",
+    description: "Upload or reprocess recent files to stay current",
     page: "documents" as const,
     icon: FileText,
     accent: "rgba(34,211,238,0.85)",
@@ -148,8 +148,8 @@ const NEXT_ACTIONS = [
     iconBorder: "rgba(34,211,238,0.20)",
   },
   {
-    title: "Review your latest spending insights",
-    description: "See exactly where your money goes",
+    title: "Review spending signals",
+    description: "See where your money is moving this month",
     page: "banking" as const,
     icon: TrendingUp,
     accent: "rgba(255,122,90,0.90)",
@@ -158,7 +158,7 @@ const NEXT_ACTIONS = [
   },
   {
     title: "Ask Coral a question",
-    description: "Get instant clarity on any financial topic",
+    description: "Get instant clarity from your local data",
     page: "chat" as const,
     icon: MessageSquare,
     accent: "rgba(61,184,134,0.90)",
@@ -173,7 +173,7 @@ function NextBestActions() {
   return (
     <motion.div variants={staggerChild} className="h-full">
       <motion.div
-        className="group relative h-full min-h-[300px] rounded-[28px] p-7 lg:p-8 card-shimmer-hover caustic-overlay gradient-border-hover glitter-container"
+        className="group relative h-full min-h-[300px] rounded-[28px] p-7 lg:p-8 card-shimmer-hover caustic-overlay glitter-container"
         style={{
           background: "var(--panel-bg)",
           backdropFilter: "blur(18px)",
@@ -184,6 +184,7 @@ function NextBestActions() {
         whileHover={{
           scale: 1.018,
           y: -4,
+          boxShadow: "var(--panel-shadow), var(--panel-inset), 0 0 0 1px rgba(34,211,238,0.30), 0 0 60px rgba(34,211,238,0.10)",
           transition: { type: "spring", stiffness: 300, damping: 24 },
         }}
         whileTap={{ scale: 0.99, transition: { duration: 0.12 } }}
@@ -196,17 +197,10 @@ function NextBestActions() {
         <span aria-hidden className="glitter-star" style={{ background: "rgba(255,209,102,0.80)" }} />
         <span aria-hidden className="glitter-star" style={{ background: "rgba(255,255,255,0.80)" }} />
 
-        {/* Hover glow ring */}
-        <div
-          aria-hidden
-          className="absolute inset-0 rounded-[28px] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-          style={{ boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.10), 0 0 60px rgba(95,168,211,0.12)" }}
-        />
-
         {/* Header */}
         <div className="relative flex items-center gap-2.5 mb-6">
           <Sparkles size={15} aria-hidden style={{ color: "rgba(255,122,90,0.88)" }} />
-          <h2 className="section-heading aurora-heading">Next best actions</h2>
+          <h2 className="section-heading aurora-heading font-display">Next best actions</h2>
         </div>
 
         {/* Action rows */}
@@ -219,7 +213,7 @@ function NextBestActions() {
                 type="button"
                 onClick={() => setActivePage(action.page)}
                 aria-label={action.title}
-                className="w-full flex items-center justify-between rounded-2xl text-left transition-all duration-200 hover:scale-[1.012] group/row"
+                className="w-full flex items-center justify-between rounded-2xl text-left transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.012] hover:border-cyan-200/25 hover:shadow-[0_14px_36px_rgba(34,211,238,0.09)] group/row transform-gpu"
                 style={{
                   background: "var(--row-bg)",
                   border: "1px solid var(--row-border-strong)",
@@ -243,10 +237,10 @@ function NextBestActions() {
                     <Icon size={16} style={{ color: action.accent }} />
                   </div>
                   <div className="min-w-0">
-                    <p className="card-heading leading-snug truncate" style={{ fontSize: "0.9375rem" }}>
+                    <p className="coral-card-title font-sans leading-snug truncate">
                       {action.title}
                     </p>
-                    <p className="readable-caption mt-0.5">
+                    <p className="coral-muted mt-0.5 font-sans">
                       {action.description}
                     </p>
                   </div>
@@ -254,8 +248,8 @@ function NextBestActions() {
                 <ArrowRight
                   size={15}
                   aria-hidden
-                  className="shrink-0 ml-3 transition-transform duration-200 group-hover/row:translate-x-1.5"
-                  style={{ color: "rgba(34,211,238,0.65)" }}
+                  className="shrink-0 ml-3 transition-transform duration-300 group-hover/row:translate-x-1.5"
+                  style={{ color: "rgba(34,211,238,0.80)" }}
                 />
               </button>
             );
@@ -272,14 +266,14 @@ function StatusBadge({ status }: { status: "ok" | "missing" | "loading" }) {
   if (status === "loading") {
     return (
       <span
-        className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold"
+        className="flex items-center gap-1.5 rounded-full px-3 py-1 coral-badge-text"
         style={{
           background: "rgba(160,190,205,0.12)",
           color: "var(--text-muted)",
           border: "1px solid rgba(160,190,205,0.18)",
         }}
       >
-        <Clock size={10} aria-hidden />
+        <Clock size={11} aria-hidden />
         Loading…
       </span>
     );
@@ -287,28 +281,28 @@ function StatusBadge({ status }: { status: "ok" | "missing" | "loading" }) {
   if (status === "ok") {
     return (
       <span
-        className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold"
+        className="flex items-center gap-1.5 rounded-full px-3 py-1 coral-badge-text"
         style={{
           background: "var(--success-soft)",
           color: "#3db886",
           border: "1px solid rgba(61,184,134,0.22)",
         }}
       >
-        <CheckCircle2 size={10} aria-hidden />
+        <CheckCircle2 size={11} aria-hidden />
         Up to date
       </span>
     );
   }
   return (
     <span
-      className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold"
+      className="flex items-center gap-1.5 rounded-full px-3 py-1 coral-badge-text"
       style={{
         background: "var(--danger-soft)",
         color: "rgba(255,122,90,0.90)",
         border: "1px solid rgba(255,122,90,0.22)",
       }}
     >
-      <AlertCircle size={10} aria-hidden />
+      <AlertCircle size={11} aria-hidden />
       Needs data
     </span>
   );
@@ -336,7 +330,7 @@ function DataAtAGlance() {
   return (
     <motion.div variants={staggerChild} className="h-full">
       <motion.div
-        className="group relative h-full min-h-[300px] rounded-[28px] p-7 lg:p-8 card-shimmer-hover caustic-overlay gradient-border-hover"
+        className="group relative h-full min-h-[300px] rounded-[28px] p-7 lg:p-8 card-shimmer-hover caustic-overlay"
         style={{
           background: "var(--panel-bg)",
           backdropFilter: "blur(18px)",
@@ -347,16 +341,11 @@ function DataAtAGlance() {
         whileHover={{
           scale: 1.018,
           y: -4,
+          boxShadow: "var(--panel-shadow), var(--panel-inset), 0 0 0 1px rgba(34,211,238,0.30), 0 0 60px rgba(34,211,238,0.10)",
           transition: { type: "spring", stiffness: 300, damping: 24 },
         }}
         whileTap={{ scale: 0.99, transition: { duration: 0.12 } }}
       >
-        {/* Hover glow ring */}
-        <div
-          aria-hidden
-          className="absolute inset-0 rounded-[28px] pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-          style={{ boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.10), 0 0 60px rgba(95,168,211,0.12)" }}
-        />
 
         {/* Header with accent line */}
         <div className="relative mb-6">
@@ -370,7 +359,7 @@ function DataAtAGlance() {
                 boxShadow: "0 0 12px rgba(34,211,238,0.60)",
               }}
             />
-            <h2 className="section-heading aurora-heading">Your data at a glance</h2>
+            <h2 className="section-heading aurora-heading font-display">Your data at a glance</h2>
           </div>
           {/* Subtle underline accent */}
           <div
@@ -391,7 +380,7 @@ function DataAtAGlance() {
             return (
               <div
                 key={row.label}
-                className="flex items-center justify-between rounded-2xl"
+                className="flex items-center justify-between rounded-2xl transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.012] hover:shadow-[0_10px_30px_rgba(34,211,238,0.08)] transform-gpu"
                 style={{
                   background: "var(--row-bg)",
                   border: "1px solid var(--row-border-strong)",
@@ -413,7 +402,7 @@ function DataAtAGlance() {
                   >
                     <Icon size={14} style={{ color: "rgba(34,211,238,0.75)" }} />
                   </div>
-                  <span className="card-heading" style={{ fontSize: "0.9375rem" }}>
+                  <span className="coral-card-title font-sans">
                     {row.label}
                   </span>
                 </div>

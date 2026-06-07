@@ -10,11 +10,11 @@ import { CoralMascot } from "../CoralMascot";
 // ── Nav config ────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS: { id: ActivePage; label: string; icon: React.ReactNode }[] = [
-  { id: "overview",    label: "Home",        icon: <Home size={15} /> },
-  { id: "banking",     label: "Banking",     icon: <Landmark size={15} /> },
-  { id: "investments", label: "Investments", icon: <TrendingUp size={15} /> },
-  { id: "documents",   label: "Documents",   icon: <FileText size={15} /> },
-  { id: "chat",        label: "Chat",        icon: <MessageSquare size={15} /> },
+  { id: "overview",    label: "Home",        icon: <Home size={17} /> },
+  { id: "banking",     label: "Banking",     icon: <Landmark size={17} /> },
+  { id: "investments", label: "Investments", icon: <TrendingUp size={17} /> },
+  { id: "documents",   label: "Documents",   icon: <FileText size={17} /> },
+  { id: "chat",        label: "Chat",        icon: <MessageSquare size={17} /> },
 ];
 
 // ── Brand ─────────────────────────────────────────────────────────────────────
@@ -39,11 +39,11 @@ function SidebarBrand({ onClick }: { onClick: () => void }) {
         </span>
 
         <div>
-          <div className="font-bold text-[16px] leading-none tracking-tight" style={{ color: "var(--text-primary)" }}>
+          <div className="font-bold text-lg leading-none tracking-tight" style={{ color: "var(--text-primary)" }}>
             Coral
           </div>
           <div
-            className="text-[10px] font-medium tracking-wide mt-0.5"
+            className="text-xs font-medium tracking-wide mt-0.5"
             style={{ color: "rgba(34,211,238,0.65)" }}
           >
             Local financial intelligence
@@ -78,7 +78,7 @@ function NavItem({
       onClick={onClick}
       whileHover={active ? undefined : { x: 3 }}
       className={clsx(
-        "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-[13px] font-medium",
+        "w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl coral-nav-text font-medium",
         "relative transition-colors duration-150",
       )}
       style={{
@@ -131,10 +131,10 @@ function ThemeToggle() {
       >
         <div className="flex items-center gap-2">
           {isLight
-            ? <Sun size={12} style={{ color: "rgba(255,160,20,0.85)" }} />
-            : <Moon size={12} style={{ color: "rgba(34,211,238,0.75)" }} />
+            ? <Sun size={13} style={{ color: "rgba(255,160,20,0.85)" }} />
+            : <Moon size={13} style={{ color: "rgba(34,211,238,0.75)" }} />
           }
-          <span className="text-[11px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+          <span className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
             {isLight ? "Light mode" : "Dark mode"}
           </span>
         </div>
@@ -186,18 +186,18 @@ function PrivacyCard() {
       }}
     >
       <div className="flex items-center gap-2 mb-1.5">
-        <Shield size={11} style={{ color: "rgba(34,211,238,0.70)" }} />
-        <span className="text-[11px] font-bold" style={{ color: "var(--text-secondary)" }}>100% private</span>
+        <Shield size={12} style={{ color: "rgba(34,211,238,0.70)" }} />
+        <span className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>100% private</span>
       </div>
-      <p className="text-[10px] leading-relaxed mb-2" style={{ color: "var(--text-muted)" }}>
+      <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--text-muted)" }}>
         All data stays on your device.
       </p>
       <button
         type="button"
-        className="flex items-center gap-1 text-[10px] font-semibold transition-opacity hover:opacity-80"
+        className="flex items-center gap-1 text-xs font-semibold transition-opacity hover:opacity-80"
         style={{ color: "rgba(34,211,238,0.65)" }}
       >
-        Learn more <ArrowRight size={9} />
+        Learn more <ArrowRight size={10} />
       </button>
     </motion.div>
   );
@@ -221,8 +221,8 @@ function SidebarFooter() {
         className="w-1.5 h-1.5 rounded-full shrink-0"
         style={{ background: "#4CAF93", boxShadow: "0 0 6px rgba(76,175,147,0.70)" }}
       />
-      <Lock size={8} style={{ color: "var(--text-dim)" }} />
-      <span className="text-[9px] font-medium tracking-wide" style={{ color: "var(--text-dim)" }}>
+      <Lock size={10} style={{ color: "var(--text-dim)" }} />
+      <span className="text-xs font-medium tracking-wide" style={{ color: "var(--text-dim)" }}>
         All data stays on device
       </span>
     </motion.div>
