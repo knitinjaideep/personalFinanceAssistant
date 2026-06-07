@@ -93,7 +93,7 @@ ACCOUNT_CATALOG: list[AccountCatalogEntry] = [
         account_label="Checking",
         bucket="banking",
         parser_type="bofa",
-        parseable=False,
+        parseable=True,
         rel_path="bank_of_america",
     ),
 

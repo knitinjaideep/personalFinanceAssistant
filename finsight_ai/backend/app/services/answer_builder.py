@@ -147,7 +147,23 @@ async def build_answer(
     # ── Caveats ───────────────────────────────────────────────────────────────
     if ctx.timeframe_label:
         answer.caveats.append(f"Results filtered to: {ctx.timeframe_label}.")
-    if not has_sql_data and has_text_data:
+    # Only flag "text-only" when the intent was SQL-routed but returned no rows,
+    # meaning we fell back to FTS. Don't show it for HYBRID or TEXT_EXPLANATION
+    # since those legitimately use document text.
+    _SQL_ONLY_INTENTS = {
+        QueryIntent.SPENDING_BY_CATEGORY,
+        QueryIntent.FEE_SUMMARY,
+        QueryIntent.TRANSACTION_LOOKUP,
+        QueryIntent.BALANCE_LOOKUP,
+        QueryIntent.HOLDINGS_TOTAL,
+        QueryIntent.HOLDINGS_LOOKUP,
+        QueryIntent.CASH_FLOW_SUMMARY,
+        QueryIntent.SUBSCRIPTION_LOOKUP,
+        QueryIntent.DOCUMENT_AVAILABILITY,
+        QueryIntent.INSTITUTION_COVERAGE,
+        QueryIntent.STATEMENT_COVERAGE,
+    }
+    if not has_sql_data and has_text_data and intent in _SQL_ONLY_INTENTS:
         answer.caveats.append("Based on document text — structured data not available for this query.")
 
     # ── Follow-ups ────────────────────────────────────────────────────────────

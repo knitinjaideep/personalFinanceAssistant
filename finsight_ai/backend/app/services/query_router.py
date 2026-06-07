@@ -91,11 +91,41 @@ _INTENT_PATTERNS: list[tuple[QueryIntent, list[str]]] = [
         r"cash\s+(?:balance|on\s+hand)\b",
     ]),
 
+    # ── Document availability ────────────────────────────────────────────────
+    # (before holdings — "do i have" would otherwise match holdings_lookup)
+    (QueryIntent.DOCUMENT_AVAILABILITY, [
+        r"(?:what|which)\s+(?:documents?|statements?|files?)\s+(?:do|did|are|have)",
+        r"(?:upload|document|statement)\s+(?:status|list|count)",
+        r"how\s+many\s+(?:documents?|statements?|files?)",
+        r"(?:did|have)\s+(?:you|i)\s+(?:upload|ingest|process|parse)",
+        r"(?:are|were|is)\s+(?:my\s+)?(?:documents?|statements?|files?)\s+(?:uploaded|parsed|processed|available)",
+        r"(?:show|list)\s+(?:my\s+)?(?:uploaded|available|ingested)\s+(?:documents?|statements?|files?)",
+        r"(?:bank\s+of\s+america|chase|amex|discover|morgan\s+stanley|etrade).*(?:upload|document|statement|parsed|processed)",
+        r"(?:upload|document|statement|parsed|processed).*(?:bank\s+of\s+america|chase|amex|discover|morgan\s+stanley|etrade)",
+    ]),
+
+    # ── Institution coverage ─────────────────────────────────────────────────
+    (QueryIntent.INSTITUTION_COVERAGE, [
+        r"(?:what|which)\s+(?:banks?|institutions?|brokerages?|accounts?)\s+(?:do|did|are|have)\s+(?:i|we)",
+        r"institution\s+(?:coverage|summary|list)",
+        r"(?:what|which)\s+institutions?\s+(?:am\s+i\s+connected|have\s+data)",
+        r"(?:what|which)\s+(?:banks?|accounts?|institutions?)\s+(?:have\s+(?:you|i)|(?:are|is)\s+(?:there|connected|available))",
+        r"(?:do|does)\s+(?:it|coral|the\s+app)\s+have\s+(?:data\s+for|access\s+to)",
+        r"(?:which|what)\s+banks?\s+(?:do\s+(?:i|you)\s+have|have\s+(?:data|statements?))",
+    ]),
+
+    # ── Statement coverage ───────────────────────────────────────────────────
+    (QueryIntent.STATEMENT_COVERAGE, [
+        r"(?:what|which)\s+(?:months?|periods?|dates?)\s+(?:do|are|have)",
+        r"statement\s+(?:coverage|range|periods?|dates?)",
+        r"(?:from\s+when|earliest|latest|oldest|newest)\s+statement",
+    ]),
+
     # ── Holdings lookup ──────────────────────────────────────────────────────
     (QueryIntent.HOLDINGS_LOOKUP, [
         r"(?:what|which|show|list)\s+(?:are|my)\s+(?:holdings?|positions?|stocks?|investments?)",
         r"(?:portfolio|holdings?)\s+(?:summary|breakdown|allocation|positions?)",
-        r"(?:do|did)\s+(?:i|we)\s+(?:hold|own|have)\s+\w+",
+        r"(?:do|did)\s+(?:i|we)\s+(?:hold|own|have)\s+(?:any\s+)?(?:holdings?|stocks?|positions?|investments?|funds?|bonds?|etfs?)",
         r"(?:stock|bond|fund|etf)\s+(?:holdings?|positions?)",
         r"what\s+(?:stocks?|funds?|etfs?|bonds?)\s+(?:do|did)\s+(?:i|we)\s+(?:own|hold|have)",
     ]),
@@ -107,27 +137,6 @@ _INTENT_PATTERNS: list[tuple[QueryIntent, list[str]]] = [
         r"(?:net|total)\s+(?:income|deposits?|withdrawals?)",
         r"how\s+much\s+(?:came\s+in|went\s+out|deposited|withdrew)",
         r"money\s+(?:in|out|coming\s+in|going\s+out)\b",
-    ]),
-
-    # ── Document availability ────────────────────────────────────────────────
-    (QueryIntent.DOCUMENT_AVAILABILITY, [
-        r"(?:what|which)\s+(?:documents?|statements?|files?)\s+(?:do|did|are|have)",
-        r"(?:upload|document|statement)\s+(?:status|list|count)",
-        r"how\s+many\s+(?:documents?|statements?|files?)",
-    ]),
-
-    # ── Institution coverage ─────────────────────────────────────────────────
-    (QueryIntent.INSTITUTION_COVERAGE, [
-        r"(?:what|which)\s+(?:banks?|institutions?|brokerages?|accounts?)\s+(?:do|did|are|have)\s+(?:i|we)",
-        r"institution\s+(?:coverage|summary|list)",
-        r"(?:what|which)\s+institutions?\s+(?:am\s+i\s+connected|have\s+data)",
-    ]),
-
-    # ── Statement coverage ───────────────────────────────────────────────────
-    (QueryIntent.STATEMENT_COVERAGE, [
-        r"(?:what|which)\s+(?:months?|periods?|dates?)\s+(?:do|are|have)",
-        r"statement\s+(?:coverage|range|periods?|dates?)",
-        r"(?:from\s+when|earliest|latest|oldest|newest)\s+statement",
     ]),
 
     # ── Text / explanation ───────────────────────────────────────────────────

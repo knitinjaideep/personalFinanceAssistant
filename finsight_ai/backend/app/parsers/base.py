@@ -177,9 +177,11 @@ def _register_all_parsers(registry: ParserRegistry) -> None:
     from app.parsers.etrade.parser import ETradeParser
     from app.parsers.amex.parser import AmexParser
     from app.parsers.discover.parser import DiscoverParser
+    from app.parsers.bank_of_america.parser import BankOfAmericaParser
 
     registry.register(MorganStanleyParser())
     registry.register(ChaseParser())
     registry.register(ETradeParser())
     registry.register(AmexParser())
     registry.register(DiscoverParser())
+    registry.register(BankOfAmericaParser())
