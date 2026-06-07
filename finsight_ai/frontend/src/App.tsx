@@ -55,13 +55,15 @@ export default function App() {
         className="relative flex min-h-screen"
         style={{ zIndex: 10 }}
       >
-        {/* Left sidebar */}
+        {/* Left sidebar (fixed) */}
         <Sidebar />
 
-        {/* Main content area — transparent so the full-viewport background shows through */}
+        {/* Main content area — offset by sidebar width */}
         <main
-          className="relative flex-1 flex flex-col min-w-0 min-h-screen"
+          className="relative flex flex-col min-w-0 min-h-screen"
           style={{
+            marginLeft: "260px",
+            width: "calc(100% - 260px)",
             background: "transparent",
             borderLeft: `1px solid var(--main-border)`,
           }}

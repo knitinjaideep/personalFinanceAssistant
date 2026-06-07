@@ -49,7 +49,7 @@ from app.services.ingestion import ingest_document
 from app.statement_sources import SOURCES_BY_ID
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+router = APIRouter(prefix="/api/v1/documents", tags=["documents"], redirect_slashes=False)
 
 
 # ── Status normalization ──────────────────────────────────────────────────────
@@ -527,7 +527,7 @@ async def get_document_status(doc_id: str):
 
 # ── List / get / delete ───────────────────────────────────────────────────────
 
-@router.get("/", response_model=list[DocumentSummary])
+@router.get("", response_model=list[DocumentSummary])
 async def list_documents():
     """List all documents with enriched, status-normalized summaries."""
     async with get_session() as session:

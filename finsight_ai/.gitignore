@@ -75,6 +75,13 @@ build/
 
 .vite/
 
+# Next.js
+
+frontend-next/.next/
+frontend-next/out/
+frontend-next/.vercel/
+frontend-next/.turbo/
+
 ############################
 
 # Environment variables

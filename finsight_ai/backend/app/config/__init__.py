@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     environment: Literal["development", "production", "test"] = "development"
     debug: bool = Field(default=True)
     log_level: str = Field(default="INFO")
-    cors_origins: list[str] = Field(default=["http://localhost:3000"])
+    cors_origins: list[str] = Field(default=["http://localhost:3000", "http://localhost:3001"])
 
 
     # __file__ here is the package __init__.py; parent.parent.parent goes to project root

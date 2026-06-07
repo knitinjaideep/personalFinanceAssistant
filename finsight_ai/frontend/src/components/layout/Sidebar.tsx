@@ -235,14 +235,22 @@ export function Sidebar() {
   const { activePage, setActivePage, theme } = useAppStore();
   const isLight = theme === "light";
 
+  // Chat page is full-screen — sidebar is not shown there
+  if (activePage === "chat") return null;
+
   return (
     <motion.aside
       initial={{ x: -16, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ duration: 0.40, ease: [0.22, 1, 0.36, 1] }}
-      className="flex flex-col shrink-0"
+      className="flex flex-col"
       style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
         width: "260px",
+        height: "100vh",
+        zIndex: 20,
         background: isLight
           ? "linear-gradient(180deg, rgba(240,247,252,0.94) 0%, rgba(220,238,250,0.92) 100%)"
           : "linear-gradient(180deg, rgba(3,17,31,0.92) 0%, rgba(4,22,38,0.90) 100%)",
@@ -252,7 +260,6 @@ export function Sidebar() {
         boxShadow: isLight
           ? "4px 0 32px rgba(11,60,93,0.12)"
           : "4px 0 32px rgba(3,17,31,0.55)",
-        minHeight: "100vh",
         transition: "background 0.3s ease, box-shadow 0.3s ease",
       }}
     >

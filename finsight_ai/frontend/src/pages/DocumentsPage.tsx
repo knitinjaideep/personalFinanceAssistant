@@ -149,6 +149,27 @@ export function DocumentsPage() {
         docCount={docs.length}
       />
 
+      {/* Transparent divider between header card and bottom panel */}
+      <div className="mx-6 shrink-0" style={{ height: "1px", position: "relative" }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.28) 30%, rgba(34,211,238,0.38) 50%, rgba(34,211,238,0.28) 70%, transparent 100%)",
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            top: "-2px",
+            height: "5px",
+            background: "linear-gradient(90deg, transparent 0%, rgba(34,211,238,0.06) 30%, rgba(34,211,238,0.10) 50%, rgba(34,211,238,0.06) 70%, transparent 100%)",
+            filter: "blur(3px)",
+          }}
+        />
+      </div>
+
       <motion.div
         variants={contentPageVariants}
         initial="hidden"

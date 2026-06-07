@@ -125,6 +125,7 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
         lifespan=lifespan,
+        redirect_slashes=False,
     )
 
     # Request tracing must be outermost so req_id is available to all handlers.
