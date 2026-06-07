@@ -10,7 +10,7 @@ import { motion } from "framer-motion";
 import MetricCard from "@/components/coral/MetricCard";
 import GlassCard from "@/components/coral/GlassCard";
 import SectionHeader from "@/components/coral/SectionHeader";
-import CoralMascot from "@/components/coral/CoralMascot";
+import { HomeHeroMascot } from "@/components/home/HomeHeroMascot";
 import { documentsApi } from "@/features/documents/api";
 import { useAppStore } from "@/store/appStore";
 import type { DocumentStats, DocumentSummary } from "@/types/index";
@@ -133,7 +133,7 @@ export default function HomePageClient() {
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         className="pt-2"
       >
-        <section className="grid items-center gap-8 lg:gap-10 lg:grid-cols-[1.1fr_0.9fr] max-w-[1100px]">
+        <section className="grid items-center gap-0 lg:gap-4 lg:grid-cols-[1fr_1fr] max-w-[1200px]">
           {/* Left: text + CTA */}
           <div className="min-w-0">
             <p className="eyebrow-text mb-5" style={{ color: "var(--accent-strong)" }}>
@@ -168,51 +168,14 @@ export default function HomePageClient() {
             </div>
           </div>
 
-          {/* Right: mascot card with speech bubble — integrated into hero */}
+          {/* Right: hero mascot — hover reveals speech bubble, no card background */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-            className="hidden md:flex justify-center lg:justify-end"
+            className="hidden md:flex justify-center lg:justify-start"
           >
-            <div
-              className="relative flex flex-col items-center rounded-[28px] px-8 pt-7 pb-9 w-full max-w-[360px]"
-              style={{
-                background: "var(--glass-bg)",
-                border: "1px solid var(--border-accent)",
-                backdropFilter: "blur(20px)",
-                WebkitBackdropFilter: "blur(20px)",
-                boxShadow: "0 16px 60px var(--card-shadow), var(--panel-inset)",
-              }}
-            >
-              {/* Speech bubble — larger, readable */}
-              <div
-                className="relative mb-5 w-full rounded-2xl px-5 py-3.5 text-center font-semibold leading-snug"
-                style={{
-                  background: "rgba(255,255,255,0.97)",
-                  border: "1px solid rgba(205,237,246,0.90)",
-                  color: "rgba(11,60,93,0.88)",
-                  boxShadow: "0 8px 26px rgba(11,60,93,0.16)",
-                  fontSize: "var(--font-card-title)",
-                }}
-              >
-                Ready to analyze your finances!
-                <span
-                  aria-hidden
-                  className="absolute left-1/2"
-                  style={{
-                    bottom: -8,
-                    width: 16,
-                    height: 16,
-                    background: "rgba(255,255,255,0.97)",
-                    borderRight: "1px solid rgba(205,237,246,0.90)",
-                    borderBottom: "1px solid rgba(205,237,246,0.90)",
-                    transform: "translateX(-50%) rotate(45deg)",
-                  }}
-                />
-              </div>
-              <CoralMascot size="hero" animated glow priority />
-            </div>
+            <HomeHeroMascot />
           </motion.div>
         </section>
       </motion.div>

@@ -23,18 +23,26 @@ function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
+// ── Brand ─────────────────────────────────────────────────────────────────────
+
 const Brand = memo(function Brand() {
   return (
-    <Link href="/" className="group flex items-center gap-2.5 shrink-0" aria-label="Coral home">
+    <Link href="/" className="group/brand flex items-center gap-2.5 shrink-0" aria-label="Coral home">
+      {/* Mascot bubble — same style as CoralDropletImage sm */}
       <div
-        className="relative shrink-0 overflow-hidden transition-transform duration-300 group-hover:scale-105"
+        className="
+          relative shrink-0 overflow-hidden
+          transition-all duration-300 ease-out
+          group-hover/nav:scale-[1.07]
+          group-hover/nav:drop-shadow-[0_0_18px_rgba(45,212,191,0.38)]
+        "
         style={{
           width: 34,
           height: 34,
           borderRadius: "45% 55% 52% 48% / 48% 42% 58% 52%",
           background: "rgba(255,255,255,0.10)",
-          border: "1px solid rgba(255,255,255,0.30)",
-          boxShadow: "0 4px 14px rgba(11,60,93,0.28), 0 0 14px rgba(255,122,90,0.30)",
+          border: "1px solid rgba(255,255,255,0.26)",
+          boxShadow: "0 4px 14px rgba(11,60,93,0.28)",
         }}
       >
         <Image
@@ -43,10 +51,11 @@ const Brand = memo(function Brand() {
           fill
           priority
           className="object-cover"
-          style={{ transform: "scale(1.08)", transformOrigin: "center 42%" }}
+          style={{ transform: "scale(1.06)", transformOrigin: "center 42%" }}
           sizes="34px"
         />
       </div>
+
       <span
         className="font-bold tracking-tight hidden sm:block"
         style={{ color: "var(--text-primary)", fontSize: "16px", letterSpacing: "-0.02em" }}
@@ -57,25 +66,81 @@ const Brand = memo(function Brand() {
   );
 });
 
-function NavLink({ href, label, Icon, active }: { href: string; label: string; Icon: typeof Home; active: boolean }) {
-  return (
+// ── Nav link ──────────────────────────────────────────────────────────────────
+
+function NavLink({
+  href, label, Icon, active,
+}: {
+  href: string; label: string; Icon: typeof Home; active: boolean;
+}) {
+  return active ? (
     <Link
       href={href}
-      className="relative flex items-center gap-1.5 px-3.5 py-2 rounded-full coral-nav-text font-semibold transition-colors duration-200"
-      style={{ color: active ? "var(--text-on-accent)" : "var(--text-secondary)" }}
+      className="group/link relative inline-flex items-center gap-1.5 overflow-hidden rounded-full px-4 py-2 nav-active-pill"
     >
-      {active && (
-        <motion.span
-          layoutId="topnav-pill"
-          className="absolute inset-0 rounded-full nav-active-pill"
-          transition={{ type: "spring", stiffness: 380, damping: 32 }}
-        />
-      )}
-      <Icon size={15} className="relative z-10 shrink-0" />
-      <span className="relative z-10">{label}</span>
+      {/* Framer pill for cross-route animation */}
+      <motion.span
+        layoutId="topnav-pill"
+        className="absolute inset-0 rounded-full nav-active-pill-bg"
+        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+      />
+
+      {/* Inner shine on hover */}
+      <span
+        className="
+          pointer-events-none absolute inset-0 rounded-full
+          bg-gradient-to-r from-transparent via-white/28 to-transparent
+          opacity-0 transition-opacity duration-300
+          group-hover/link:opacity-100
+        "
+        aria-hidden
+      />
+
+      <Icon
+        size={15}
+        className="
+          relative z-10 shrink-0
+          transition-transform duration-200
+          group-hover/link:-translate-y-px
+        "
+      />
+      <span className="relative z-10 coral-nav-text font-bold" style={{ color: "var(--text-on-accent)" }}>
+        {label}
+      </span>
+    </Link>
+  ) : (
+    <Link
+      href={href}
+      className="
+        group/link relative inline-flex items-center gap-1.5 rounded-full
+        px-3.5 py-2
+        coral-nav-text font-semibold
+        transition-all duration-200 ease-out
+        hover:-translate-y-px
+        hover:bg-black/[0.06]
+        hover:shadow-[0_8px_24px_rgba(34,211,238,0.06)]
+      "
+      style={{ color: "var(--text-secondary)" }}
+    >
+      <Icon
+        size={15}
+        className="
+          relative z-10 shrink-0
+          transition-transform duration-200
+          group-hover/link:-translate-y-px
+        "
+      />
+      <span
+        className="relative z-10 transition-colors duration-200"
+        style={{}}
+      >
+        {label}
+      </span>
     </Link>
   );
 }
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
 
 function ThemeToggle() {
   const theme = useAppStore((s) => s.theme);
@@ -87,8 +152,17 @@ function ThemeToggle() {
       type="button"
       onClick={toggleTheme}
       aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
-      className="relative w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-105"
-      style={{ background: "var(--btn-glass-bg)", border: "1px solid var(--btn-glass-border)" }}
+      className="
+        group/toggle
+        grid size-10 place-items-center rounded-full
+        transition-all duration-200 ease-out
+        hover:-translate-y-px
+        hover:bg-black/[0.06]
+      "
+      style={{
+        color: "var(--text-secondary)",
+        border: "1px solid var(--border-subtle)",
+      }}
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.span
@@ -100,29 +174,52 @@ function ThemeToggle() {
           className="flex items-center justify-center"
         >
           {isLight
-            ? <Sun size={15} style={{ color: "rgba(255,160,20,0.95)" }} />
-            : <Moon size={15} style={{ color: "rgba(103,232,249,0.90)" }} />}
+            ? <Sun size={15} className="transition-transform duration-300 group-hover/toggle:rotate-12" style={{ color: "rgba(255,160,20,0.95)" }} />
+            : <Moon size={15} className="transition-transform duration-300 group-hover/toggle:rotate-12" style={{ color: "rgba(103,232,249,0.90)" }} />}
         </motion.span>
       </AnimatePresence>
     </button>
   );
 }
 
-function UploadButton({ onClick, compact }: { onClick: () => void; compact?: boolean }) {
+// ── Upload button ─────────────────────────────────────────────────────────────
+
+function UploadButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="nav-upload-btn relative group flex items-center gap-2 rounded-full font-semibold text-white overflow-hidden transition-all duration-200"
-      style={{ padding: compact ? "0.5rem 0.9rem" : "0.5rem 1.1rem", fontSize: "var(--font-size-nav)" }}
+      className="
+        group/upload
+        relative inline-flex items-center gap-2 overflow-hidden
+        rounded-full font-semibold text-white
+        nav-upload-btn
+        transition-all duration-220 ease-out
+        hover:-translate-y-0.5
+        hover:scale-[1.018]
+        active:translate-y-0
+        active:scale-[0.99]
+      "
+      style={{ padding: "0.5rem 1.1rem", fontSize: "var(--font-size-nav)" }}
     >
+      {/* Shimmer sweep — fires once on hover via animation */}
       <span aria-hidden className="nav-upload-shimmer" />
-      <Upload size={15} className="relative z-10 shrink-0" />
+
+      <Upload
+        size={15}
+        className="
+          relative z-10 shrink-0
+          transition-transform duration-200
+          group-hover/upload:-translate-y-px
+        "
+      />
       <span className="relative z-10 hidden md:block">Upload documents</span>
       <span className="relative z-10 md:hidden">Upload</span>
     </button>
   );
 }
+
+// ── Top nav ───────────────────────────────────────────────────────────────────
 
 function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
   const pathname = usePathname() ?? "/";
@@ -136,7 +233,6 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Close mobile menu on route change
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   return (
@@ -146,19 +242,28 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
           initial={{ y: -24, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="pointer-events-auto mt-4 flex items-center justify-between gap-3 rounded-full px-3 sm:px-4 py-2 transition-all duration-300"
-          style={{
-            background: scrolled ? "var(--nav-bg-strong)" : "var(--nav-bg)",
-            border: "1px solid var(--nav-border)",
-            backdropFilter: "blur(22px)",
-            WebkitBackdropFilter: "blur(22px)",
-            boxShadow: scrolled ? "var(--nav-shadow-strong)" : "var(--nav-shadow)",
-          }}
+          /*
+           * group/nav — all children can react to nav-level hover via
+           * group-hover/nav: variants without adding JS state.
+           *
+           * Idle:  ~30% opaque glass that blends into the underwater scene.
+           * Hover: richer glass surface + lift + cyan glow ring.
+           */
+          className="
+            group/nav
+            pointer-events-auto mt-5
+            flex items-center justify-between gap-3
+            rounded-full
+            px-3 sm:px-4 py-2
+          "
+          style={{ background: "transparent", border: "none", boxShadow: "none" }}
         >
+
+          {/* ── Left: Brand ── */}
           <Brand />
 
-          {/* Desktop nav */}
-          <div className="hidden lg:flex items-center gap-1">
+          {/* ── Center: Desktop links ── */}
+          <div className="hidden lg:flex items-center gap-0.5">
             {NAV_ITEMS.map((item) => (
               <NavLink
                 key={item.href}
@@ -170,19 +275,28 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
             ))}
           </div>
 
+          {/* ── Right: Actions ── */}
           <div className="flex items-center gap-2 shrink-0">
             <div className="hidden sm:block">
-              <UploadButton onClick={onUploadClick} compact={scrolled} />
+              <UploadButton onClick={onUploadClick} />
             </div>
             <ThemeToggle />
 
-            {/* Mobile menu toggle */}
+            {/* Mobile toggle */}
             <button
               type="button"
               onClick={() => setMobileOpen((o) => !o)}
               aria-label="Toggle menu"
-              className="lg:hidden w-9 h-9 rounded-full flex items-center justify-center transition-all"
-              style={{ background: "var(--btn-glass-bg)", border: "1px solid var(--btn-glass-border)", color: "var(--text-secondary)" }}
+              className="
+                lg:hidden grid size-10 place-items-center rounded-full
+                transition-all duration-200
+                hover:bg-white/[0.08]
+              "
+              style={{
+                background: "var(--btn-glass-bg)",
+                border: "1px solid var(--btn-glass-border)",
+                color: "var(--text-secondary)",
+              }}
             >
               {mobileOpen ? <X size={16} /> : <Menu size={16} />}
             </button>
@@ -193,17 +307,17 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
         <AnimatePresence>
           {mobileOpen && (
             <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.22 }}
+              initial={{ opacity: 0, y: -8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.98 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
               className="lg:hidden pointer-events-auto mt-2 rounded-3xl p-2 origin-top"
               style={{
-                background: "var(--nav-bg-strong)",
-                border: "1px solid var(--nav-border)",
-                backdropFilter: "blur(22px)",
-                WebkitBackdropFilter: "blur(22px)",
-                boxShadow: "var(--nav-shadow-strong)",
+                background: "var(--nav-bg-scrolled)",
+                border: "1px solid var(--nav-border-hover)",
+                backdropFilter: "blur(28px)",
+                WebkitBackdropFilter: "blur(28px)",
+                boxShadow: "var(--nav-shadow-scrolled)",
               }}
             >
               {NAV_ITEMS.map((item) => {

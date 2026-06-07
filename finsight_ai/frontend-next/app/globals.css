@@ -148,10 +148,16 @@
   --modal-border:   rgba(34,211,238,0.20);
   --modal-shadow:   0 24px 80px rgba(3,17,31,0.70);
 
-  /* ── Premium reset tokens (shared accent vocabulary) ── */
-  --nav-bg:            rgba(5,22,40,0.55);
+  /* ── Nav tokens (dark) ── */
+  --nav-bg:            rgba(5,22,40,0.55);   /* legacy — kept for compat */
   --nav-bg-strong:     rgba(5,22,40,0.82);
+  --nav-bg-idle:       rgba(5,18,34,0.28);   /* transparent at rest */
+  --nav-bg-scrolled:   rgba(5,22,40,0.72);   /* richer when scrolled / hovered */
+  --nav-border-idle:   rgba(34,211,238,0.10);
+  --nav-border-hover:  rgba(34,211,238,0.26);
   --nav-border:        rgba(34,211,238,0.18);
+  --nav-shadow-idle:   0 12px 48px rgba(3,17,31,0.22);
+  --nav-shadow-scrolled: 0 20px 70px rgba(3,17,31,0.52), 0 0 60px rgba(34,211,238,0.08);
   --nav-shadow:        0 10px 40px rgba(3,17,31,0.45);
   --nav-shadow-strong: 0 14px 48px rgba(3,17,31,0.65);
 
@@ -271,10 +277,16 @@
   --modal-border:   rgba(31,111,139,0.22);
   --modal-shadow:   0 24px 80px rgba(11,60,93,0.22);
 
-  /* ── Premium reset tokens (light) ── */
+  /* ── Nav tokens (light) ── */
   --nav-bg:            rgba(255,255,255,0.62);
   --nav-bg-strong:     rgba(255,255,255,0.90);
+  --nav-bg-idle:       rgba(255,255,255,0.38);
+  --nav-bg-scrolled:   rgba(255,255,255,0.84);
+  --nav-border-idle:   rgba(31,111,139,0.14);
+  --nav-border-hover:  rgba(31,111,139,0.30);
   --nav-border:        rgba(31,111,139,0.20);
+  --nav-shadow-idle:   0 8px 32px rgba(11,60,93,0.10);
+  --nav-shadow-scrolled: 0 16px 52px rgba(11,60,93,0.22), 0 0 40px rgba(31,111,139,0.10);
   --nav-shadow:        0 10px 40px rgba(11,60,93,0.12);
   --nav-shadow-strong: 0 14px 48px rgba(11,60,93,0.20);
 
@@ -648,6 +660,15 @@
 }
 
 /* ── Light mode global text overrides ──────────────────────────────────────── */
+/* Hero heading — shimmer looks wrong on light; replace with a solid ocean gradient */
+[data-theme="light"] .hero-shimmer-heading {
+  background: linear-gradient(135deg, #0B3C5D 0%, #1F6F8B 50%, #FF7A5A 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: none;
+}
+
 [data-theme="light"] .text-white {
   color: var(--text-primary) !important;
 }
@@ -900,42 +921,75 @@
 [data-theme="light"] .status-badge-failed     { background: rgba(228,87,87,0.10);  color: #C43F3F; }
 [data-theme="light"] .status-badge-uploaded   { background: rgba(160,100,0,0.08);  color: #8A5C00; }
 
-/* ── Top nav: active pill + upload button shimmer ────────────────────────── */
+/* ── Top nav: container idle → hover via CSS group/nav ───────────────────── */
+
+/*
+ * nav-container drives the border-color transition from CSS since Tailwind
+ * group-hover can't interpolate between two dynamic CSS var() values.
+ */
+.nav-container {
+  transition:
+    background 0.30s ease,
+    border-color 0.30s ease,
+    box-shadow 0.30s ease,
+    transform 0.30s ease;
+}
+.nav-container:hover,
+.nav-container:focus-within {
+  border-color: var(--nav-border-hover) !important;
+  background: var(--nav-bg-scrolled) !important;
+  box-shadow: var(--nav-shadow-scrolled) !important;
+}
+
+/* ── Active nav pill ─────────────────────────────────────────────────────── */
 .nav-active-pill {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.nav-active-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 36px var(--coral-glow);
+}
+.nav-active-pill-bg {
   background: var(--accent-coral-grad);
   box-shadow:
-    0 4px 18px var(--coral-glow),
+    0 6px 22px var(--coral-glow),
     inset 0 1px 0 rgba(255,255,255,0.22);
 }
 
+/* ── Upload button ───────────────────────────────────────────────────────── */
 .nav-upload-btn {
-  background: var(--accent-coral-grad);
-  box-shadow: 0 4px 18px var(--coral-glow);
+  background: linear-gradient(135deg, #FF806a 0%, #ffa58f 100%);
+  box-shadow: 0 8px 28px rgba(255,128,106,0.28);
+  transition:
+    transform 0.22s ease,
+    box-shadow 0.22s ease,
+    filter 0.22s ease;
 }
 .nav-upload-btn:hover {
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: 0 8px 26px var(--coral-glow);
+  box-shadow: 0 14px 42px rgba(255,128,106,0.44);
   filter: brightness(1.04);
 }
+
+/* Shimmer sweep — plays once per hover, no infinite loop */
 .nav-upload-shimmer {
   position: absolute;
   inset: 0;
   border-radius: 9999px;
   background: linear-gradient(
     105deg,
-    transparent 35%,
-    rgba(255,255,255,0.40) 50%,
-    transparent 65%
+    transparent 30%,
+    rgba(255,255,255,0.42) 50%,
+    transparent 70%
   );
   background-size: 220% 100%;
   background-position: 200% 0;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.15s ease;
 }
 .nav-upload-btn:hover .nav-upload-shimmer {
   opacity: 1;
-  animation: navShimmerSweep 0.9s ease forwards;
+  animation: navShimmerSweep 0.85s ease-out forwards;
 }
 
 @keyframes navShimmerSweep {
@@ -943,7 +997,128 @@
   100% { background-position: -120% 0; }
 }
 
-/* ── Mascot glow pulse (referenced by CoralDropletImage) ─────────────────── */
+/* ── Glass reflection sweep across the whole nav on hover ────────────────── */
+.nav-glass-sweep {
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 36%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255,255,255,0.09),
+    transparent
+  );
+  filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  border-radius: 9999px;
+}
+.nav-container:hover .nav-glass-sweep,
+.nav-container:focus-within .nav-glass-sweep {
+  opacity: 1;
+  animation: navGlassSweep 0.75s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes navGlassSweep {
+  0%   { left: -40%; opacity: 0; }
+  15%  { opacity: 1; }
+  100% { left: 130%; opacity: 0; }
+}
+
+/* ── Underwater glow behind the nav on hover ─────────────────────────────── */
+.nav-glow-layer {
+  background: rgba(34,211,238,0);
+  transition: background 0.35s ease;
+}
+.nav-container:hover .nav-glow-layer,
+.nav-container:focus-within .nav-glow-layer {
+  background: rgba(34,211,238,0.11);
+}
+
+/* ── Reduced-motion guard ────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .nav-container,
+  .nav-container *,
+  .nav-glass-sweep,
+  .nav-glow-layer,
+  .nav-upload-shimmer,
+  .nav-active-pill,
+  .nav-upload-btn {
+    animation: none !important;
+    transition-duration: 0.001ms !important;
+    transform: none !important;
+  }
+}
+
+/* ── HomeHeroMascot soft float ───────────────────────────────────────────── */
+@keyframes coral-soft-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-7px); }
+}
+.coral-soft-float {
+  animation: coral-soft-float 7s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* ── CoralDropletImage — bubble animations (ported from frontend/src/index.css) ── */
+
+.coral-droplet-float {
+  animation: coralDropletFloat 5.5s ease-in-out infinite;
+  will-change: transform, border-radius;
+}
+
+.coral-bubble-shimmer {
+  animation: coralBubbleShimmer 5.5s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.coral-bubble-glow {
+  animation: coralBubbleGlow 5.5s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.coral-hover-magnify {
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+              border-radius 0.28s ease;
+}
+.coral-hover-magnify:hover {
+  transform: scale(1.10) !important;
+  animation-play-state: paused;
+}
+
+@keyframes coralDropletFloat {
+  0%, 100% {
+    transform: translateY(0px) rotate(-0.8deg) scale(1);
+    border-radius: 45% 55% 52% 48% / 48% 42% 58% 52%;
+  }
+  33% {
+    transform: translateY(-7px) rotate(0.6deg) scale(1.012);
+    border-radius: 50% 50% 48% 52% / 44% 54% 46% 56%;
+  }
+  66% {
+    transform: translateY(-4px) rotate(-0.4deg) scale(1.008);
+    border-radius: 48% 52% 55% 45% / 52% 46% 54% 48%;
+  }
+}
+
+@keyframes coralBubbleShimmer {
+  0%, 100% {
+    opacity: 0.45;
+    transform: rotate(-18deg) translate(0, 0) scale(1);
+  }
+  50% {
+    opacity: 0.68;
+    transform: rotate(-14deg) translate(5px, -5px) scale(1.08);
+  }
+}
+
+@keyframes coralBubbleGlow {
+  0%, 100% { opacity: 0.55; transform: scale(0.96); }
+  50%      { opacity: 0.85; transform: scale(1.05); }
+}
+
+/* ── Mascot glow pulse (legacy alias) ────────────────────────────────────── */
 @keyframes pulseGlow {
   0%, 100% { opacity: 0.55; transform: scale(1); }
   50%      { opacity: 0.85; transform: scale(1.06); }
@@ -981,7 +1156,9 @@
 @media (prefers-reduced-motion: reduce) {
   .nav-upload-shimmer,
   .coral-shimmer-ray,
-  .animate-pulse-glow {
+  .animate-pulse-glow,
+  .coral-animated {
     animation: none !important;
+    transition-duration: 0.001ms !important;
   }
 }

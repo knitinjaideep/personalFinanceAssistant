@@ -46,26 +46,26 @@ export function CoralDropletImage({
   floatDelay,
 }: CoralDropletImageProps) {
   const isHero = size === "hero";
-  const dimPx = isHero ? 340 : SIZE_PX[size as Exclude<CoralDropletSize, "hero">];
-  const dimStyle = isHero ? "clamp(280px, 26vw, 400px)" : `${dimPx}px`;
+  const dimPx  = isHero ? 340 : SIZE_PX[size as Exclude<CoralDropletSize, "hero">];
+  const dim    = isHero ? "clamp(280px, 26vw, 400px)" : `${dimPx}px`;
   const isSmall = size === "xs" || size === "sm";
   const shouldMagnify = hoverMagnify ?? !isSmall;
   const blurPx = GLOW_BLUR[size];
 
   const shadowSmall = "0 4px 14px rgba(11,60,93,0.28)";
-  const shadowLarge =
-    "0 14px 48px rgba(11,60,93,0.22), inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 0 rgba(95,168,211,0.12)";
+  const shadowLarge = "0 14px 48px rgba(11,60,93,0.22), inset 0 1px 0 rgba(255,255,255,0.45), inset 0 -1px 0 rgba(95,168,211,0.12)";
   const shadow = isSmall ? shadowSmall : shadowLarge;
 
   return (
     <div
       className={`relative inline-flex items-center justify-center ${className ?? ""}`}
-      style={{ width: dimStyle, height: dimStyle }}
+      style={{ width: dim, height: dim }}
     >
+      {/* Glow halo behind the bubble */}
       {glow && (
         <span
           aria-hidden
-          className={`absolute rounded-full pointer-events-none ${animated ? "animate-pulse-glow" : ""}`}
+          className={`absolute rounded-full pointer-events-none${animated ? " coral-bubble-glow coral-animated" : ""}`}
           style={{
             inset: isSmall ? "-16%" : "-22%",
             background:
@@ -76,11 +76,12 @@ export function CoralDropletImage({
         />
       )}
 
+      {/* Droplet bubble */}
       <div
-        className={`relative overflow-hidden ${animated ? "animate-gentle-float" : ""} ${shouldMagnify ? "hover:scale-110 transition-transform duration-300" : ""}`}
+        className={`relative overflow-hidden${animated ? " coral-droplet-float coral-animated" : ""}${shouldMagnify ? " coral-hover-magnify" : ""}`}
         style={{
-          width: dimStyle,
-          height: dimStyle,
+          width: dim,
+          height: dim,
           borderRadius: "45% 55% 52% 48% / 48% 42% 58% 52%",
           background: "rgba(255,255,255,0.10)",
           backdropFilter: isSmall ? undefined : "blur(10px)",
@@ -91,6 +92,7 @@ export function CoralDropletImage({
           cursor: shouldMagnify ? "pointer" : undefined,
         }}
       >
+        {/* Mascot image — fills bubble */}
         <Image
           src={src}
           alt={alt}
@@ -98,13 +100,14 @@ export function CoralDropletImage({
           priority={priority}
           className="object-cover"
           style={{ transform: "scale(1.06)", transformOrigin: "center 42%" }}
-          sizes={`${dimPx}px`}
+          sizes={isHero ? "400px" : `${dimPx}px`}
         />
 
+        {/* Glossy sheen — top-left oval highlight */}
         {!isSmall && (
           <span
             aria-hidden
-            className="absolute pointer-events-none"
+            className={`absolute pointer-events-none${animated ? " coral-bubble-shimmer coral-animated" : ""}`}
             style={{
               top: "5%",
               left: "8%",
@@ -119,6 +122,7 @@ export function CoralDropletImage({
           />
         )}
 
+        {/* Cyan tint at bottom — underwater depth */}
         <span
           aria-hidden
           className="absolute inset-0 pointer-events-none"
