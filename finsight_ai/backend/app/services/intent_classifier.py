@@ -1,15 +1,8 @@
 """
 Intent classifier service.
 
-Takes a raw user question, calls the local Ollama model (``settings.ollama.model``)
-with a strict JSON-only system prompt, and validates the response through
-``IntentClassificationResult``.
-
-Robustness:
-  - Retries once if JSON parsing / validation fails.
-  - Logs the raw model output on failure.
-  - Falls back to a deterministic rule-based classifier, then to
-    ``intent=unknown, confidence=0`` if everything fails.
+Primary path: rule-based classifier (~0ms). The LLM is only called for
+questions the rules cannot confidently classify (confidence < threshold).
 
 This service never answers the user — it only classifies.
 """
@@ -26,7 +19,7 @@ from app.domain.classification import (
     IntentClassificationResult,
 )
 from app.services import llm
-from app.services.intent_mapping import default_data_source, rule_classify
+from app.services.intent_mapping import default_data_source, rule_classify, RULE_CONFIDENCE_THRESHOLD
 
 logger = get_logger(__name__)
 
@@ -35,16 +28,17 @@ _SYSTEM_PROMPT = """You are a strict intent classifier for a personal-finance as
 You NEVER answer the user's question. You ONLY output a single JSON object.
 
 Classify the question into exactly one intent from this list:
-- transaction_search   : find/list specific transactions, charges, purchases
-- spending_summary     : how much was spent (totals, by category/merchant)
-- income_summary       : income, deposits, paychecks, money coming in
-- balance_summary      : account balances, cash on hand
-- investment_summary   : portfolio, holdings, allocation, total invested
-- fees_summary         : fees charged (advisory, account, trading, late)
-- document_lookup      : what a statement/document says (text, disclosures, interest terms)
-- account_summary      : a high-level overview of accounts
-- comparison           : compare two periods/institutions/categories
-- unknown              : cannot tell
+- transaction_search       : find/list specific transactions, charges, purchases
+- spending_summary         : how much was spent (totals, by category/merchant)
+- income_summary           : income, deposits, paychecks, money coming in
+- balance_summary          : account balances, cash on hand
+- investment_summary       : portfolio, holdings, allocation, total invested
+- fees_summary             : fees charged (advisory, account, trading, late)
+- document_lookup          : what a statement/document says (text, disclosures, interest terms)
+- account_summary          : a high-level overview of accounts
+- comparison               : compare spending between two periods or institutions
+- recurring_transactions   : subscriptions, recurring charges, auto-payments, memberships
+- unknown                  : cannot tell
 
 Pick the data_source:
 - sql     : exact numeric questions (totals, sums, lists, balances)
@@ -55,6 +49,9 @@ Pick the data_source:
 Extract entities. For time_range.type use "relative" (e.g. last_month, this_month,
 last_3_months), "absolute" (e.g. january_2025, q1_2025), or "none". Leave start_date
 and end_date null unless the user gave explicit dates.
+
+For amount filters: if the user says "over $100" set amount_min=100.0, "under $50" set
+amount_max=50.0, "between $20 and $200" set both. Leave null if no amount filter given.
 
 Set needs_clarification=true ONLY when the question is genuinely impossible to route.
 Prefer making a confident best guess over asking for clarification.
@@ -74,7 +71,9 @@ Return ONLY this JSON shape, nothing else:
       "value": <string or null>,
       "start_date": <ISO date or null>,
       "end_date": <ISO date or null>
-    }
+    },
+    "amount_min": <float or null>,
+    "amount_max": <float or null>
   },
   "data_source": "sql" | "rag" | "hybrid" | "unknown",
   "needs_clarification": <bool>,
@@ -135,69 +134,78 @@ def _validate(raw: str) -> IntentClassificationResult:
 async def classify(question: str) -> IntentClassificationResult:
     """Classify a user question into a validated IntentClassificationResult.
 
-    Tries the LLM (with one retry), then a rule-based fallback, then unknown.
+    Fast path: rule classifier runs first (zero latency). If it returns
+    confidence >= RULE_CONFIDENCE_THRESHOLD the result is used immediately —
+    no LLM call is made.
+
+    Slow path: only ambiguous questions (confidence below threshold) fall
+    through to a single LLM attempt. If that fails too, we return the rule
+    result or unknown fallback.
     """
     req_id = get_request_id()
-    model = settings.ollama.model
-    prompt = _build_prompt(question)
 
-    last_raw = ""
-    for attempt in (1, 2):
-        try:
-            raw = await llm.generate(
-                prompt,
-                model=model,
-                system=_SYSTEM_PROMPT,
-                temperature=0.0,
-                format_json=True,
-            )
-            last_raw = raw
-            result = _validate(raw)
-            logger.info(
-                "intent_classifier.ok",
-                extra={
-                    "stage": "intent_classified",
-                    "request_id": req_id,
-                    "attempt": attempt,
-                    "model": model,
-                    "intent": result.intent.value,
-                    "data_source": result.data_source.value,
-                    "confidence": round(result.confidence, 3),
-                    "needs_clarification": result.needs_clarification,
-                },
-            )
-            return result
-        except Exception as exc:  # noqa: BLE001 — broad: parse, validation, or LLM errors
-            logger.warning(
-                "intent_classifier.parse_failed",
-                extra={
-                    "stage": "intent_classify_failed",
-                    "request_id": req_id,
-                    "attempt": attempt,
-                    "model": model,
-                    "error": str(exc),
-                    "raw_output": last_raw[:500],
-                },
-            )
-
-    # ── LLM path exhausted → deterministic rule fallback ─────────────────────
+    # ── 1. Rule classifier (primary — ~0ms) ──────────────────────────────────
     rule_result = rule_classify(question)
-    if rule_result.intent != ChatIntent.UNKNOWN:
+    if rule_result.confidence >= RULE_CONFIDENCE_THRESHOLD:
         logger.info(
-            "intent_classifier.rule_fallback",
+            "intent_classifier.rule_hit",
             extra={
                 "stage": "intent_classified",
                 "request_id": req_id,
                 "intent": rule_result.intent.value,
                 "data_source": rule_result.data_source.value,
                 "confidence": round(rule_result.confidence, 3),
-                "source": "rule_fallback",
+                "source": "rule",
             },
         )
         return rule_result
 
+    # ── 2. LLM fallback for ambiguous questions ───────────────────────────────
+    model = settings.ollama.classification_model
+    prompt = _build_prompt(question)
+    last_raw = ""
+    try:
+        raw = await llm.generate(
+            prompt,
+            model=model,
+            system=_SYSTEM_PROMPT,
+            temperature=0.0,
+            format_json=True,
+            num_ctx=settings.ollama.classification_num_ctx,
+        )
+        last_raw = raw
+        result = _validate(raw)
+        logger.info(
+            "intent_classifier.llm_hit",
+            extra={
+                "stage": "intent_classified",
+                "request_id": req_id,
+                "model": model,
+                "intent": result.intent.value,
+                "data_source": result.data_source.value,
+                "confidence": round(result.confidence, 3),
+                "rule_confidence": round(rule_result.confidence, 3),
+            },
+        )
+        return result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "intent_classifier.llm_failed",
+            extra={
+                "stage": "intent_classify_failed",
+                "request_id": req_id,
+                "model": model,
+                "error": str(exc),
+                "raw_output": last_raw[:300],
+            },
+        )
+
+    # ── 3. Return rule result even if low confidence, or unknown ─────────────
+    if rule_result.intent != ChatIntent.UNKNOWN:
+        return rule_result
+
     logger.warning(
         "intent_classifier.unknown_fallback",
-        extra={"stage": "intent_classified", "request_id": req_id, "source": "invalid"},
+        extra={"stage": "intent_classified", "request_id": req_id},
     )
     return IntentClassificationResult.unknown_fallback(source="invalid")

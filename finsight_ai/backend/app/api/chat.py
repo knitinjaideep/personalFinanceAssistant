@@ -1,24 +1,58 @@
 """
-Chat API endpoint — robust intent pipeline (classifier → router → fallback).
+Chat API endpoints:
+  POST /api/v1/chat/query   — batch response (original)
+  POST /api/v1/chat/stream  — SSE streaming response (new)
 
-The heavy lifting lives in ``app.services.chat_router``. This endpoint owns
-request-level timing/logging and translates routing outcomes to the API schema.
+The heavy lifting lives in ``app.services.chat_router`` (batch) and
+``app.chat.streaming`` (SSE). This module owns request-level
+timing/logging and translates routing outcomes to the API schema.
 """
 
 from __future__ import annotations
 
 import time
+import uuid
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from app.config import settings
 from app.core.logger import get_logger, get_request_id
 from app.domain.entities import AnswerTimings, ChatRequest, ChatResponse
 from app.domain.errors import CoralError
 from app.services.chat_router import route
+from app.chat.streaming import stream_chat
 
 logger = get_logger("coral.chat")
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+@router.post("/stream")
+async def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
+    """Stream a chat response as Server-Sent Events.
+
+    Each event is: ``event: <type>\\ndata: <json>\\n\\n``
+    Event types: status, intent, tool_start, tool_result, answer_token, table, chart, error, done
+    """
+    if not body.question.strip():
+        raise HTTPException(400, "Question cannot be empty")
+
+    req_id = getattr(request.state, "request_id", "") or get_request_id()
+    conv_id = body.conversation_id or str(uuid.uuid4())
+
+    async def _generate():
+        async for chunk in stream_chat(body.question, req_id=req_id, conversation_id=conv_id):
+            yield chunk
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.post("/query", response_model=ChatResponse)
@@ -28,6 +62,7 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
         raise HTTPException(400, "Question cannot be empty")
 
     req_id = getattr(request.state, "request_id", "") or get_request_id()
+    conv_id = body.conversation_id or str(uuid.uuid4())
     total_start = time.perf_counter()
 
     logger.info(
@@ -35,13 +70,14 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
         extra={
             "stage": "chat_request_received",
             "request_id": req_id,
+            "conversation_id": conv_id,
             "selected_model": settings.ollama.model,
             "user_question": body.question[:200],
         },
     )
 
     try:
-        outcome = await route(body.question, req_id=req_id)
+        outcome = await route(body.question, req_id=req_id, conversation_id=conv_id)
 
         answer = outcome.answer
         total_ms = round((time.perf_counter() - total_start) * 1000, 1)

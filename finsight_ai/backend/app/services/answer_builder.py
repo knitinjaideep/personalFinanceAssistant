@@ -14,7 +14,7 @@ from typing import Any
 from app.core.logger import get_logger, get_request_id
 from app.domain.entities import AnswerTimings, QueryContext, StructuredAnswer
 from app.domain.enums import QueryIntent, QueryPath
-from app.services import llm, sql_query, text_search, vector_search
+from app.services import llm, sql_query, text_search
 from app.services.chart_builder import build_chart
 
 logger = get_logger(__name__)
@@ -37,7 +37,6 @@ async def build_answer(
 
     sql_result: dict[str, Any] | None = None
     text_results: list[dict] = []
-    vector_results: list[dict] = []
     timings = AnswerTimings()
 
     # ── Gather data ───────────────────────────────────────────────────────────
@@ -53,26 +52,21 @@ async def build_answer(
         text_results = await text_search.search(question)
         timings.rag_ms = round((time.perf_counter() - t0) * 1000, 1)
 
-    if path == QueryPath.VECTOR:
-        t0 = time.perf_counter()
-        vector_results = await vector_search.search(question)
-        timings.rag_ms = round((time.perf_counter() - t0) * 1000, 1)
-
-    chunks_retrieved = len(text_results) + len(vector_results)
+    chunks_retrieved = len(text_results)
     logger.info(
         "rag_retrieval_completed",
         extra={
             "stage": "rag_retrieval_completed",
             "request_id": req_id,
             "chunks_retrieved": chunks_retrieved,
-            "sources": [c.get("document_id", "") for c in (text_results + vector_results)[:5]],
+            "sources": [c.get("document_id", "") for c in text_results[:5]],
             "duration_ms": timings.rag_ms,
         },
     )
 
     # ── Check data ────────────────────────────────────────────────────────────
     has_sql_data  = bool(sql_result and sql_result.get("rows"))
-    has_text_data = bool(text_results) or bool(vector_results)
+    has_text_data = bool(text_results)
 
     if not has_sql_data and not has_text_data:
         logger.info(
@@ -90,7 +84,7 @@ async def build_answer(
     answer_type = _determine_answer_type(intent, sql_result)
 
     # ── Build LLM context ─────────────────────────────────────────────────────
-    context = _build_context(sql_result, text_results, vector_results, ctx)
+    context = _build_context(sql_result, text_results, ctx)
 
     # ── Generate narrative ────────────────────────────────────────────────────
     t0 = time.perf_counter()
@@ -137,7 +131,7 @@ async def build_answer(
                     })
 
     # ── Citations from text search ────────────────────────────────────────────
-    for chunk in (text_results + vector_results)[:5]:
+    for chunk in text_results[:5]:
         answer.citations.append({
             "source": f"Page {chunk.get('page_number', '?')}",
             "text": chunk.get("snippet", chunk.get("content", ""))[:200],
@@ -253,7 +247,6 @@ def _determine_answer_type(intent: QueryIntent, sql_result: dict | None) -> str:
 def _build_context(
     sql_result: dict | None,
     text_results: list,
-    vector_results: list,
     ctx: QueryContext,
 ) -> str:
     parts: list[str] = []
@@ -278,11 +271,6 @@ def _build_context(
         parts.append("\nDocument excerpts:")
         for chunk in text_results[:4]:
             parts.append(f"  - {chunk.get('snippet', chunk.get('content', ''))[:200]}")
-
-    if vector_results:
-        parts.append("\nRelated passages:")
-        for chunk in vector_results[:3]:
-            parts.append(f"  - {chunk.get('content', '')[:200]}")
 
     return "\n".join(parts)
 

@@ -17,48 +17,34 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class OllamaConfig(BaseSettings):
     """Central Ollama model configuration.
 
-    The single primary model used for chat, intent classification, and entity
-    extraction is `model`. It defaults to Gemma 4 (``gemma4:latest``) and can be
-    overridden with the ``OLLAMA_MODEL`` environment variable (also accepts the
-    legacy ``CORAL_OLLAMA_MODEL`` form). Do NOT hardcode model names elsewhere —
-    read ``settings.ollama.model`` instead.
+    Each task role has its own env var so different models can be used for
+    classification (fast/small) vs chat/analysis (larger/smarter).
+    All vars use the CORAL_OLLAMA_ prefix to match the .env file.
     """
 
     model_config = SettingsConfigDict(env_prefix="CORAL_OLLAMA_", env_file=".env", extra="ignore")
 
     base_url: str = Field(default="http://localhost:11434")
 
-    # The one place model names live. Override via OLLAMA_MODEL=gemma4:e4b
-    model: str = Field(
-        default="gemma4:latest",
-        validation_alias=AliasChoices("OLLAMA_MODEL", "CORAL_OLLAMA_MODEL"),
-        description="Primary Ollama model for chat / classification / extraction.",
-    )
-
+    classification_model: str = Field(default="qwen3:8b")
+    extraction_model: str = Field(default="qwen3:8b")
+    analysis_model: str = Field(default="gemma4:latest")
+    chat_model: str = Field(default="gemma4:latest")
     embedding_model: str = Field(default="nomic-embed-text")
+
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     num_ctx: int = Field(default=8192)
+    classification_num_ctx: int = Field(default=2048)
     timeout_seconds: int = Field(default=120)
 
-    # ── Backward-compatible accessors ────────────────────────────────────────
-    # Older code referenced separate models per task. They now all resolve to
-    # the single centralized `model` so nothing is hardcoded in two places.
     @property
-    def chat_model(self) -> str:
-        return self.model
-
-    @property
-    def classification_model(self) -> str:
-        return self.model
-
-    @property
-    def extraction_model(self) -> str:
-        return self.model
+    def model(self) -> str:
+        """Primary model alias — resolves to chat_model for backward compatibility."""
+        return self.chat_model
 
     @property
     def pull_hint(self) -> str:
-        """User-facing instruction to install the configured model."""
-        return f"Run: ollama pull {self.model}"
+        return f"Run: ollama pull {self.chat_model}"
 
 
 class DatabaseConfig(BaseSettings):

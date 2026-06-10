@@ -203,6 +203,13 @@ async def get_or_create_account(
         )
         session.add(acct)
         await session.flush()
+    else:
+        # Update stale account_type — the parser is authoritative; an account
+        # created from an earlier (or wrong) parse may have the wrong type.
+        _VAGUE_TYPES = {"unknown", "brokerage", ""}
+        if acct.account_type in _VAGUE_TYPES and account_type not in _VAGUE_TYPES:
+            acct.account_type = account_type
+            await session.flush()
     return acct
 
 

@@ -36,15 +36,16 @@ _PERIOD_RE = re.compile(
 _CLOSING_DATE_RE = re.compile(r"closing\s+date\s*[:\-]?\s*(\d{2}/\d{2}/\d{2,4})", re.IGNORECASE)
 _AMOUNT_RE = re.compile(r"\$?([\d,]+\.\d{2})")
 
-# A transaction text line:  MM/DD/YY[*]  DESCRIPTION  [-]$AMOUNT
+# A transaction text line:  MM/DD/YY[*]  DESCRIPTION  [-]$AMOUNT[⧫]
 # - leading date (2-digit year as Amex prints it)
 # - optional "*" marker (payments/credits)
 # - greedy description
 # - trailing signed dollar amount (last money token on the line)
+# - optional trailing ⧫ (Amex "Pay Over Time" marker on Gold/Platinum cards)
 _TXN_LINE_RE = re.compile(
     r"^(?P<date>\d{2}/\d{2}/\d{2,4})\*?\s+"
     r"(?P<desc>.+?)\s+"
-    r"(?P<sign>-?)\$(?P<amount>[\d,]+\.\d{2})\s*$"
+    r"(?P<sign>-?)\$(?P<amount>[\d,]+\.\d{2})\s*⧫?\s*$"
 )
 
 # Lines from the interest-charge / APR summary table that look transaction-like

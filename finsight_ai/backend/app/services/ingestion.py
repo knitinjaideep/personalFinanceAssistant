@@ -170,12 +170,6 @@ async def ingest_document(
         chunk_count = await chunk_and_index(doc_id, institution_type, parsed_doc)
         log.info("ingest.chunked", chunks=chunk_count)
 
-        # Step 7: Optionally generate embeddings
-        embedded = 0
-        if settings.search.vector_search_enabled:
-            embedded = await _generate_embeddings(doc_id)
-        log.info("ingest.embedded_count", embeddings=embedded)
-
         # Mark complete
         async with get_session() as session:
             await repo.update_document(session, doc_id,
@@ -186,7 +180,7 @@ async def ingest_document(
                  fees=len(parsed_stmt.fees),
                  balances=len(parsed_stmt.balances),
                  holdings=len(parsed_stmt.holdings),
-                 chunks=chunk_count, embeddings=embedded)
+                 chunks=chunk_count)
         return doc_id
 
     except (DocumentParseError, ClassificationError, ExtractionError) as exc:
@@ -390,45 +384,3 @@ async def chunk_and_index(doc_id: str, institution_type: str, parsed_doc) -> int
 
     logger.info("ingest.indexed", doc_id=doc_id, chunks=len(chunks))
     return len(chunks)
-
-
-async def _generate_embeddings(doc_id: str) -> int:
-    """Generate vector embeddings for document chunks (optional).
-
-    Returns the number of chunks embedded. Embedding failure is non-fatal and
-    returns 0 — the document is still considered parsed (FTS search still works).
-    """
-    try:
-        from app.services.llm import embed as embed_texts
-
-        async with get_session() as session:
-            chunks = await repo.get_chunks_for_document(session, doc_id)
-
-        if not chunks:
-            return 0
-
-        # Batch embed
-        texts = [c.content for c in chunks]
-        batch_size = 10
-        all_embeddings = []
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            embeddings = await embed_texts(batch)
-            all_embeddings.extend(embeddings)
-
-        # Store embeddings
-        embedded = 0
-        async with get_session() as session:
-            for chunk, emb in zip(chunks, all_embeddings):
-                chunk.embedding = json.dumps(emb)
-                session.add(chunk)
-                embedded += 1
-            await session.flush()
-
-        logger.info("ingest.embedded", doc_id=doc_id, chunks=embedded)
-        return embedded
-
-    except Exception as exc:
-        # Embedding failure is non-fatal
-        logger.warning("ingest.embedding_failed", doc_id=doc_id, error=str(exc))
-        return 0

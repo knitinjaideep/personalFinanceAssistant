@@ -95,10 +95,12 @@ class QueryIntent(str, Enum):
     TRANSACTION_LOOKUP = "transaction_lookup"
     SPENDING_BY_CATEGORY = "spending_by_category"   # "how much on groceries last month"
     SUBSCRIPTION_LOOKUP = "subscription_lookup"     # "what subscriptions am I paying"
+    RECURRING_TRANSACTIONS = "recurring_transactions"  # recurring charges across all categories
     BALANCE_LOOKUP = "balance_lookup"
     HOLDINGS_LOOKUP = "holdings_lookup"
     HOLDINGS_TOTAL = "holdings_total"               # "what is my total invested amount"
     CASH_FLOW_SUMMARY = "cash_flow_summary"
+    SPENDING_COMPARISON = "spending_comparison"     # compare two periods side-by-side
     DOCUMENT_AVAILABILITY = "document_availability"
     INSTITUTION_COVERAGE = "institution_coverage"
     STATEMENT_COVERAGE = "statement_coverage"
@@ -142,10 +144,12 @@ INTENT_QUERY_PATH: dict[QueryIntent, QueryPath] = {
     QueryIntent.TRANSACTION_LOOKUP: QueryPath.SQL,
     QueryIntent.SPENDING_BY_CATEGORY: QueryPath.SQL,
     QueryIntent.SUBSCRIPTION_LOOKUP: QueryPath.SQL,
+    QueryIntent.RECURRING_TRANSACTIONS: QueryPath.SQL,
     QueryIntent.BALANCE_LOOKUP: QueryPath.SQL,
     QueryIntent.HOLDINGS_LOOKUP: QueryPath.SQL,
     QueryIntent.HOLDINGS_TOTAL: QueryPath.SQL,
     QueryIntent.CASH_FLOW_SUMMARY: QueryPath.SQL,
+    QueryIntent.SPENDING_COMPARISON: QueryPath.SQL,
     QueryIntent.DOCUMENT_AVAILABILITY: QueryPath.SQL,
     QueryIntent.INSTITUTION_COVERAGE: QueryPath.SQL,
     QueryIntent.STATEMENT_COVERAGE: QueryPath.SQL,

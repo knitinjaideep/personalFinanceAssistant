@@ -298,6 +298,14 @@ async def _transaction_lookup(question: str, ctx: QueryContext) -> SQLResult:
     recurring_frag = " AND t.is_recurring = 1" if ctx.is_recurring_only else ""
     account_frag = _account_clause(ctx, params)
 
+    amount_frag = ""
+    if ctx.amount_min is not None:
+        amount_frag += " AND ABS(t.amount) >= :amount_min"
+        params["amount_min"] = ctx.amount_min
+    if ctx.amount_max is not None:
+        amount_frag += " AND ABS(t.amount) <= :amount_max"
+        params["amount_max"] = ctx.amount_max
+
     params["limit"] = ctx.limit
 
     sql = f"""
@@ -315,7 +323,7 @@ async def _transaction_lookup(question: str, ctx: QueryContext) -> SQLResult:
         JOIN accounts     a ON t.account_id     = a.id
         JOIN institutions i ON a.institution_id = i.id
         WHERE 1=1
-          {_and(date_frag)}{category_frag}{merchant_frag}{institution_frag}{recurring_frag}{account_frag}
+          {_and(date_frag)}{category_frag}{merchant_frag}{institution_frag}{recurring_frag}{account_frag}{amount_frag}
         ORDER BY t.transaction_date DESC
         LIMIT :limit
     """
@@ -635,17 +643,176 @@ async def _statement_coverage(question: str, ctx: QueryContext) -> SQLResult:
     }
 
 
+# ── Handler: recurring_transactions ──────────────────────────────────────────
+
+async def _recurring_transactions(question: str, ctx: QueryContext) -> SQLResult:
+    """Detect recurring charges by finding merchants with 2+ appearances.
+
+    Uses the is_recurring flag first, then falls back to frequency-based
+    detection (merchant appearing in 2+ distinct calendar months).
+    """
+    params: dict[str, Any] = {}
+    date_frag = _date_clause(ctx, "t.transaction_date", params)
+
+    institution_frag = ""
+    if ctx.institution:
+        institution_frag = " AND LOWER(i.institution_type) = :institution"
+        params["institution"] = ctx.institution.lower()
+
+    account_frag = _account_clause(ctx, params)
+
+    sql = f"""
+        SELECT
+            COALESCE(t.merchant_name, t.description)   AS merchant,
+            COALESCE(t.category, 'other')              AS category,
+            i.name                                     AS institution,
+            a.account_name,
+            ROUND(AVG(ABS(CAST(t.amount AS REAL))), 2) AS avg_amount,
+            COUNT(*)                                   AS occurrences,
+            COUNT(DISTINCT strftime('%Y-%m', t.transaction_date)) AS distinct_months,
+            MIN(t.transaction_date)                    AS first_seen,
+            MAX(t.transaction_date)                    AS last_seen
+        FROM transactions t
+        JOIN accounts     a ON t.account_id     = a.id
+        JOIN institutions i ON a.institution_id = i.id
+        WHERE (t.is_recurring = 1 OR 1=1)
+          {_and(date_frag)}{institution_frag}{account_frag}
+        GROUP BY LOWER(COALESCE(t.merchant_name, t.description)), i.name
+        HAVING COUNT(*) >= 2
+           AND COUNT(DISTINCT strftime('%Y-%m', t.transaction_date)) >= 2
+        ORDER BY avg_amount DESC
+        LIMIT 40
+    """
+
+    async with get_session() as session:
+        result = await session.execute(text(sql), params)
+        rows = [dict(r._mapping) for r in result.fetchall()]
+
+    total = sum(float(r.get("avg_amount") or 0) for r in rows)
+    period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
+    return {
+        "rows": rows,
+        "columns": ["merchant", "category", "institution", "account_name", "avg_amount", "occurrences", "distinct_months", "first_seen", "last_seen"],
+        "summary": f"Found {len(rows)} recurring merchants{period} averaging ${total:,.2f}/month total.",
+        "sql_used": sql.strip(),
+    }
+
+
+# ── Handler: spending_comparison ──────────────────────────────────────────────
+
+async def _spending_comparison(question: str, ctx: QueryContext) -> SQLResult:
+    """Compare spending totals between two time periods or two accounts.
+
+    Uses the primary date range as period A and falls back to the previous
+    equivalent period as period B when no explicit compare_to is available.
+    """
+    from calendar import monthrange
+    import datetime
+
+    params_a: dict[str, Any] = {}
+    params_b: dict[str, Any] = {}
+
+    date_a_frag = _date_clause(ctx, "t.transaction_date", params_a)
+
+    # Derive period B as the period immediately before period A.
+    if ctx.date_from and ctx.date_to:
+        delta = ctx.date_to - ctx.date_from
+        b_end = ctx.date_from - datetime.timedelta(days=1)
+        b_start = b_end - delta
+        params_b["date_from_b"] = b_start.isoformat()
+        params_b["date_to_b"] = b_end.isoformat()
+        date_b_frag = " AND t.transaction_date BETWEEN :date_from_b AND :date_to_b"
+        period_b_label = f"{b_start} to {b_end}"
+    else:
+        date_b_frag = ""
+        period_b_label = "prior period"
+
+    institution_frag = ""
+    if ctx.institution:
+        institution_frag = " AND LOWER(i.institution_type) = :institution_cmp"
+
+    category_frag = ""
+    if ctx.category:
+        category_frag = " AND LOWER(t.category) = :category_cmp"
+
+    account_frag = _account_clause(ctx, params_a, alias="a")
+
+    params_a.update(params_b)
+    if ctx.institution:
+        params_a["institution_cmp"] = ctx.institution.lower()
+    if ctx.category:
+        params_a["category_cmp"] = ctx.category.lower()
+
+    sql = f"""
+        WITH period_a AS (
+            SELECT
+                COALESCE(t.category, 'other') AS category,
+                ROUND(SUM(ABS(CAST(t.amount AS REAL))), 2) AS total_a
+            FROM transactions t
+            JOIN accounts     a ON t.account_id     = a.id
+            JOIN institutions i ON a.institution_id = i.id
+            WHERE t.transaction_type NOT IN ('credit', 'payment', 'transfer')
+              {_and(date_a_frag)}{institution_frag}{category_frag}{account_frag}
+            GROUP BY COALESCE(t.category, 'other')
+        ),
+        period_b AS (
+            SELECT
+                COALESCE(t.category, 'other') AS category,
+                ROUND(SUM(ABS(CAST(t.amount AS REAL))), 2) AS total_b
+            FROM transactions t
+            JOIN accounts     a ON t.account_id     = a.id
+            JOIN institutions i ON a.institution_id = i.id
+            WHERE t.transaction_type NOT IN ('credit', 'payment', 'transfer')
+              {_and(date_b_frag)}{institution_frag}{category_frag}{account_frag}
+            GROUP BY COALESCE(t.category, 'other')
+        )
+        SELECT
+            COALESCE(a.category, b.category) AS category,
+            COALESCE(a.total_a, 0.0)         AS period_a_spend,
+            COALESCE(b.total_b, 0.0)         AS period_b_spend,
+            ROUND(COALESCE(a.total_a, 0.0) - COALESCE(b.total_b, 0.0), 2) AS change
+        FROM period_a a
+        FULL OUTER JOIN period_b b USING (category)
+        ORDER BY ABS(COALESCE(a.total_a, 0.0) - COALESCE(b.total_b, 0.0)) DESC
+        LIMIT 20
+    """
+
+    async with get_session() as session:
+        result = await session.execute(text(sql), params_a)
+        rows = [dict(r._mapping) for r in result.fetchall()]
+
+    period_a_label = ctx.timeframe_label or "current period"
+    total_a = sum(float(r.get("period_a_spend") or 0) for r in rows)
+    total_b = sum(float(r.get("period_b_spend") or 0) for r in rows)
+    diff = total_a - total_b
+    direction = "up" if diff > 0 else "down"
+
+    return {
+        "rows": rows,
+        "columns": ["category", "period_a_spend", "period_b_spend", "change"],
+        "summary": (
+            f"Spending in {period_a_label} (${total_a:,.2f}) vs {period_b_label} (${total_b:,.2f}) "
+            f"— {direction} ${abs(diff):,.2f}."
+        ),
+        "period_a_label": period_a_label,
+        "period_b_label": period_b_label,
+        "sql_used": sql.strip(),
+    }
+
+
 # ── Dispatch table ────────────────────────────────────────────────────────────
 
 _INTENT_HANDLERS = {
-    QueryIntent.SPENDING_BY_CATEGORY: _spending_by_category,
-    QueryIntent.SUBSCRIPTION_LOOKUP:  _subscription_lookup,
-    QueryIntent.FEE_SUMMARY:          _fee_summary,
-    QueryIntent.TRANSACTION_LOOKUP:   _transaction_lookup,
-    QueryIntent.BALANCE_LOOKUP:       _balance_lookup,
-    QueryIntent.HOLDINGS_TOTAL:       _holdings_total,
-    QueryIntent.HOLDINGS_LOOKUP:      _holdings_lookup,
-    QueryIntent.CASH_FLOW_SUMMARY:    _cash_flow_summary,
+    QueryIntent.SPENDING_BY_CATEGORY:   _spending_by_category,
+    QueryIntent.SUBSCRIPTION_LOOKUP:    _subscription_lookup,
+    QueryIntent.RECURRING_TRANSACTIONS: _recurring_transactions,
+    QueryIntent.FEE_SUMMARY:            _fee_summary,
+    QueryIntent.TRANSACTION_LOOKUP:     _transaction_lookup,
+    QueryIntent.BALANCE_LOOKUP:         _balance_lookup,
+    QueryIntent.HOLDINGS_TOTAL:         _holdings_total,
+    QueryIntent.HOLDINGS_LOOKUP:        _holdings_lookup,
+    QueryIntent.CASH_FLOW_SUMMARY:      _cash_flow_summary,
+    QueryIntent.SPENDING_COMPARISON:    _spending_comparison,
     QueryIntent.DOCUMENT_AVAILABILITY:  _document_availability,
     QueryIntent.INSTITUTION_COVERAGE:   _institution_coverage,
     QueryIntent.STATEMENT_COVERAGE:     _statement_coverage,

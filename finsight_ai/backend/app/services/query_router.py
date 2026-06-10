@@ -112,6 +112,7 @@ _INTENT_PATTERNS: list[tuple[QueryIntent, list[str]]] = [
         r"(?:what|which)\s+(?:banks?|accounts?|institutions?)\s+(?:have\s+(?:you|i)|(?:are|is)\s+(?:there|connected|available))",
         r"(?:do|does)\s+(?:it|coral|the\s+app)\s+have\s+(?:data\s+for|access\s+to)",
         r"(?:which|what)\s+banks?\s+(?:do\s+(?:i|you)\s+have|have\s+(?:data|statements?))",
+        r"(?:do\s+(?:i|you)\s+have\s+(?:data|statements?)\s+for\s+(?:bank\s+of\s+america|chase|amex|discover|morgan\s+stanley|etrade))",
     ]),
 
     # ── Statement coverage ───────────────────────────────────────────────────

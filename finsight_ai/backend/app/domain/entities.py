@@ -122,6 +122,7 @@ class DocumentUploadResponse(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     history: list[dict[str, str]] = Field(default_factory=list)
+    conversation_id: str | None = None  # client-managed; backend generates one if omitted
 
 
 class QueryContext(BaseModel):
@@ -137,6 +138,10 @@ class QueryContext(BaseModel):
     institution: str | None = None     # institution name keyword (lowercased)
     account_type: str | None = None    # AccountType value or None
     account_name: str | None = None    # specific account/card name, e.g. "Prime Visa" (matched LIKE)
+
+    # Amount filters (from user phrases like "over $100", "under $50")
+    amount_min: float | None = None
+    amount_max: float | None = None
 
     # Flags
     is_recurring_only: bool = False

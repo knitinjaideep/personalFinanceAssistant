@@ -176,12 +176,20 @@ export function useBankingData(): BankingDataResult {
         return matched?.key === config.key;
       }) ?? null;
 
+    const hasCashFlow = raw.cash_flow.some((m) => m.inflow > 0 || m.outflow > 0);
+    const checkingHealth: AccountDataHealth = {
+      hasTransactions: hasCashFlow,
+      hasStatements: hasCashFlow,
+      latestStatementDate: null,
+      warning: hasCashFlow ? null : "No data found. Upload or reprocess statements for this account.",
+    };
+
     return {
       config,
       cardSummary,
       cashFlow: raw.cash_flow,
       transactions: [],
-      dataHealth: makeHealth(cardSummary, []),
+      dataHealth: checkingHealth,
     };
   });
 

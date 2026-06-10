@@ -1,0 +1,418 @@
+# Coral Golden Questions — Eval Suite
+# Each entry checks: domain, intent, route, key entities, answer constraints.
+# Run with: python app/chat/evals/run_chat_evals.py
+
+# ── Banking (25 questions) ────────────────────────────────────────────────────
+
+- id: banking_spend_001
+  question: "How much did I spend on Amex Gold last month?"
+  expected:
+    domain: "sql"
+    intent: "spending_summary"
+    route: "sql"
+    required_entities:
+      account: ["gold", "amex"]
+    answer_must_include: ["$"]
+    answer_must_not_include: ["I assume", "probably", "I don't know"]
+
+- id: banking_spend_002
+  question: "How much did I spend on groceries last month?"
+  expected:
+    domain: "sql"
+    intent: "spending_summary"
+    required_entities:
+      category: ["groceries"]
+    answer_must_include: ["$"]
+
+- id: banking_spend_003
+  question: "What was my dining spend in May?"
+  expected:
+    domain: "sql"
+    intent: "spending_summary"
+    required_entities:
+      category: ["restaurants", "dining"]
+    answer_must_include: ["$"]
+
+- id: banking_spend_004
+  question: "Show me my total spending by category this year"
+  expected:
+    domain: "sql"
+    intent: "spending_summary"
+    answer_must_include: ["$"]
+    answer_must_not_include: ["I don't have"]
+
+- id: banking_spend_005
+  question: "How much did I spend on subscriptions last quarter?"
+  expected:
+    domain: "sql"
+    intent: ["spending_summary", "transaction_search"]
+    answer_must_include: ["$"]
+
+- id: banking_tx_001
+  question: "Show me my Chase transactions from January"
+  expected:
+    domain: "sql"
+    intent: "transaction_search"
+    required_entities:
+      institution: ["chase"]
+    answer_must_not_include: ["I assume", "probably"]
+
+- id: banking_tx_002
+  question: "Find all Costco transactions"
+  expected:
+    domain: "sql"
+    intent: "transaction_search"
+    required_entities:
+      merchant: ["costco"]
+
+- id: banking_tx_003
+  question: "Show me my recent transactions"
+  expected:
+    domain: "sql"
+    intent: "transaction_search"
+
+- id: banking_tx_004
+  question: "What did I buy at Amazon last month?"
+  expected:
+    domain: "sql"
+    intent: "transaction_search"
+    required_entities:
+      merchant: ["amazon"]
+
+- id: banking_tx_005
+  question: "List my credit card charges over $100 this month"
+  expected:
+    domain: "sql"
+    intent: "transaction_search"
+
+- id: banking_balance_001
+  question: "What is my current Chase checking balance?"
+  expected:
+    domain: "sql"
+    intent: "balance_summary"
+    required_entities:
+      institution: ["chase"]
+
+- id: banking_balance_002
+  question: "Show me my account balances"
+  expected:
+    domain: "sql"
+    intent: "balance_summary"
+
+- id: banking_balance_003
+  question: "How much do I have in my Bank of America account?"
+  expected:
+    domain: "sql"
+    intent: "balance_summary"
+    required_entities:
+      institution: ["bank_of_america", "bofa"]
+
+- id: banking_income_001
+  question: "Show me Bank of America deposits this year"
+  expected:
+    domain: "sql"
+    intent: ["income_summary", "transaction_search"]
+    required_entities:
+      institution: ["bank_of_america", "bofa"]
+
+- id: banking_income_002
+  question: "What was my net cash flow last month?"
+  expected:
+    domain: "sql"
+    intent: "income_summary"
+
+- id: banking_fee_001
+  question: "Did I pay any fees?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "fees_summary"
+    answer_must_include: ["$"]
+    answer_must_not_include: ["I don't know", "I assume"]
+
+- id: banking_fee_002
+  question: "What fees did Morgan Stanley charge me?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "fees_summary"
+    required_entities:
+      institution: ["morgan_stanley"]
+
+- id: banking_fee_003
+  question: "What are my advisory fees this year?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "fees_summary"
+
+- id: banking_recurring_001
+  question: "What subscriptions do I have?"
+  expected:
+    domain: "sql"
+    intent: ["transaction_search", "spending_summary"]
+
+- id: banking_recurring_002
+  question: "Show me my recurring charges"
+  expected:
+    domain: "sql"
+    intent: ["transaction_search", "spending_summary"]
+
+- id: banking_comparison_001
+  question: "Compare Chase Sapphire and Amex Gold dining spend"
+  expected:
+    domain: "sql"
+    intent: "comparison"
+    required_entities:
+      institution: ["chase", "amex"]
+
+- id: banking_comparison_002
+  question: "Compare my spending in March vs April"
+  expected:
+    domain: "sql"
+    intent: "comparison"
+
+- id: banking_account_001
+  question: "Which accounts do I have?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: ["account_summary", "balance_summary"]
+
+- id: banking_clarify_001
+  question: "How much did I spend on gold last month?"
+  expected:
+    domain: "sql"
+    intent: "spending_summary"
+    # "gold" could be Amex Gold — should resolve or ask for clarification
+    answer_must_not_include: ["I don't know"]
+
+- id: banking_fallback_001
+  question: "Why did my checking balance drop?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: ["balance_summary", "spending_summary", "transaction_search"]
+    # Should not invent a reason
+    answer_must_not_include: ["I assume", "probably caused by"]
+
+# ── Investments (10 questions) ────────────────────────────────────────────────
+
+- id: invest_001
+  question: "How much do I have invested right now?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "investment_summary"
+    answer_must_include: ["$"]
+    answer_must_not_include: ["I don't know"]
+
+- id: invest_002
+  question: "What is my total IRA balance?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "investment_summary"
+    answer_must_include: ["$"]
+
+- id: invest_003
+  question: "How much is in down payment savings?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: ["investment_summary", "balance_summary"]
+
+- id: invest_004
+  question: "Show my Morgan Stanley portfolio"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "investment_summary"
+    required_entities:
+      institution: ["morgan_stanley"]
+
+- id: invest_005
+  question: "What is my latest E*TRADE balance?"
+  expected:
+    domain: "sql"
+    intent: ["investment_summary", "balance_summary"]
+    required_entities:
+      institution: ["etrade"]
+
+- id: invest_006
+  question: "Compare Morgan Stanley and E*TRADE"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "comparison"
+    required_entities:
+      institution: ["morgan_stanley", "etrade"]
+
+- id: invest_007
+  question: "Show my investment growth over the last 6 months"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "investment_summary"
+
+- id: invest_008
+  question: "What are my top holdings?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "investment_summary"
+
+- id: invest_009
+  question: "What is my asset allocation?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "investment_summary"
+
+- id: invest_010
+  question: "What is my current investment allocation?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "investment_summary"
+
+# ── Documents (10 questions) ──────────────────────────────────────────────────
+
+- id: doc_001
+  question: "What documents have been uploaded?"
+  expected:
+    domain: "sql"
+    intent: ["account_summary", "transaction_search"]
+    # Should list uploaded documents
+
+- id: doc_002
+  question: "Which document has my Morgan Stanley IRA balance?"
+  expected:
+    domain: ["rag", "hybrid"]
+    intent: ["investment_summary", "account_summary"]
+    required_entities:
+      institution: ["morgan_stanley"]
+
+- id: doc_003
+  question: "What does my Amex statement say about interest?"
+  expected:
+    domain: "rag"
+    intent: ["document_lookup", "account_summary"]
+    required_entities:
+      institution: ["amex"]
+
+- id: doc_004
+  question: "Show me the statement where Chase charged an annual fee"
+  expected:
+    domain: ["rag", "hybrid"]
+    intent: "fees_summary"
+    required_entities:
+      institution: ["chase"]
+
+- id: doc_005
+  question: "What did the Amex Gold February statement mention about rewards?"
+  expected:
+    domain: "rag"
+    intent: ["document_lookup", "account_summary"]
+    required_entities:
+      institution: ["amex"]
+
+- id: doc_006
+  question: "What is the interest rate on my Amex card?"
+  expected:
+    domain: "rag"
+    intent: ["document_lookup", "account_summary"]
+
+- id: doc_007
+  question: "What statements do I have from Morgan Stanley?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "account_summary"
+    required_entities:
+      institution: ["morgan_stanley"]
+
+- id: doc_008
+  question: "What institutions are covered?"
+  expected:
+    domain: "sql"
+    intent: "account_summary"
+
+- id: doc_009
+  question: "What dates are my Chase statements from?"
+  expected:
+    domain: "sql"
+    intent: "account_summary"
+    required_entities:
+      institution: ["chase"]
+
+- id: doc_010
+  question: "How many statements have been processed?"
+  expected:
+    domain: "sql"
+    intent: "account_summary"
+
+# ── Hybrid / complex (5 questions) ───────────────────────────────────────────
+
+- id: hybrid_001
+  question: "Was there anything unusual in my Chase Sapphire statement?"
+  expected:
+    domain: ["rag", "hybrid"]
+    intent: ["transaction_search", "account_summary"]
+    required_entities:
+      institution: ["chase"]
+    answer_must_not_include: ["I assume", "probably"]
+
+- id: hybrid_002
+  question: "Explain my credit card spend last quarter"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: "spending_summary"
+    answer_must_include: ["$"]
+
+- id: hybrid_003
+  question: "Which accounts had the biggest cash movement?"
+  expected:
+    domain: "sql"
+    intent: "income_summary"
+    answer_must_include: ["$"]
+
+- id: hybrid_004
+  question: "What should I look at this month?"
+  expected:
+    domain: ["sql", "hybrid"]
+    intent: ["spending_summary", "account_summary"]
+
+- id: hybrid_005
+  question: "Did a document confirm any fees?"
+  expected:
+    domain: ["rag", "hybrid"]
+    intent: "fees_summary"
+
+# ── Recurring transactions (new intent) ───────────────────────────────────────
+
+- id: recurring_001
+  question: "What subscriptions am I paying?"
+  expected:
+    domain: "sql"
+    intent: ["recurring_transactions", "transaction_search"]
+    answer_must_not_include: ["I assume", "probably"]
+
+- id: recurring_002
+  question: "Show me my recurring charges"
+  expected:
+    domain: "sql"
+    intent: "recurring_transactions"
+
+- id: recurring_003
+  question: "What memberships do I have?"
+  expected:
+    domain: "sql"
+    intent: "recurring_transactions"
+
+- id: recurring_004
+  question: "Find all automatic payments on my Chase card"
+  expected:
+    domain: "sql"
+    intent: "recurring_transactions"
+    required_entities:
+      institution: ["chase"]
+
+# ── Amount filter tests ────────────────────────────────────────────────────────
+
+- id: amount_filter_001
+  question: "List my credit card charges over $100 this month"
+  expected:
+    domain: "sql"
+    intent: "transaction_search"
+
+- id: amount_filter_002
+  question: "Show me transactions under $10"
+  expected:
+    domain: "sql"
+    intent: "transaction_search"

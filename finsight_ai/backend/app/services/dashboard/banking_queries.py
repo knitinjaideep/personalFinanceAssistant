@@ -49,13 +49,13 @@ async def banking_spend_by_month(
         text("""
             SELECT
                 strftime('%Y-%m', t.transaction_date)  AS month,
-                SUM(CAST(t.amount AS REAL))             AS total_spend,
+                SUM(ABS(CAST(t.amount AS REAL)))        AS total_spend,
                 COUNT(t.id)                             AS txn_count
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
-              AND t.transaction_type NOT IN ('deposit','payment','transfer')
-              AND CAST(t.amount AS REAL) > 0
+              AND a.account_type = 'credit_card'
+              AND t.transaction_type = 'purchase'
               AND t.transaction_date >= date('now', :offset)
             GROUP BY month
             ORDER BY month
@@ -84,13 +84,13 @@ async def banking_spend_by_category(session: AsyncSession) -> list[dict]:
         text("""
             SELECT
                 COALESCE(t.category, 'other') AS category,
-                SUM(CAST(t.amount AS REAL))    AS total,
+                SUM(ABS(CAST(t.amount AS REAL))) AS total,
                 COUNT(t.id)                    AS txn_count
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
-              AND t.transaction_type NOT IN ('deposit','payment','transfer')
-              AND CAST(t.amount AS REAL) > 0
+              AND a.account_type = 'credit_card'
+              AND t.transaction_type = 'purchase'
             GROUP BY category
         """),
     )
@@ -128,13 +128,13 @@ async def banking_top_merchants(
         text("""
             SELECT
                 COALESCE(t.merchant_name, t.description)  AS merchant,
-                SUM(CAST(t.amount AS REAL))                AS total,
+                SUM(ABS(CAST(t.amount AS REAL)))           AS total,
                 COUNT(t.id)                                AS txn_count
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
-              AND t.transaction_type NOT IN ('deposit','payment','transfer')
-              AND CAST(t.amount AS REAL) > 0
+              AND a.account_type = 'credit_card'
+              AND t.transaction_type = 'purchase'
               AND merchant IS NOT NULL
             GROUP BY merchant
             ORDER BY total DESC
@@ -167,7 +167,7 @@ async def banking_card_spend_summary(session: AsyncSession) -> list[dict]:
                 a.account_type,
                 a.institution_type,
                 MAX(d.account_product)                  AS product_label,
-                SUM(CAST(t.amount AS REAL))             AS total_spend,
+                SUM(ABS(CAST(t.amount AS REAL)))        AS total_spend,
                 COUNT(t.id)                             AS txn_count,
                 MAX(s.period_end)                       AS latest_statement
             FROM transactions t
@@ -175,8 +175,8 @@ async def banking_card_spend_summary(session: AsyncSession) -> list[dict]:
             JOIN statements s     ON s.id = t.statement_id
             LEFT JOIN documents d ON d.id = s.document_id
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
-              AND t.transaction_type NOT IN ('deposit','payment','transfer')
-              AND CAST(t.amount AS REAL) > 0
+              AND a.account_type = 'credit_card'
+              AND t.transaction_type = 'purchase'
             GROUP BY a.id
             ORDER BY total_spend DESC
         """),
@@ -257,13 +257,13 @@ async def banking_subscriptions(session: AsyncSession) -> list[dict]:
                 COALESCE(t.merchant_name, t.description)      AS merchant_raw,
                 t.category,
                 strftime('%Y-%m', t.transaction_date)         AS txn_month,
-                AVG(CAST(t.amount AS REAL))                   AS month_avg,
+                AVG(ABS(CAST(t.amount AS REAL)))              AS month_avg,
                 COUNT(t.id)                                   AS month_count
             FROM transactions t
             JOIN accounts a ON a.id = t.account_id
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
-              AND t.transaction_type NOT IN ('deposit','payment','transfer','refund')
-              AND CAST(t.amount AS REAL) > 0
+              AND a.account_type = 'credit_card'
+              AND t.transaction_type = 'purchase'
               AND t.transaction_date >= date('now', '-18 months')
             GROUP BY merchant_raw, txn_month
         """),

@@ -30,6 +30,7 @@ class ChatIntent(str, Enum):
     DOCUMENT_LOOKUP = "document_lookup"
     ACCOUNT_SUMMARY = "account_summary"
     COMPARISON = "comparison"
+    RECURRING_TRANSACTIONS = "recurring_transactions"
     UNKNOWN = "unknown"
 
 
@@ -72,6 +73,19 @@ class ExtractedEntities(BaseModel):
     # second institution/time scope for comparison questions
     compare_to: str | None = None
     time_range: TimeRange = Field(default_factory=TimeRange)
+    # optional amount filters (e.g. "over $100", "under $50")
+    amount_min: float | None = None
+    amount_max: float | None = None
+
+    @field_validator("amount_min", "amount_max", mode="before")
+    @classmethod
+    def _coerce_amount(cls, v: object) -> float | None:
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
 
 
 class IntentClassificationResult(BaseModel):

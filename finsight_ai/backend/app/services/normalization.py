@@ -23,11 +23,13 @@ from datetime import date, timedelta
 # Aliases are matched as case-insensitive substrings of the cleaned token.
 
 _INSTITUTIONS: dict[str, tuple[str, list[str]]] = {
-    "morgan_stanley": ("Morgan Stanley", ["morgan stanley", "morgan", "morgon", "stanley", "ms", "msft_advisory"]),
-    "chase":          ("Chase", ["chase", "jpmorgan chase", "jp morgan", "jpmorgan"]),
-    "etrade":         ("E*TRADE", ["etrade", "e*trade", "e-trade", "e trade"]),
-    "amex":           ("American Express", ["amex", "american express", "americanexpress", "am ex"]),
-    "discover":       ("Discover", ["discover", "discvr", "discover card"]),
+    "morgan_stanley":   ("Morgan Stanley", ["morgan stanley", "morgan", "morgon", "stanley", "ms", "msft_advisory"]),
+    "chase":            ("Chase", ["chase", "jpmorgan chase", "jp morgan", "jpmorgan"]),
+    "etrade":           ("E*TRADE", ["etrade", "e*trade", "e-trade", "e trade"]),
+    "amex":             ("American Express", ["amex", "american express", "americanexpress", "am ex"]),
+    "discover":         ("Discover", ["discover", "discvr", "discover card"]),
+    "bank_of_america":  ("Bank of America", ["bank of america", "bofa", "boa", "bankofamerica", "bofamerica", "bof america", "bofa checking"]),
+    "marcus":           ("Marcus by Goldman Sachs", ["marcus", "goldman sachs", "goldman", "marcus hysa", "marcus savings", "marcus high yield"]),
 }
 
 # Short standalone aliases that should only match as whole words (avoid "ms" in
@@ -134,12 +136,32 @@ _ACCOUNT_FILLER = {
 # Known aliases → the canonical token most likely to appear in account_name.
 _ACCOUNT_ALIASES: dict[str, str] = {
     "amazon prime": "prime",
-    "amazon": "prime",          # the Amazon card is the Prime Visa
+    "amazon": "prime",              # the Amazon card is the Prime Visa
     "prime visa": "prime",
     "blue cash everyday": "blue cash",
+    "blue cash preferred": "blue cash",
+    "blue cash": "blue cash",
     "sapphire preferred": "sapphire",
     "sapphire reserve": "sapphire",
+    "sapphire": "sapphire",
     "freedom unlimited": "freedom",
+    "freedom flex": "freedom",
+    "amex gold": "gold",
+    "gold card": "gold",
+    "roth ira": "roth",
+    "roth": "roth",
+    "traditional ira": "ira",
+    "down payment": "down payment",
+    "down payment savings": "down payment",
+    "hysa": "savings",
+    "high yield savings": "savings",
+    "high yield": "savings",
+    "marcus savings": "savings",
+    "529": "529",
+    "college savings": "529",
+    "etrade ira": "ira",
+    "morgan stanley ira": "ira",
+    "investment account": "brokerage",
 }
 
 

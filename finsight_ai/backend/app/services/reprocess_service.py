@@ -14,7 +14,7 @@ Key operations:
   - ingestion_health()                    : aggregate + per-document issue report.
 
 This deliberately reuses the parser pipeline pieces from app.services.ingestion
-(persist_canonical, chunk_and_index, _generate_embeddings) so there is a single
+(persist_canonical, chunk_and_index) so there is a single
 extraction/persistence implementation.
 """
 
@@ -35,7 +35,6 @@ from app.db.models import DocumentModel
 from app.parsers.base import get_parser_registry
 from app.parsers.pdf import parse_pdf
 from app.services.ingestion import (
-    _generate_embeddings,
     chunk_and_index,
     persist_canonical,
 )
@@ -109,7 +108,6 @@ async def _inspect_document(session, doc: DocumentModel) -> DocIssues:
     stmts = await repo.get_statements_for_document(session, doc.id)
     txn_count = await repo.count_transactions_for_document(session, doc.id)
     chunk_count = await repo.count_chunks_for_document(session, doc.id)
-    emb_count = await repo.count_chunks_for_document(session, doc.id, with_embedding=True)
     holdings_count = await repo.count_holdings_for_document(session, doc.id)
     balance_count = await repo.count_balances_for_document(session, doc.id)
     fee_count = await repo.count_fees_for_document(session, doc.id)
@@ -134,8 +132,6 @@ async def _inspect_document(session, doc: DocumentModel) -> DocIssues:
 
     if chunk_count == 0:
         issues.append(ISSUE_ZERO_CHUNKS)
-    if settings.search.vector_search_enabled and chunk_count > 0 and emb_count == 0:
-        issues.append(ISSUE_MISSING_EMBEDDINGS)
     if not doc.institution_type or doc.institution_type == "unknown":
         issues.append(ISSUE_MISSING_INSTITUTION)
 
@@ -188,7 +184,6 @@ async def ingestion_health() -> dict[str, Any]:
         "complete_documents": sum(1 for d in per_doc if not d.issues),
         "missing_transactions": sum(1 for d in per_doc if ISSUE_ZERO_TRANSACTIONS in d.issues),
         "missing_chunks": sum(1 for d in per_doc if ISSUE_ZERO_CHUNKS in d.issues),
-        "missing_embeddings": sum(1 for d in per_doc if ISSUE_MISSING_EMBEDDINGS in d.issues),
         "missing_metadata": sum(
             1 for d in per_doc
             if {ISSUE_MISSING_INSTITUTION, ISSUE_MISSING_MONTH, ISSUE_MISSING_YEAR} & set(d.issues)
@@ -317,12 +312,7 @@ async def reprocess_document(doc_id: str) -> ReprocessResult:
         # 7. Chunk + index.
         chunk_count = await chunk_and_index(doc_id, institution_type, parsed_doc)
 
-        # 8. Embeddings (non-fatal).
-        embedded = 0
-        if settings.search.vector_search_enabled:
-            embedded = await _generate_embeddings(doc_id)
-
-        # 9. Mark parsed.
+        # 8. Mark parsed.
         async with get_session() as session:
             await repo.update_document(session, doc_id, status="parsed",
                                        processed_time=datetime.utcnow())
@@ -330,13 +320,13 @@ async def reprocess_document(doc_id: str) -> ReprocessResult:
         log.info("reprocess.complete", status_after="parsed",
                  transactions=len(stmt.transactions), fees=len(stmt.fees),
                  balances=len(stmt.balances), holdings=len(stmt.holdings),
-                 chunks=chunk_count, embeddings=embedded)
+                 chunks=chunk_count)
 
         return ReprocessResult(
             doc_id, filename, status_before, "parsed", ok=True,
             transactions=len(stmt.transactions), fees=len(stmt.fees),
             balances=len(stmt.balances), holdings=len(stmt.holdings),
-            chunks=chunk_count, embeddings=embedded,
+            chunks=chunk_count,
         )
 
     except Exception as exc:  # noqa: BLE001

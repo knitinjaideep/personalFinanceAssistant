@@ -52,15 +52,103 @@ The `api/dashboard.py` router assembles these into three endpoints:
 
 ### 4. Chat
 
-```
-User question → QueryRouter (intent classification) → SQL query + optional FTS
-→ AnswerBuilder → LLM (formatting only) → StructuredAnswer → UI
+#### Query flow (streaming — `POST /api/v1/chat/stream`)
+
+```mermaid
+flowchart TD
+    A([User types a question\nin ChatPage]) --> B
+
+    subgraph Frontend ["Frontend — ChatPage.tsx"]
+        B[streamChat&#40;&#41; opens\nSSE connection to\nPOST /chat/stream]
+        B --> B1["event: status\n'Understanding your question…'"]
+        B1 --> B2["event: intent\ndomain · intent · confidence"]
+        B2 --> B3["event: tool_start\ntool name · intent"]
+        B3 --> B4["event: tool_result\nrow_count · summary"]
+        B4 --> B5["event: answer_token\n&#40;one per LLM token&#41;"]
+        B5 --> B6["event: table  &#40;if rows exist&#41;\n+ event: chart  &#40;if chart built&#41;"]
+        B6 --> B7["event: done\nrequest_id · duration_ms"]
+        B7 --> B8[AnswerCard rendered\nwith StructuredAnswer]
+    end
+
+    subgraph Backend ["Backend — chat/streaming.py"]
+        C[classify intent\nvia Gemma 4 / Ollama\nwith 1 retry + rule fallback]
+        C --> D{needs\nclarification?}
+        D -- yes --> E[emit clarifying\nquestion as answer_token\n→ done]
+        D -- no --> F[resolve route\nSQL / FTS / HYBRID]
+
+        F --> G{SQL path?}
+        G -- yes --> H["sql_query.execute_for_intent&#40;&#41;\n11 deterministic handlers\nno LLM-generated SQL"]
+        H --> I{rows\nreturned?}
+        I -- no rows,\ncategory/merchant set --> J[relax filters:\ndrop category + merchant\nretry SQL]
+        J --> I
+        I -- no rows,\ndate set --> K[date fallback:\ndrop all date filters\nretry SQL]
+        K --> I
+        I -- rows found --> L[emit tool_result\nand continue]
+        I -- still empty --> M{RAG\nfallback}
+
+        G -- no SQL --> M
+        M -- FTS path --> N[text_search.search&#40;&#41;\nSQLite FTS5 full-text]
+        M -- VECTOR path --> O[vector_search.search&#40;&#41;\ncosine similarity\non stored embeddings]
+        N --> P[combine chunks]
+        O --> P
+
+        L --> Q{data\nexists?}
+        P --> Q
+        Q -- no data at all --> R[helpful fallback:\nlist available categories\ndate range · institutions\n+ clarifying question]
+        R --> S[emit answer_token\n→ done]
+
+        Q -- data found --> T[build table payload\nif sql rows exist]
+        T --> U[build chart payload\nvia chart_builder.py]
+        U --> V["generate_stream&#40;&#41;\nOllama token-by-token\nSystem: use only provided data\nnever invent numbers"]
+        V --> W[emit answer_token\nper token]
+        W --> X[emit done]
+    end
+
+    B --> C
+    C -.->|SSE events| B1
+    L -.->|SSE events| B3
+    V -.->|SSE tokens| B5
+    X -.->|SSE done| B7
 ```
 
-- `query_router.py` classifies intent (10 explicit types) via regex rules, LLM fallback
-- `sql_query.py` executes deterministic SQL for each intent
-- `answer_builder.py` assembles a `StructuredAnswer` with human-readable highlights
-- LLM (`qwen3:8b`) only formats the narrative — it does not query the DB
+#### Fallback chain (ensures no blank answers)
+
+```mermaid
+flowchart LR
+    S1[Exact SQL\nall filters applied] -->|empty| S2
+    S2[Relaxed SQL\ndrop category + merchant] -->|empty| S3
+    S3[Date fallback SQL\ndrop all date filters] -->|empty| S4
+    S4[RAG fallback\nFTS5 text search] -->|empty| S5
+    S5[Helpful response\nshow available data\n+ clarifying question]
+
+    S1 -->|rows ✓| A1[Build answer]
+    S2 -->|rows ✓| A2[Build answer\n+ caveat: broadened search]
+    S3 -->|rows ✓| A3[Build answer\n+ caveat: time filter removed]
+    S4 -->|chunks ✓| A4[Build answer\nfrom document text]
+```
+
+#### Intent → SQL handler mapping
+
+| ChatIntent | Internal QueryIntent | Route | SQL handler |
+|---|---|---|---|
+| `spending_summary` | `SPENDING_BY_CATEGORY` | SQL | Groups spend by category/institution |
+| `transaction_search` | `TRANSACTION_LOOKUP` | SQL | Filters by merchant/category/date/account |
+| `income_summary` | `CASH_FLOW_SUMMARY` | SQL | Sums inflow vs outflow by account |
+| `balance_summary` | `BALANCE_LOOKUP` | SQL | Latest balance snapshot per account |
+| `investment_summary` | `HOLDINGS_TOTAL` | HYBRID | Market value from most-recent statement |
+| `fees_summary` | `FEE_SUMMARY` | HYBRID | Fee records by category/institution |
+| `document_lookup` | `TEXT_EXPLANATION` | FTS | FTS5 full-text search on text_chunks |
+| `account_summary` | `BALANCE_LOOKUP` | SQL | Account list with balances |
+| `comparison` | `SPENDING_BY_CATEGORY` | SQL | Side-by-side by institution/period |
+| `unknown` | `HYBRID_FINANCIAL_QUESTION` | HYBRID | Broad SQL + FTS fallback |
+
+#### Non-negotiable rules enforced at every stage
+
+- **Gemma 4 never writes SQL.** All SQL is pre-written Python in `sql_query.py`.
+- **Gemma 4 never invents numbers.** The system prompt contains: *"Do not speculate beyond the provided data. Never invent numbers."*
+- **No bare "no data" response.** The fallback chain always surfaces what data exists and asks a clarifying question.
+- **All LLM calls are local** (Ollama on `localhost:11434`). No financial data leaves the machine.
+- **Account numbers are masked** in answers and logs (`guardrails.py`).
 
 ---
 
@@ -82,8 +170,14 @@ User question → QueryRouter (intent classification) → SQL query + optional F
 | `services/dashboard/summary_queries.py` | KPI summary queries |
 | `api/dashboard.py` | Dashboard API endpoints |
 | `api/scan.py` | Scan status + ingest trigger endpoints |
-| `services/query_router.py` | Chat intent classification |
+| `services/intent_classifier.py` | Gemma 4 intent classification + rule fallback |
+| `services/chat_router.py` | Main chat pipeline — classify → SQL → RAG → answer |
+| `services/sql_query.py` | 11 deterministic SQL handlers, no LLM SQL |
 | `services/answer_builder.py` | Structures answers, calls LLM for formatting |
+| `services/normalization.py` | Institution / category / account / date alias resolution |
+| `chat/streaming.py` | SSE streaming pipeline — emits status/token/table/chart events |
+| `chat/guardrails.py` | Destructive action detection, account number masking |
+| `chat/evals/run_chat_evals.py` | Golden question eval runner |
 
 ### Frontend (`frontend/src/`)
 

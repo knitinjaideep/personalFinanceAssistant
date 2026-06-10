@@ -36,6 +36,16 @@ _MS_INDICATORS = [
 ]
 _MS_RE = re.compile("|".join(_MS_INDICATORS), re.IGNORECASE)
 
+# "For the Period January 1-31, 2026" or "For the Period April 1-30, 2025"
+_PERIOD_DASH_RE = re.compile(
+    r"for\s+the\s+period\s+"
+    r"((?:January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\s+\d{1,2})-(\d{1,2},?\s+\d{4})",
+    re.IGNORECASE,
+)
+# "as of 4/1/25" … "as of 4/30/25"  (appears twice on page 1)
+_AS_OF_RE = re.compile(r"as\s+of\s+(\d{1,2}/\d{1,2}/\d{2,4})", re.IGNORECASE)
+# Original "for the period X to Y" style (keep as fallback)
 _PERIOD_RE = re.compile(
     r"(?:for\s+the\s+period|statement\s+period)\s+(.+?)\s+(?:to|through)\s+(.+?)(?:\n|$)",
     re.IGNORECASE,
@@ -90,8 +100,10 @@ class MorganStanleyParser(InstitutionParser):
             "retirement": "ira",
         }
 
-        # Extract period
-        period_start, period_end = _extract_period(first_pages)
+        # Extract period — pass filename as fallback for date decoding
+        import os as _os
+        filename = _os.path.basename(getattr(document, "file_path", "") or "")
+        period_start, period_end = _extract_period(first_pages, filename)
 
         # Extract account number
         acct_match = _ACCOUNT_RE.search(first_pages)
@@ -131,15 +143,52 @@ class MorganStanleyParser(InstitutionParser):
         )
 
 
-def _extract_period(text: str) -> tuple[date | None, date | None]:
-    match = _PERIOD_RE.search(text)
-    if match:
+def _extract_period(text: str, filename: str = "") -> tuple[date | None, date | None]:
+    # Pattern 1: "For the Period January 1-31, 2026"
+    m = _PERIOD_DASH_RE.search(text)
+    if m:
         try:
-            start = dateparser.parse(match.group(1).strip()).date()
-            end = dateparser.parse(match.group(2).strip()).date()
+            start = dateparser.parse(f"{m.group(1)}, {m.group(2).split(',')[-1].strip()}").date()
+            end = dateparser.parse(f"{m.group(1).rsplit(' ', 1)[0]} {m.group(2)}").date()
+            # start day is 1, end is whatever day is in group(2)
+            start = start.replace(day=1)
             return start, end
         except (ValueError, TypeError):
             pass
+
+    # Pattern 2: two "as of MM/DD/YY" occurrences → start and end
+    as_of_matches = _AS_OF_RE.findall(text[:2000])
+    if len(as_of_matches) >= 2:
+        try:
+            start = dateparser.parse(as_of_matches[0]).date()
+            end = dateparser.parse(as_of_matches[1]).date()
+            if start < end:
+                return start, end
+        except (ValueError, TypeError):
+            pass
+
+    # Pattern 3: original "for the period X to Y"
+    m = _PERIOD_RE.search(text)
+    if m:
+        try:
+            start = dateparser.parse(m.group(1).strip()).date()
+            end = dateparser.parse(m.group(2).strip()).date()
+            return start, end
+        except (ValueError, TypeError):
+            pass
+
+    # Pattern 4: decode from filename — "ClientStatements_20250430D_..." → end date 2025-04-30
+    import re as _re
+    fn_match = _re.search(r"(\d{8})D", filename)
+    if fn_match:
+        try:
+            ds = fn_match.group(1)
+            end = date(int(ds[:4]), int(ds[4:6]), int(ds[6:8]))
+            start = end.replace(day=1)
+            return start, end
+        except (ValueError, TypeError):
+            pass
+
     return None, None
 
 

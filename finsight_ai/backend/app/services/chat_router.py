@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from app.chat.services.conversation_context import conversation_context
 from app.config import settings
 from app.core.logger import get_logger, get_request_id
 from app.domain.classification import (
@@ -29,7 +30,7 @@ from app.domain.classification import (
 )
 from app.domain.entities import QueryContext, StructuredAnswer
 from app.domain.enums import QueryIntent, QueryPath
-from app.services import availability, sql_query, text_search, vector_search
+from app.services import availability, sql_query, text_search
 from app.services.answer_builder import build_answer
 from app.services.intent_classifier import classify
 from app.services.intent_mapping import to_query_intent
@@ -104,6 +105,8 @@ def _build_context(result: IntentClassificationResult, today: date | None = None
         institution=inst_slug,
         account_type=None,
         account_name=account_name,
+        amount_min=ents.amount_min,
+        amount_max=ents.amount_max,
     )
 
 
@@ -118,7 +121,12 @@ def _parse_iso(value: str | None) -> date | None:
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
-async def route(question: str, *, req_id: str = "") -> RoutingOutcome:
+async def route(
+    question: str,
+    *,
+    req_id: str = "",
+    conversation_id: str = "",
+) -> RoutingOutcome:
     """Run the full pipeline for a question and return a RoutingOutcome."""
     req_id = req_id or get_request_id()
     steps: list[str] = []
@@ -128,6 +136,7 @@ async def route(question: str, *, req_id: str = "") -> RoutingOutcome:
         extra={
             "stage": "chat_router_start",
             "request_id": req_id,
+            "conversation_id": conversation_id or "none",
             "user_question": question[:200],
             "selected_model": settings.ollama.model,
         },
@@ -135,6 +144,13 @@ async def route(question: str, *, req_id: str = "") -> RoutingOutcome:
 
     # ── 1. Classify ──────────────────────────────────────────────────────────
     classification = await classify(question)
+
+    # ── 1b. Merge prior conversation context for follow-up resolution ────────
+    if conversation_id:
+        classification = await conversation_context.resolve_followup(
+            conversation_id, classification
+        )
+
     query_intent = to_query_intent(classification.intent)
     ctx = _build_context(classification)
 
@@ -199,6 +215,11 @@ async def route(question: str, *, req_id: str = "") -> RoutingOutcome:
         if used_ctx is not ctx:
             answer.caveats.append(_relaxation_note(ctx, used_ctx))
             status = PARTIAL
+
+        # Record resolved context for follow-up resolution
+        if conversation_id:
+            await _record_turn(conversation_id, classification, used_ctx, answer.summary)
+
         return _finalize(answer, classification, query_intent, effective_path.value,
                          status, steps, sql_rows, rag_chunks, req_id)
 
@@ -207,6 +228,33 @@ async def route(question: str, *, req_id: str = "") -> RoutingOutcome:
     answer = await _helpful_answer(question, classification, query_intent, ctx, req_id)
     return _finalize(answer, classification, query_intent, "fallback",
                      NO_DATA_AFTER_FALLBACK, steps, 0, 0, req_id)
+
+
+# ── Conversation context recording ────────────────────────────────────────────
+
+async def _record_turn(
+    conversation_id: str,
+    classification: IntentClassificationResult,
+    ctx: QueryContext,
+    answer_summary: str,
+) -> None:
+    try:
+        await conversation_context.record_turn(
+            conversation_id,
+            classification=classification,
+            institution=ctx.institution,
+            account_name=ctx.account_name,
+            category=ctx.category,
+            merchant=ctx.merchant,
+            date_from=ctx.date_from.isoformat() if ctx.date_from else None,
+            date_to=ctx.date_to.isoformat() if ctx.date_to else None,
+            timeframe_label=ctx.timeframe_label,
+            amount_min=ctx.amount_min,
+            amount_max=ctx.amount_max,
+            answer_summary=answer_summary[:200],
+        )
+    except Exception as exc:
+        logger.warning("chat_router.record_turn_failed", extra={"error": str(exc)})
 
 
 # ── Route resolution ──────────────────────────────────────────────────────────
@@ -287,13 +335,9 @@ def _relaxation_note(original: QueryContext, used: QueryContext) -> str:
 
 async def _count_rag(question: str) -> int:
     try:
-        text_results = await text_search.search(question)
-        count = len(text_results)
-        if count == 0 and settings.search.vector_search_enabled:
-            count = len(await vector_search.search(question))
-        return count
+        return len(await text_search.search(question))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("chat_router.rag_failed", extra={"error": str(exc)})
+        logger.warning("chat_router.fts_failed", extra={"error": str(exc)})
         return 0
 
 

@@ -7,6 +7,7 @@ No langchain, no langgraph. Just HTTP calls to Ollama.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -36,6 +37,7 @@ async def generate(
     system: str | None = None,
     temperature: float | None = None,
     format_json: bool = False,
+    num_ctx: int | None = None,
 ) -> str:
     """Generate text from the local Ollama LLM.
 
@@ -58,7 +60,7 @@ async def generate(
         "stream": False,
         "options": {
             "temperature": temperature if temperature is not None else settings.ollama.temperature,
-            "num_ctx": settings.ollama.num_ctx,
+            "num_ctx": num_ctx if num_ctx is not None else settings.ollama.num_ctx,
         },
     }
     if system:
@@ -73,6 +75,57 @@ async def generate(
         response.raise_for_status()
         data = response.json()
         return data.get("response", "")
+    except httpx.ConnectError as exc:
+        raise OllamaConnectionError(f"Cannot connect to Ollama at {settings.ollama.base_url}") from exc
+    except OllamaModelNotFoundError:
+        raise
+    except httpx.HTTPStatusError as exc:
+        raise OllamaConnectionError(f"Ollama returned {exc.response.status_code}") from exc
+
+
+async def generate_stream(
+    prompt: str,
+    model: str | None = None,
+    system: str | None = None,
+    temperature: float | None = None,
+) -> AsyncIterator[str]:
+    """Stream text tokens from the local Ollama LLM.
+
+    Yields each token string as it arrives. Falls back to a single-batch
+    response if the connection does not support streaming.
+    """
+    client = _get_client()
+    model = model or settings.ollama.chat_model
+
+    payload: dict[str, Any] = {
+        "model": model,
+        "prompt": prompt,
+        "stream": True,
+        "options": {
+            "temperature": temperature if temperature is not None else settings.ollama.temperature,
+            "num_ctx": settings.ollama.num_ctx,
+        },
+    }
+    if system:
+        payload["system"] = system
+
+    try:
+        async with client.stream("POST", "/api/generate", json=payload) as response:
+            if response.status_code == 404:
+                raise OllamaModelNotFoundError(f"Model '{model}' not found in Ollama")
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                token = chunk.get("response", "")
+                if token:
+                    yield token
+                if chunk.get("done"):
+                    break
     except httpx.ConnectError as exc:
         raise OllamaConnectionError(f"Cannot connect to Ollama at {settings.ollama.base_url}") from exc
     except OllamaModelNotFoundError:
