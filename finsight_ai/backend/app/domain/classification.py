@@ -18,6 +18,23 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class RouteType(str, Enum):
+    """How the router will handle this question end-to-end."""
+    SIMPLE_SQL = "simple_sql"          # deterministic SQL, no LLM planner needed
+    SQL_ANALYSIS = "sql_analysis"      # SQL but LLM planner helps interpret/format
+    DOCUMENT_SEARCH = "document_search"  # FTS / RAG primary path
+    HYBRID = "hybrid"                  # SQL + FTS combined
+    CLARIFICATION = "clarification"    # question is too vague to route
+    UNSUPPORTED = "unsupported"        # outside scope (e.g. non-covered institution)
+
+
+class RouteRisk(str, Enum):
+    """How much the router trusts its rule-based decision."""
+    SAFE = "safe"                        # rule classifier is confident; skip LLM
+    NEEDS_LLM_PLANNER = "needs_llm_planner"  # complexity signals detected; call LLM
+    NEEDS_CLARIFICATION = "needs_clarification"  # missing critical filters; ask user
+
+
 class ChatIntent(str, Enum):
     """User-facing chatbot intents."""
 
@@ -143,3 +160,23 @@ class IntentClassificationResult(BaseModel):
             clarifying_question=None,
             source=source,
         )
+
+
+class RouteDecision(BaseModel):
+    """Routing decision produced before any SQL/RAG execution.
+
+    Built by ``intent_mapping.complexity_gate()`` from the classification result.
+    Attached to ``RoutingOutcome`` for observability and used by ``chat_router``
+    to decide whether to call the LLM planner.
+    """
+    route_type: RouteType
+    route_risk: RouteRisk
+    intent: ChatIntent
+    entities: ExtractedEntities = Field(default_factory=ExtractedEntities)
+    # Human-readable explanation of why this route/risk was chosen.
+    reason: str = ""
+    # Signals detected by the complexity gate (for debug/logging).
+    complexity_signals: list[str] = Field(default_factory=list)
+    # The raw rule result, preserved for debugging even when LLM overrides it.
+    rule_confidence: float = 0.0
+    llm_called: bool = False

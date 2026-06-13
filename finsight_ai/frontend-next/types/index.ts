@@ -104,6 +104,8 @@ export interface ChatMessage {
   answer?: StructuredAnswer;
   timestamp?: string;
   error_request_id?: string;
+  /** Set during SSE streaming — shows status text while LLM hasn't answered yet */
+  streamStatus?: string;
 }
 
 export interface ChatRequest {
@@ -155,6 +157,8 @@ export interface StructuredAnswer {
   sql_used: string[];
   rows_used: number;
   chart_payload: ChartPayload | null;
+  /** Short provenance string, e.g. "Chase Freedom, Mar 2026, 42 rows" */
+  based_on?: string;
   // Observability
   request_id?: string;
   timings?: AnswerTimings;

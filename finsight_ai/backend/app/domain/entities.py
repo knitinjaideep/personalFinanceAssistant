@@ -147,6 +147,9 @@ class QueryContext(BaseModel):
     is_recurring_only: bool = False
     limit: int = 50
 
+    # Routing metadata (populated by chat_router; used by answer_builder)
+    route_risk: str = "safe"
+
 
 class AnswerTimings(BaseModel):
     """Per-stage duration breakdown (all values in milliseconds, None = stage not run)."""
@@ -173,21 +176,58 @@ class StructuredAnswer(BaseModel):
     intent: str = ""
     confidence: float = 0.0
 
+    # Filter transparency — what the query actually searched for
+    searched_filters: dict[str, Any] = Field(default_factory=dict)
+    exact_match: bool = True          # False when exact filters returned no rows
+    suggestions_used: bool = False    # True when suggestions section is populated
+
     # Transparency / debugging
     sql_used: list[str] = Field(default_factory=list)   # parameterized SQL strings shown to user
     rows_used: int = 0
     chart_payload: dict[str, Any] | None = None         # {type, labels, datasets} for frontend chart
+
+    # Retrieval provenance — shown in "Based on" bar in the UI
+    based_on: str = ""   # e.g. "Chase Freedom transactions, Mar–Apr 2026, 42 rows"
+
+    # Phase 5/6: answer strategy and LLM call tracking
+    answer_strategy: str = "llm_narrative"  # template_only | llm_narrative | hybrid_template_plus_llm
+    llm_called: bool = True                 # False when template_only path was used
 
     # Observability — surfaced to frontend
     request_id: str = ""
     timings: AnswerTimings = Field(default_factory=AnswerTimings)
     follow_up_suggestions: list[str] = Field(default_factory=list)  # alias kept for API compat
 
+    # Populated by answer_builder; consumed by debug_payload assembly in chat.py.
+    # Not serialized to the standard API response — excluded from model_dump by chat API.
+    verifier_passed: bool = True
+    verifier_repaired: bool = False
+    verifier_warnings: list[str] = Field(default_factory=list)
+
+
+class ChatDebugPayload(BaseModel):
+    """Developer-only pipeline metadata. Returned when DEBUG_CHAT=true."""
+    route_type: str = ""
+    route_risk: str = ""
+    query_plan_task: str = ""
+    query_plan_source: str = ""
+    sql_queries_executed: list[str] = Field(default_factory=list)
+    row_count: int = 0
+    retrieval_count: int = 0
+    answer_strategy: str = ""
+    llm_called: bool = False
+    verifier_passed: bool = True
+    verifier_repaired: bool = False
+    verifier_warnings: list[str] = Field(default_factory=list)
+    fallback_steps: list[str] = Field(default_factory=list)
+    timings: dict[str, float | None] = Field(default_factory=dict)
+
 
 class ChatResponse(BaseModel):
     answer: StructuredAnswer
     raw_text: str = ""
     request_id: str = ""
+    debug: ChatDebugPayload | None = None
 
 
 class DocumentSummary(BaseModel):

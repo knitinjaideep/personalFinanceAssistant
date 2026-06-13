@@ -19,7 +19,12 @@ from app.domain.classification import (
     IntentClassificationResult,
 )
 from app.services import llm
-from app.services.intent_mapping import default_data_source, rule_classify, RULE_CONFIDENCE_THRESHOLD
+from app.services.intent_mapping import (
+    build_route_decision,
+    default_data_source,
+    rule_classify,
+    RULE_CONFIDENCE_THRESHOLD,
+)
 
 logger = get_logger(__name__)
 
@@ -134,74 +139,96 @@ def _validate(raw: str) -> IntentClassificationResult:
 async def classify(question: str) -> IntentClassificationResult:
     """Classify a user question into a validated IntentClassificationResult.
 
-    Fast path: rule classifier runs first (zero latency). If it returns
-    confidence >= RULE_CONFIDENCE_THRESHOLD the result is used immediately —
-    no LLM call is made.
+    Primary path: LLM classifier with JSON parsing (handles fences, prose wrapping).
+    Retry once on parse failure, then fall back to the rule classifier.
 
-    Slow path: only ambiguous questions (confidence below threshold) fall
-    through to a single LLM attempt. If that fails too, we return the rule
-    result or unknown fallback.
+    The rule classifier always runs first to populate entities and the routing
+    decision. That decision is passed to the query planner downstream.
+
+      - LLM succeeds          → return LLM result (source="llm")
+      - LLM fails, retry ok   → return retry result (source="llm")
+      - Both fail, rule known → return rule result (source="rule_fallback")
+      - Both fail, rule UNKNOWN → return zero-confidence fallback (source="invalid")
     """
     req_id = get_request_id()
 
-    # ── 1. Rule classifier (primary — ~0ms) ──────────────────────────────────
+    # ── 1. Rule classifier (always run — provides entities + routing decision) ──
     rule_result = rule_classify(question)
-    if rule_result.confidence >= RULE_CONFIDENCE_THRESHOLD:
-        logger.info(
-            "intent_classifier.rule_hit",
-            extra={
-                "stage": "intent_classified",
-                "request_id": req_id,
-                "intent": rule_result.intent.value,
-                "data_source": rule_result.data_source.value,
-                "confidence": round(rule_result.confidence, 3),
-                "source": "rule",
-            },
-        )
-        return rule_result
+    decision = build_route_decision(rule_result, question=question)
 
-    # ── 2. LLM fallback for ambiguous questions ───────────────────────────────
+    logger.info(
+        "intent_classifier.rule_result",
+        extra={
+            "stage": "intent_classified_rule",
+            "request_id": req_id,
+            "intent": rule_result.intent.value,
+            "data_source": rule_result.data_source.value,
+            "rule_confidence": round(rule_result.confidence, 3),
+            "route_type": decision.route_type.value,
+            "route_risk": decision.route_risk.value,
+            "complexity_signals": decision.complexity_signals,
+            "source": "rule",
+        },
+    )
+
+    # ── 2. LLM classifier — primary path, retried once on failure ────────────
     model = settings.ollama.classification_model
     prompt = _build_prompt(question)
-    last_raw = ""
-    try:
-        raw = await llm.generate(
-            prompt,
-            model=model,
-            system=_SYSTEM_PROMPT,
-            temperature=0.0,
-            format_json=True,
-            num_ctx=settings.ollama.classification_num_ctx,
-        )
-        last_raw = raw
-        result = _validate(raw)
-        logger.info(
-            "intent_classifier.llm_hit",
-            extra={
-                "stage": "intent_classified",
-                "request_id": req_id,
-                "model": model,
-                "intent": result.intent.value,
-                "data_source": result.data_source.value,
-                "confidence": round(result.confidence, 3),
-                "rule_confidence": round(rule_result.confidence, 3),
-            },
-        )
-        return result
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "intent_classifier.llm_failed",
-            extra={
-                "stage": "intent_classify_failed",
-                "request_id": req_id,
-                "model": model,
-                "error": str(exc),
-                "raw_output": last_raw[:300],
-            },
-        )
 
-    # ── 3. Return rule result even if low confidence, or unknown ─────────────
+    for attempt in range(2):
+        last_raw = ""
+        try:
+            raw = await llm.generate(
+                prompt,
+                model=model,
+                system=_SYSTEM_PROMPT,
+                temperature=0.0,
+                format_json=True,
+                num_ctx=settings.ollama.classification_num_ctx,
+            )
+            last_raw = raw
+            result = _validate(raw)
+            # Backfill institution/category extracted by the rule classifier when
+            # the LLM left them empty — rule entity extraction is regex-based and
+            # more reliable for known institution/category names than free-text LLM.
+            rule_ents = rule_result.entities
+            if not result.entities.institution and rule_ents.institution:
+                result.entities.institution = rule_ents.institution
+            if not result.entities.category and rule_ents.category:
+                result.entities.category = rule_ents.category
+            logger.info(
+                "intent_classifier.llm_hit",
+                extra={
+                    "stage": "intent_classified_llm",
+                    "request_id": req_id,
+                    "model": model,
+                    "attempt": attempt + 1,
+                    "intent": result.intent.value,
+                    "data_source": result.data_source.value,
+                    "confidence": round(result.confidence, 3),
+                    "rule_confidence": round(rule_result.confidence, 3),
+                    "route_type": decision.route_type.value,
+                    "route_risk": decision.route_risk.value,
+                    "complexity_signals": decision.complexity_signals,
+                },
+            )
+            return result
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "intent_classifier.llm_failed",
+                extra={
+                    "stage": "intent_classify_failed",
+                    "request_id": req_id,
+                    "model": model,
+                    "attempt": attempt + 1,
+                    "error": str(exc),
+                    "raw_output": last_raw[:300],
+                },
+            )
+
+    # ── 3. Both LLM attempts failed — fall back to rule result or unknown ─────
     if rule_result.intent != ChatIntent.UNKNOWN:
+        rule_result.source = "rule_fallback"
         return rule_result
 
     logger.warning(

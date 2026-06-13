@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     app_version: str = "2.0.0"
     environment: Literal["development", "production", "test"] = "development"
     debug: bool = Field(default=True)
+    debug_chat: bool = Field(
+        default=False,
+        description="When true, include pipeline debug metadata in /chat/query responses.",
+    )
     log_level: str = Field(default="INFO")
     cors_origins: list[str] = Field(default=["http://localhost:3000", "http://localhost:3001"])
 

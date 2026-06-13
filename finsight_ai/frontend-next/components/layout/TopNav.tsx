@@ -170,7 +170,7 @@ function ThemeToggle() {
           initial={{ opacity: 0, rotate: -45, scale: 0.6 }}
           animate={{ opacity: 1, rotate: 0, scale: 1 }}
           exit={{ opacity: 0, rotate: 45, scale: 0.6 }}
-          transition={{ duration: 0.22 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           className="flex items-center justify-center"
         >
           {isLight
@@ -307,10 +307,10 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
         <AnimatePresence>
           {mobileOpen && (
             <motion.div
-              initial={{ opacity: 0, y: -8, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.98 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
+              initial={{ opacity: 0, transform: "translateY(-8px)" }}
+              animate={{ opacity: 1, transform: "translateY(0px)" }}
+              exit={{ opacity: 0, transform: "translateY(-8px)" }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
               className="lg:hidden pointer-events-auto mt-2 rounded-3xl p-2 origin-top"
               style={{
                 background: "var(--nav-bg-scrolled)",

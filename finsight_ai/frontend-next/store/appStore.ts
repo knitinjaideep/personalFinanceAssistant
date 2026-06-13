@@ -40,6 +40,7 @@ interface AppState {
 
   chatHistory: ChatMessage[];
   addChatMessage: (message: ChatMessage) => void;
+  updateLastAssistantMessage: (patch: Partial<ChatMessage>) => void;
   clearChat: () => void;
 
   ingestionJobs: IngestionJob[];
@@ -88,6 +89,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         { timestamp: new Date().toISOString(), ...message },
       ],
     })),
+  updateLastAssistantMessage: (patch) =>
+    set((state) => {
+      const history = [...state.chatHistory];
+      // Find the last assistant message (the streaming placeholder)
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].role === "assistant") {
+          history[i] = { ...history[i], ...patch };
+          break;
+        }
+      }
+      return { chatHistory: history };
+    }),
   clearChat: () => set({ chatHistory: [] }),
 
   ingestionJobs: [],

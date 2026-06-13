@@ -25,6 +25,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from app.chat.guardrails import apply_guardrails_to_answer, safe_error_message
+from app.chat.retrieval import RetrievalChunk, chunks_to_citations, retrieve
 from app.chat.services.conversation_context import conversation_context
 from app.config import settings
 from app.core.logger import get_logger, get_request_id
@@ -268,6 +269,7 @@ def _build_structured_answer(
     confidence: float,
     sql_result: dict[str, Any] | None,
     text_results: list[dict],
+    retrieval_chunks: list[RetrievalChunk],
     used_ctx: QueryContext,
     has_sql: bool,
     req_id: str,
@@ -314,12 +316,29 @@ def _build_structured_answer(
                         "value": _format_value(key, value),
                     })
 
-    for chunk in text_results[:5]:
-        answer.citations.append({
-            "source": f"Page {chunk.get('page_number', '?')}",
-            "text": chunk.get("snippet", chunk.get("content", ""))[:200],
-            "document_id": chunk.get("document_id", ""),
-        })
+    if retrieval_chunks:
+        answer.citations.extend(chunks_to_citations(retrieval_chunks[:5]))
+    elif text_results:
+        for chunk in text_results[:5]:
+            answer.citations.append({
+                "source": f"Page {chunk.get('page_number', '?')}",
+                "text": chunk.get("snippet", chunk.get("content", ""))[:200],
+                "document_id": chunk.get("document_id", ""),
+            })
+
+    # Based-on provenance
+    based_on_parts: list[str] = []
+    if used_ctx.institution:
+        based_on_parts.append(used_ctx.institution.replace("_", " ").title())
+    if used_ctx.timeframe_label:
+        based_on_parts.append(used_ctx.timeframe_label)
+    if sql_result and sql_result.get("rows"):
+        n = len(sql_result["rows"])
+        based_on_parts.append(f"{n} row{'s' if n != 1 else ''}")
+    elif retrieval_chunks:
+        n = len(retrieval_chunks)
+        based_on_parts.append(f"{n} chunk{'s' if n != 1 else ''}")
+    answer.based_on = ", ".join(based_on_parts) if based_on_parts else ""
 
     if used_ctx.timeframe_label:
         answer.caveats.append(f"Results filtered to: {used_ctx.timeframe_label}.")
@@ -383,6 +402,7 @@ async def stream_chat(
                 "intent": classification.intent.value,
                 "data_source": classification.data_source.value,
                 "confidence": round(classification.confidence, 3),
+                "route_type": "simple_sql" if classification.data_source.value == "sql" else classification.data_source.value,
             },
         )
 
@@ -427,21 +447,55 @@ async def stream_chat(
 
         has_sql = sql_rows > 0
 
-        # ── 5. FTS5 text search ──────────────────────────────────────────────
-        text_results: list[dict] = []
+        # ── 5. Hybrid retrieval (FTS5 + vector) ─────────────────────────────
+        retrieval_chunks: list[RetrievalChunk] = []
+        text_results: list[dict] = []  # legacy compat
         force_rag = path in (QueryPath.FTS, QueryPath.VECTOR, QueryPath.HYBRID)
         rag_fallback = (not has_sql) and path == QueryPath.SQL
 
         if force_rag or rag_fallback:
             yield _sse("status", {"message": "Searching document text…"})
             try:
-                text_results = await text_search.search(question)
+                retrieval_mode = "hybrid" if path == QueryPath.HYBRID else "fts_only"
+                retrieval_chunks = await retrieve(
+                    question,
+                    mode=retrieval_mode,
+                    top_k=6,
+                    institution=used_ctx.institution,
+                )
+                text_results = [
+                    {
+                        "chunk_id": c.chunk_id,
+                        "document_id": c.document_id,
+                        "snippet": c.snippet or c.text[:200],
+                        "content": c.text,
+                        "page_number": c.page_number,
+                        "institution_type": c.institution_type,
+                    }
+                    for c in retrieval_chunks
+                ]
             except Exception as exc:
-                logger.warning("stream_chat.fts_failed", extra={"error": str(exc)})
+                logger.warning("stream_chat.retrieval_failed", extra={"error": str(exc)})
 
-        rag_count = len(text_results)
+        rag_count = len(retrieval_chunks)
 
-        # ── 6. Emit table/chart if data exists ───────────────────────────────
+        # ── 6. Emit citations if retrieval found document evidence ───────────
+        if retrieval_chunks:
+            yield _sse("citations", {
+                "chunks": [
+                    {
+                        "chunk_id": c.chunk_id,
+                        "document_name": c.document_name,
+                        "page_number": c.page_number,
+                        "snippet": (c.snippet or c.text)[:150],
+                        "score": c.score,
+                        "retrieval_method": c.retrieval_method,
+                    }
+                    for c in retrieval_chunks[:5]
+                ]
+            })
+
+        # ── 6b. Emit table/chart if data exists ──────────────────────────────
         if has_sql and sql_result:
             rows = sql_result.get("rows", [])
             cols = sql_result.get("columns", [])
@@ -481,8 +535,8 @@ async def stream_chat(
             yield _sse("done", {"request_id": req_id, "duration_ms": round((time.perf_counter() - total_start) * 1000, 1)})
             return
 
-        # ── 8. Stream narrative tokens ────────────────────────────────────────
-        yield _sse("status", {"message": "Generating answer…"})
+        # ── 8. Build and stream verified answer ──────────────────────────────
+        yield _sse("status", {"message": "Building answer…"})
 
         llm_context = _build_llm_context(sql_result, text_results, [], used_ctx)
         period_hint = f" The data is filtered to {used_ctx.timeframe_label}." if used_ctx.timeframe_label else ""
@@ -535,6 +589,7 @@ async def stream_chat(
             confidence=classification.confidence,
             sql_result=sql_result,
             text_results=text_results,
+            retrieval_chunks=retrieval_chunks,
             used_ctx=used_ctx,
             has_sql=has_sql,
             req_id=req_id,

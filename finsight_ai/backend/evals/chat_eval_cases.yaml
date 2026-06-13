@@ -1,0 +1,631 @@
+# Coral Chat Eval Cases — baseline suite
+#
+# How to run:
+#   cd backend
+#   python evals/run_chat_evals.py
+#   python evals/run_chat_evals.py --filter spending
+#   python evals/run_chat_evals.py --id spend_simple_001
+#   python evals/run_chat_evals.py --fail-fast
+#
+# Fields:
+#   id                      — unique case identifier
+#   question                — the verbatim user question
+#   expected.intent         — ChatIntent value(s) the classifier must produce
+#   expected.domain         — DataSource value(s): sql | rag | hybrid
+#   expected.route_type     — RouteType: simple_sql | sql_analysis | document_search | hybrid | clarification | unsupported
+#   expected.route_risk     — RouteRisk: safe | needs_llm_planner | needs_clarification
+#   expected.required_entities — entity keys the classifier must extract
+#   expected.answer_must_not_include — strings that must NOT appear in the final answer
+#   tags                    — category labels for --filter grouping
+#
+# NOTE: answer_must_include is intentionally omitted for most cases because the
+# DB may be empty in CI. Structural checks (intent/domain/entity/route) are the
+# reliable baseline signal.
+
+# ── 1. Simple spending questions (3) ──────────────────────────────────────────
+
+- id: spend_simple_001
+  question: "How much did I spend last month?"
+  tags: [spending, simple]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    plan_task_type: aggregate_transactions
+    answer_must_not_include: ["I assume", "probably", "I don't know"]
+
+- id: spend_simple_002
+  question: "What was my total spending this year?"
+  tags: [spending, simple]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    plan_task_type: aggregate_transactions
+    answer_must_not_include: ["I assume", "probably"]
+
+- id: spend_simple_003
+  question: "Show me my spending by category"
+  tags: [spending, simple]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    plan_task_type: aggregate_transactions
+
+# ── 2. Merchant filter questions (3) ─────────────────────────────────────────
+
+- id: merchant_001
+  question: "How much did I spend at Whole Foods last month?"
+  tags: [merchant, spending]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    plan_task_type: aggregate_transactions
+    required_entities:
+      merchant: ["whole foods"]
+    answer_must_not_include: ["I assume", "I don't know"]
+
+- id: merchant_002
+  question: "Show me all my Amazon transactions"
+  tags: [merchant, transaction]
+  expected:
+    intent: transaction_search
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    plan_task_type: list_transactions
+    required_entities:
+      merchant: ["amazon"]
+
+- id: merchant_003
+  question: "Find charges from Starbucks this month"
+  tags: [merchant, transaction]
+  expected:
+    intent: [transaction_search, spending_summary]
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    plan_task_type: [list_transactions, aggregate_transactions]
+    required_entities:
+      merchant: ["starbucks"]
+
+# ── 3. Category filter questions (3) ─────────────────────────────────────────
+
+- id: category_001
+  question: "How much did I spend on groceries in March?"
+  tags: [category, spending]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      category: ["groceries"]
+    answer_must_not_include: ["I don't know", "I assume"]
+
+- id: category_002
+  question: "What is my dining spend this quarter?"
+  tags: [category, spending]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      category: ["restaurants", "dining"]
+
+- id: category_003
+  question: "How much have I spent on travel this year?"
+  tags: [category, spending]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      category: ["travel"]
+
+# ── 4. Institution filter questions (2) ──────────────────────────────────────
+
+- id: institution_001
+  question: "What fees did Morgan Stanley charge me?"
+  tags: [institution, fees]
+  expected:
+    intent: fees_summary
+    domain: [sql, hybrid]
+    route_type: hybrid
+    route_risk: safe
+    plan_task_type: aggregate_transactions
+    required_entities:
+      institution: ["morgan_stanley"]
+    answer_must_not_include: ["I assume", "I don't know"]
+
+- id: institution_002
+  question: "Show me my Chase transactions from January"
+  tags: [institution, transaction]
+  expected:
+    intent: transaction_search
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    plan_task_type: list_transactions
+    required_entities:
+      institution: ["chase"]
+
+# ── 5. Account filter questions (2) ──────────────────────────────────────────
+
+- id: account_001
+  question: "How much did I spend on my Amex Gold card last month?"
+  tags: [account, spending]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      institution: ["amex"]
+    answer_must_not_include: ["I assume"]
+
+- id: account_002
+  question: "What is my Chase Sapphire balance?"
+  tags: [account, balance]
+  expected:
+    intent: balance_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    plan_task_type: balance_lookup
+    required_entities:
+      institution: ["chase"]
+
+# ── 6. Date range questions (2) ──────────────────────────────────────────────
+
+- id: daterange_001
+  question: "How much did I spend in Q1 2025?"
+  tags: [daterange, spending]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    answer_must_not_include: ["I assume", "I don't know"]
+
+- id: daterange_002
+  question: "Show me my transactions from January to March"
+  tags: [daterange, transaction]
+  expected:
+    intent: transaction_search
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+
+# ── 7. Follow-up / contextual questions (2) ──────────────────────────────────
+# These simulate "what about March?" style follow-ups.
+# The runner evaluates them independently (no conversation history),
+# so they're treated as standalone questions with embedded time context.
+
+- id: followup_001
+  question: "What about my spending in March?"
+  tags: [followup, spending]
+  expected:
+    intent: spending_summary
+    domain: sql
+    # "what about" triggers complexity signal → needs_llm_planner
+    route_type: sql_analysis
+    route_risk: needs_llm_planner
+    # "March" should be extracted as time context
+    answer_must_not_include: ["I assume", "I don't know"]
+
+- id: followup_002
+  question: "What about March dining specifically?"
+  tags: [followup, spending, category]
+  expected:
+    intent: spending_summary
+    domain: sql
+    # "what about" triggers complexity signal → needs_llm_planner
+    route_type: sql_analysis
+    route_risk: needs_llm_planner
+    required_entities:
+      category: ["restaurants", "dining"]
+
+# ── 8. No-data / ambiguous scenarios (2) ─────────────────────────────────────
+# These test that the pipeline produces a helpful fallback, not a crash or
+# a confabulated dollar amount.
+
+- id: nodata_001
+  question: "How much did I spend at a store that doesn't exist xyz123?"
+  tags: [nodata, fallback]
+  expected:
+    intent: [spending_summary, transaction_search]
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    # Pipeline must not invent a number for a nonsense merchant
+    answer_must_not_include: ["I assume", "probably", "$0.00"]
+
+- id: nodata_002
+  question: "What is my Fidelity balance?"
+  tags: [nodata, balance]
+  expected:
+    intent: balance_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    # Fidelity is not a covered institution — must not hallucinate a balance
+    answer_must_not_include: ["I assume", "probably", "I don't know for sure"]
+
+# ── 9. Comparison questions (2) ──────────────────────────────────────────────
+
+- id: comparison_001
+  question: "Compare my spending in March vs April"
+  tags: [comparison]
+  expected:
+    intent: comparison
+    domain: sql
+    # comparison always triggers sql_analysis + needs_llm_planner
+    route_type: sql_analysis
+    route_risk: needs_llm_planner
+    plan_task_type: compare_spending
+    answer_must_not_include: ["I assume", "I don't know"]
+
+- id: comparison_002
+  question: "Did I spend more on dining last month or the month before?"
+  tags: [comparison, category]
+  expected:
+    intent: [comparison, spending_summary]
+    domain: sql
+    # "more ... or" → comparison intent, needs LLM analysis
+    route_type: sql_analysis
+    route_risk: needs_llm_planner
+    plan_task_type: [compare_spending, aggregate_transactions]
+    required_entities:
+      category: ["restaurants", "dining"]
+
+# ── 10. Document / RAG-style questions (2) ───────────────────────────────────
+
+- id: rag_001
+  question: "What does my Amex statement say about interest charges?"
+  tags: [rag, document]
+  expected:
+    intent: document_lookup
+    domain: [rag, hybrid]
+    route_type: document_search
+    route_risk: safe
+    plan_task_type: document_search
+    required_entities:
+      institution: ["amex"]
+    answer_must_not_include: ["I assume", "probably"]
+
+- id: rag_002
+  question: "What statements do I have from Morgan Stanley?"
+  tags: [rag, document]
+  expected:
+    intent: [account_summary, document_lookup]
+    domain: [sql, hybrid, rag]
+    # account_summary → simple_sql; document_lookup → document_search or rag
+    route_type: [simple_sql, document_search]
+    route_risk: safe
+    required_entities:
+      institution: ["morgan_stanley"]
+
+# ── 11. Ambiguous / clarification-requiring questions (2) ────────────────────
+
+- id: ambiguous_001
+  question: "Tell me about gold"
+  tags: [ambiguous, clarification]
+  expected:
+    # "gold" could be Amex Gold, gold commodity, or something else.
+    # Any coherent intent is acceptable — the key constraint is no hallucination.
+    intent: [spending_summary, investment_summary, account_summary, unknown]
+    domain: [sql, hybrid, unknown]
+    # vague question: low rule confidence → needs_llm_planner or clarification
+    route_type: [sql_analysis, hybrid, clarification]
+    route_risk: [needs_llm_planner, needs_clarification]
+    answer_must_not_include: ["I assume", "probably", "I'm not sure what you mean but here are some numbers"]
+
+- id: ambiguous_002
+  question: "What happened last month?"
+  tags: [ambiguous, clarification]
+  expected:
+    # Vague — should produce spending/transaction/balance, never invent facts
+    intent: [spending_summary, transaction_search, balance_summary, account_summary, unknown]
+    domain: [sql, hybrid, unknown]
+    # "what happened" → vague_happened complexity signal
+    route_type: [sql_analysis, hybrid, clarification]
+    route_risk: [needs_llm_planner, needs_clarification]
+    answer_must_not_include: ["I assume", "probably caused by"]
+
+# ── 12. Silent-relaxation guard cases (6) ────────────────────────────────────
+# These cases prove that the pipeline does NOT answer with unrelated data
+# when the exact filters return nothing. The bot must say "no match" and
+# clearly identify what it searched for — it must never silently widen the
+# query and present the widened result as though it answered the question.
+
+- id: no_relax_001
+  question: "How much did I spend at Costco in May 2026?"
+  tags: [nodata, no_relax, merchant, daterange]
+  expected:
+    intent: [spending_summary, transaction_search]
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      merchant: ["costco"]
+    # Must NOT claim a dollar figure unless Costco+May2026 rows actually exist.
+    # Must NOT answer with grocery spending in May, or Costco in April.
+    answer_must_not_include:
+      - "I assume"
+      - "probably"
+      - "based on similar"
+      - "I found related"
+      - "although you asked"
+
+- id: no_relax_002
+  question: "Show me my Netflix charges in January 2025"
+  tags: [nodata, no_relax, merchant, daterange]
+  expected:
+    intent: [transaction_search, spending_summary]
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      merchant: ["netflix"]
+    # Must not return non-Netflix charges or non-January data as the answer
+    answer_must_not_include:
+      - "I assume"
+      - "based on related"
+      - "I found subscriptions"
+      - "although you asked"
+
+- id: no_relax_003
+  question: "What are my Chase transactions from February 2023?"
+  tags: [nodata, no_relax, institution, daterange]
+  expected:
+    intent: transaction_search
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      institution: ["chase"]
+    # If we have no Chase data from Feb 2023, must say so — not return
+    # Chase transactions from a different month as the answer
+    answer_must_not_include:
+      - "I assume"
+      - "probably"
+      - "I found Chase transactions"  # would be OK only if Feb 2023 is confirmed
+
+- id: no_relax_004
+  question: "How much did I spend on groceries at Whole Foods in March 2024?"
+  tags: [nodata, no_relax, merchant, category, daterange]
+  expected:
+    intent: [spending_summary, transaction_search]
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      merchant: ["whole foods"]
+      category: ["groceries"]
+    # Must not drop merchant or date and return total grocery spend instead
+    answer_must_not_include:
+      - "I assume"
+      - "probably"
+      - "I found grocery transactions"  # only valid if Whole Foods+March 2024 matched
+      - "based on similar merchants"
+
+- id: no_relax_005
+  question: "Show me Amex transactions over $500 in April 2025"
+  tags: [nodata, no_relax, institution, daterange]
+  expected:
+    intent: transaction_search
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      institution: ["amex"]
+    # Must not return transactions under $500 or from a different month
+    answer_must_not_include:
+      - "I assume"
+      - "probably"
+      - "I found related Amex transactions"
+      - "although you asked for over"
+
+- id: no_relax_006
+  question: "What did I spend at Starbucks last week?"
+  tags: [nodata, no_relax, merchant, daterange]
+  expected:
+    intent: [transaction_search, spending_summary]
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    required_entities:
+      merchant: ["starbucks"]
+    # Must not return total coffee/restaurant spend as though it answered Starbucks
+    answer_must_not_include:
+      - "I assume"
+      - "probably"
+      - "I found coffee"
+      - "based on similar merchants"
+      - "I found restaurant"
+
+# ── 13. Phase 5/6 — FactBundle accuracy + template-only checks (8) ───────────
+# These cases verify:
+#   a) Template path is chosen for simple SQL answers (llm_called=False)
+#   b) LLM is NOT called for simple single-metric questions
+#   c) Answers contain a $ amount (proving Python computed it, not LLM guessing)
+#   d) Comparison and "why" questions still use LLM (hybrid/llm_narrative)
+
+- id: phase56_template_001
+  question: "How much did I spend on groceries last month?"
+  tags: [phase56, template, spending]
+  expected:
+    intent: spending_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    # Simple SQL with exact category filter → template_only, LLM not called
+    answer_strategy: template_only
+    answer_must_not_include: ["I assume", "probably", "I think"]
+
+- id: phase56_template_002
+  question: "What are my account balances?"
+  tags: [phase56, template, balance]
+  expected:
+    intent: balance_summary
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    answer_strategy: template_only
+    answer_must_not_include: ["I assume", "I think", "roughly"]
+
+- id: phase56_template_003
+  question: "What fees has Morgan Stanley charged me?"
+  tags: [phase56, template, fees]
+  expected:
+    intent: fees_summary
+    domain: [sql, hybrid]
+    route_type: [simple_sql, hybrid]
+    route_risk: safe
+    answer_must_not_include: ["I assume", "probably", "I think"]
+
+- id: phase56_template_004
+  question: "Show me my Chase credit card transactions"
+  tags: [phase56, template, transaction]
+  expected:
+    intent: transaction_search
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    answer_strategy: template_only
+    answer_must_not_include: ["I assume", "I think"]
+
+- id: phase56_template_005
+  question: "How much is my total invested amount?"
+  tags: [phase56, template, investment]
+  expected:
+    intent: investment_summary
+    domain: [sql, hybrid]
+    route_type: [simple_sql, hybrid]
+    route_risk: safe
+    answer_must_not_include: ["I assume", "probably", "I think", "typically"]
+
+- id: phase56_llm_001
+  question: "Why did my spending increase last month?"
+  tags: [phase56, llm, analysis]
+  expected:
+    intent: [spending_summary, comparison]
+    domain: sql
+    # "why" → complexity signal → hybrid_template_plus_llm or llm_narrative
+    route_type: sql_analysis
+    route_risk: needs_llm_planner
+    answer_must_not_include: ["I assume", "total_spent", "fee_category"]
+
+- id: phase56_llm_002
+  question: "Compare my March vs April spending and explain the trends"
+  tags: [phase56, llm, comparison]
+  expected:
+    intent: comparison
+    domain: sql
+    route_type: sql_analysis
+    route_risk: needs_llm_planner
+    # Comparison with "explain" → LLM narrative needed
+    answer_must_not_include: ["I assume", "total_spent", "sql_used"]
+
+- id: phase56_nodata_001
+  question: "How much did I spend at XYZ999 store in March 2025?"
+  tags: [phase56, nodata, template]
+  expected:
+    intent: [spending_summary, transaction_search]
+    domain: sql
+    route_type: simple_sql
+    route_risk: safe
+    # No data → template produces clean no-data message
+    answer_strategy: template_only
+    answer_must_not_include: ["I assume", "probably", "$0.00", "I think"]
+
+# ── Phase 9: Hybrid retrieval eval cases ─────────────────────────────────────
+
+- id: retrieval_fee_001
+  question: "What advisory fees did Morgan Stanley charge me last quarter?"
+  tags: [retrieval, fees, fts, document_search]
+  expected:
+    intent: fees_summary
+    domain: [sql, hybrid]
+    route_type: [simple_sql, hybrid]
+    route_risk: safe
+    answer_must_not_include: ["I assume", "probably", "I don't know"]
+
+- id: retrieval_fee_002
+  question: "What expense ratio is charged on my E*TRADE investments?"
+  tags: [retrieval, fees, document_search, semantic]
+  expected:
+    intent: [fees_summary, investment_summary]
+    domain: [rag, hybrid]
+    route_type: [document_search, hybrid]
+    route_risk: [safe, needs_llm_planner]
+    answer_must_not_include: ["I assume", "I'm not sure", "I don't know"]
+
+- id: retrieval_statement_001
+  question: "What does my latest Bank of America statement say about interest charges?"
+  tags: [retrieval, statement, fts, document_search]
+  expected:
+    intent: [document_lookup, transaction_search]
+    domain: [rag, hybrid]
+    route_type: [document_search, hybrid]
+    route_risk: [safe, needs_llm_planner]
+    answer_must_not_include: ["I assume", "sql_used", "total_amount"]
+
+- id: retrieval_investment_001
+  question: "What is the unrealized gain or loss on my portfolio?"
+  tags: [retrieval, investments, document_search, semantic]
+  expected:
+    intent: investment_summary
+    domain: [sql, hybrid]
+    route_type: [simple_sql, hybrid]
+    route_risk: safe
+    answer_must_not_include: ["I assume", "probably"]
+
+- id: retrieval_semantic_001
+  question: "Do any of my accounts charge a monthly maintenance fee?"
+  tags: [retrieval, fees, semantic, fts]
+  expected:
+    intent: fees_summary
+    domain: [sql, rag, hybrid]
+    route_type: [simple_sql, document_search, hybrid]
+    route_risk: safe
+    answer_must_not_include: ["I assume", "I don't know", "probably"]
+
+- id: retrieval_semantic_002
+  question: "Show me any overdraft or late payment charges"
+  tags: [retrieval, fees, semantic, fts]
+  expected:
+    intent: [fees_summary, transaction_search]
+    domain: [sql, hybrid]
+    route_type: [simple_sql, hybrid]
+    route_risk: safe
+    answer_must_not_include: ["I assume", "probably"]
+
+- id: retrieval_doc_evidence_001
+  question: "What investment notes or commentary is in my Morgan Stanley statement?"
+  tags: [retrieval, document_search, fts, investment_notes]
+  expected:
+    intent: [document_lookup, investment_summary]
+    domain: [rag, hybrid]
+    route_type: [document_search, hybrid]
+    route_risk: [safe, needs_llm_planner]
+    answer_must_not_include: ["I assume", "sql_used", "I don't know"]
+
+- id: retrieval_hybrid_001
+  question: "How much did I spend on my Chase Sapphire card and what does my statement show?"
+  tags: [retrieval, hybrid, spending, document_search]
+  expected:
+    intent: [spending_summary, account_summary]
+    domain: [sql, hybrid]
+    route_type: [simple_sql, hybrid]
+    route_risk: [safe, needs_llm_planner]
+    answer_must_not_include: ["I assume", "probably"]

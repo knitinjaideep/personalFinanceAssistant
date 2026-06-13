@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from app.chat.query_planner import QueryPlan, plan as build_query_plan
 from app.chat.services.conversation_context import conversation_context
 from app.config import settings
 from app.core.logger import get_logger, get_request_id
@@ -27,13 +28,14 @@ from app.domain.classification import (
     ChatIntent,
     DataSource,
     IntentClassificationResult,
+    RouteDecision,
 )
 from app.domain.entities import QueryContext, StructuredAnswer
 from app.domain.enums import QueryIntent, QueryPath
-from app.services import availability, sql_query, text_search
+from app.services import availability, sql_query, text_search, vector_search
 from app.services.answer_builder import build_answer
 from app.services.intent_classifier import classify
-from app.services.intent_mapping import to_query_intent
+from app.services.intent_mapping import build_route_decision, to_query_intent
 from app.services.normalization import (
     category_display_name,
     institution_display_name,
@@ -67,6 +69,8 @@ class RoutingOutcome:
     fallback_steps: list[str] = field(default_factory=list)
     sql_rows: int = 0
     rag_chunks: int = 0
+    route_decision: RouteDecision | None = None
+    query_plan: QueryPlan | None = None
 
 
 # ── Context construction ──────────────────────────────────────────────────────
@@ -151,8 +155,32 @@ async def route(
             conversation_id, classification
         )
 
+    # ── 1c. Build routing decision (complexity gate) ──────────────────────────
+    decision = build_route_decision(classification, question=question)
+    decision.llm_called = classification.source == "llm"
+
     query_intent = to_query_intent(classification.intent)
     ctx = _build_context(classification)
+
+    # ── 1d. Query planner — structured plan from classification + decision ────
+    query_plan = await build_query_plan(
+        classification, decision, question=question, ctx=ctx
+    )
+
+    # When the planner says clarification is needed and the classifier agrees,
+    # honour that immediately (avoids a wasted SQL round-trip).
+    if query_plan.requires_clarification() and classification.intent == ChatIntent.UNKNOWN:
+        steps.append("planner_requested_clarification")
+        return _finalize(
+            _clarification_answer(question, classification, query_intent),
+            classification, query_intent, "clarification", CLARIFICATION_NEEDED,
+            steps, 0, 0, req_id, decision, query_plan,
+        )
+
+    # Use the planner's resolved context for downstream SQL (preferred path).
+    ctx = query_plan.to_query_context()
+    # Embed route_risk into ctx so answer_builder can read it without an extra kwarg.
+    ctx.route_risk = decision.route_risk.value if decision else "safe"
 
     logger.info(
         "chat_router.classified",
@@ -164,6 +192,10 @@ async def route(
             "data_source": classification.data_source.value,
             "confidence": round(classification.confidence, 3),
             "query_intent": query_intent.value,
+            "route_type": decision.route_type.value,
+            "route_risk": decision.route_risk.value,
+            "complexity_signals": decision.complexity_signals,
+            "llm_called": decision.llm_called,
             "category": ctx.category,
             "institution": ctx.institution,
             "merchant": ctx.merchant,
@@ -177,17 +209,16 @@ async def route(
         return _finalize(
             _clarification_answer(question, classification, query_intent),
             classification, query_intent, "clarification", CLARIFICATION_NEEDED,
-            steps, 0, 0, req_id,
+            steps, 0, 0, req_id, decision, query_plan,
         )
 
     # ── 3. Resolve route ─────────────────────────────────────────────────────
     path = _resolve_path(classification.data_source, query_intent)
 
-    # ── 4. SQL fallback chain (exact → relaxed → date fallback) ──────────────
+    # ── 4. SQL exact execution — no silent filter relaxation ─────────────────
     sql_result: dict[str, Any] | None = None
-    used_ctx = ctx
     if path in (QueryPath.SQL, QueryPath.HYBRID):
-        sql_result, used_ctx, sql_steps = await _sql_with_fallbacks(query_intent, question, ctx, req_id)
+        sql_result, sql_steps = await _sql_exact(query_intent, question, ctx, req_id)
         steps.extend(sql_steps)
 
     sql_rows = len(sql_result["rows"]) if sql_result and sql_result.get("rows") else 0
@@ -202,32 +233,38 @@ async def route(
             steps.append("rag_fallback")
         rag_chunks = await _count_rag(question)
 
-    # ── 6. If we have data, let answer_builder compose the full answer ───────
-    if has_sql or rag_chunks > 0:
+    # ── 6. If we have data (or suggestions), let answer_builder compose the answer
+    sql_was_relaxed = bool(sql_result and sql_result.get("_relaxed"))
+    has_suggestions = bool(sql_result and sql_result.get("suggestions"))
+    if has_sql or rag_chunks > 0 or has_suggestions:
         effective_path = path
         if rag_fallback and rag_chunks > 0:
             effective_path = QueryPath.HYBRID  # blend whatever SQL we have + chunks
         answer = await build_answer(
             question, query_intent, effective_path,
-            classification.confidence, used_ctx, req_id=req_id,
+            classification.confidence, ctx, req_id=req_id,
         )
-        status = ANSWERED if has_sql else PARTIAL
-        if used_ctx is not ctx:
-            answer.caveats.append(_relaxation_note(ctx, used_ctx))
-            status = PARTIAL
+        # Labeled relaxation — attach a visible caveat so the user knows we broadened.
+        if sql_was_relaxed:
+            answer.caveats = list(answer.caveats or [])
+            answer.caveats.append(
+                "Search broadened: category/merchant filters were dropped because no exact "
+                "match was found. Results may include other categories."
+            )
+        status = PARTIAL if (not has_sql or sql_was_relaxed) else ANSWERED
 
         # Record resolved context for follow-up resolution
         if conversation_id:
-            await _record_turn(conversation_id, classification, used_ctx, answer.summary)
+            await _record_turn(conversation_id, classification, ctx, answer.summary)
 
         return _finalize(answer, classification, query_intent, effective_path.value,
-                         status, steps, sql_rows, rag_chunks, req_id)
+                         status, steps, sql_rows, rag_chunks, req_id, decision, query_plan)
 
     # ── 7. Helpful fallback — never a bare "no data" ─────────────────────────
     steps.append("helpful_fallback")
     answer = await _helpful_answer(question, classification, query_intent, ctx, req_id)
     return _finalize(answer, classification, query_intent, "fallback",
-                     NO_DATA_AFTER_FALLBACK, steps, 0, 0, req_id)
+                     NO_DATA_AFTER_FALLBACK, steps, 0, 0, req_id, decision, query_plan)
 
 
 # ── Conversation context recording ────────────────────────────────────────────
@@ -270,65 +307,60 @@ def _resolve_path(data_source: DataSource, query_intent: QueryIntent) -> QueryPa
     return QueryPath.HYBRID
 
 
-# ── SQL fallback chain ────────────────────────────────────────────────────────
+# ── SQL execution with labeled relaxation fallback ────────────────────────────
 
-async def _sql_with_fallbacks(
+async def _sql_exact(
     query_intent: QueryIntent,
     question: str,
     ctx: QueryContext,
     req_id: str,
-) -> tuple[dict[str, Any], QueryContext, list[str]]:
-    """A: exact → B: relaxed filters → C: date fallback. Returns first non-empty."""
-    steps: list[str] = []
+) -> tuple[dict[str, Any], list[str]]:
+    """Execute SQL with the user's exact filters first.
 
-    # A. Exact
-    steps.append("sql_exact")
+    If exact query returns nothing AND category/merchant filters were applied,
+    retries once with those filters dropped (broadened search). The relaxation
+    is always labeled — it is stored in result['_relaxed'] so callers can mark
+    the answer as PARTIAL with a visible caveat. No silent widening.
+    """
+    steps: list[str] = ["sql_exact"]
     result = await sql_query.execute_for_intent(query_intent, question, ctx)
     if result.get("rows"):
-        return result, ctx, steps
+        logger.info(
+            "chat_router.sql_exact_hit",
+            extra={"stage": "sql_exact", "request_id": req_id, "rows": len(result["rows"])},
+        )
+        return result, steps
 
-    # B. Relaxed — drop the most restrictive filters (category, merchant) but keep
-    #    institution + date. Category/merchant matching is the usual culprit.
-    if ctx.category or ctx.merchant:
-        relaxed = ctx.model_copy(update={"category": None, "merchant": None})
-        steps.append("sql_relaxed_filters")
-        result = await sql_query.execute_for_intent(query_intent, question, relaxed)
-        if result.get("rows"):
+    sug_count = len(result.get("suggestions", []))
+    logger.info(
+        "chat_router.sql_exact_miss",
+        extra={
+            "stage": "sql_exact_miss",
+            "request_id": req_id,
+            "searched_filters": result.get("searched_filters", {}),
+            "suggestion_count": sug_count,
+        },
+    )
+
+    # Labeled relaxation: drop category + merchant filters and retry once.
+    # Only attempt when at least one of those filters was set (otherwise same query).
+    if ctx.category is not None or ctx.merchant is not None:
+        relaxed_ctx = ctx.model_copy(update={"category": None, "merchant": None})
+        relaxed_result = await sql_query.execute_for_intent(query_intent, question, relaxed_ctx)
+        if relaxed_result.get("rows"):
+            steps.append("sql_relaxed_filters")
+            relaxed_result["_relaxed"] = True
             logger.info(
                 "chat_router.sql_relaxed_hit",
-                extra={"stage": "sql_fallback", "request_id": req_id, "dropped": "category/merchant"},
+                extra={
+                    "stage": "sql_relaxed_filters",
+                    "request_id": req_id,
+                    "rows": len(relaxed_result["rows"]),
+                },
             )
-            return result, relaxed, steps
+            return relaxed_result, steps
 
-    # C. Date fallback — drop the date window and use most-recent available data.
-    if ctx.date_from or ctx.date_to:
-        no_date = ctx.model_copy(update={
-            "date_from": None, "date_to": None, "timeframe_label": "",
-            "category": None, "merchant": None,
-        })
-        steps.append("sql_date_fallback")
-        result = await sql_query.execute_for_intent(query_intent, question, no_date)
-        if result.get("rows"):
-            logger.info(
-                "chat_router.sql_date_fallback_hit",
-                extra={"stage": "sql_fallback", "request_id": req_id},
-            )
-            return result, no_date, steps
-
-    return result, ctx, steps
-
-
-def _relaxation_note(original: QueryContext, used: QueryContext) -> str:
-    parts: list[str] = []
-    if original.category and not used.category:
-        parts.append(f"the {category_display_name(original.category)} category filter")
-    if original.merchant and not used.merchant:
-        parts.append(f"the merchant filter ({original.merchant})")
-    if (original.date_from or original.date_to) and not (used.date_from or used.date_to):
-        parts.append(f"the time filter ({original.timeframe_label or 'requested period'})")
-    if parts:
-        return "I broadened the search by removing " + ", ".join(parts) + " to find matching data."
-    return "I broadened the search to find matching data."
+    return result, steps
 
 
 # ── RAG counting ──────────────────────────────────────────────────────────────
@@ -450,6 +482,8 @@ def _finalize(
     sql_rows: int,
     rag_chunks: int,
     req_id: str,
+    decision: RouteDecision | None = None,
+    query_plan: QueryPlan | None = None,
 ) -> RoutingOutcome:
     logger.info(
         "chat_router.done",
@@ -460,10 +494,18 @@ def _finalize(
             "classifier_intent": classification.intent.value,
             "query_intent": query_intent.value,
             "selected_route": route,
+            "route_type": decision.route_type.value if decision else "unknown",
+            "route_risk": decision.route_risk.value if decision else "unknown",
+            "complexity_signals": decision.complexity_signals if decision else [],
+            "llm_called": decision.llm_called if decision else False,
+            "plan_task_type": query_plan.task_type if query_plan else "unknown",
+            "plan_source": query_plan.plan_source if query_plan else "unknown",
             "sql_rows": sql_rows,
             "rag_chunks": rag_chunks,
             "fallback_steps": steps,
             "final_answer_status": status,
+            "answer_strategy": getattr(answer, "answer_strategy", "unknown"),
+            "answer_llm_called": getattr(answer, "llm_called", True),
         },
     )
     return RoutingOutcome(
@@ -475,4 +517,6 @@ def _finalize(
         fallback_steps=steps,
         sql_rows=sql_rows,
         rag_chunks=rag_chunks,
+        route_decision=decision,
+        query_plan=query_plan,
     )

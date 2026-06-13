@@ -66,6 +66,26 @@ Each line in `logs/coral.log` is a JSON object:
 }
 ```
 
+### Full pipeline event map
+
+Every chat request emits these structured events in order:
+
+| Event | Stage key | Key fields |
+|-------|-----------|------------|
+| HTTP in | `request_started` | `method`, `path` |
+| Chat received | `chat_request_received` | `user_question` (≤200 chars) |
+| Router start | `chat_router_start` | `user_question`, `selected_model` |
+| Intent classified | `chat_router_classified` | `classifier_intent`, `data_source`, `confidence`, `route_type`, `route_risk`, `llm_called` |
+| SQL started | `sql_execution_started` | `intent`, `filters` (safe summary, no values) |
+| SQL completed | `sql_execution_completed` | `row_count`, `exact_match`, `suggestion_count`, `sql_template`, `duration_ms` |
+| RAG retrieval | `rag_retrieval_completed` | `chunks_retrieved`, `sources`, `duration_ms` |
+| Fact builder | `fact_builder_completed` | `rows_used`, `total_spend`, `total_fees`, `balance`, `transaction_count` |
+| LLM narrative | `answer_builder.llm_narrative_generated` | `intent`, `json_parse` |
+| Answer done | `response_generation_completed` | `answer_strategy`, `llm_called`, `verifier_passed`, `verifier_repaired`, `verifier_warning_count` |
+| Router done | `chat_router_done` | `selected_route`, `sql_rows`, `rag_chunks`, `fallback_steps`, `final_answer_status` |
+| Chat complete | `chat_request_completed` | `classifier_intent`, `selected_route`, `route_type`, `route_risk`, `answer_strategy`, `verifier_passed`, `verifier_repaired`, `duration_ms` |
+| HTTP out | `request_completed` | `status_code`, `duration_ms` |
+
 ### Useful jq queries
 
 ```bash
@@ -78,12 +98,95 @@ grep "a3f9c12e" logs/coral.log | jq '{stage, intent, route, duration_ms}'
 # Slow requests (> 5 seconds)
 cat logs/coral.log | jq 'select(.stage == "chat_request_completed" and .duration_ms > 5000)'
 
-# All SQL executions
-cat logs/coral.log | jq 'select(.stage == "sql_execution_completed") | {request_id, intent, result_count, duration_ms}'
+# All SQL executions with row counts and template
+cat logs/coral.log | jq 'select(.stage == "sql_execution_completed") | {request_id, intent, row_count, exact_match, sql_template, duration_ms}'
+
+# Find all verifier failures
+cat logs/coral.log | jq 'select(.stage == "response_generation_completed" and .verifier_passed == false)'
+
+# Find requests that needed SQL filter relaxation
+cat logs/coral.log | jq 'select(.stage == "chat_router_done" and (.fallback_steps | index("sql_relaxed_filters") != null))'
+
+# Find RAG fallbacks (SQL returned 0 rows, fell back to FTS)
+cat logs/coral.log | jq 'select(.stage == "chat_router_done" and (.fallback_steps | index("rag_fallback") != null))'
+
+# Fact builder summary for a request
+grep "a3f9c12e" logs/coral.log | jq 'select(.stage == "fact_builder_completed")'
 
 # Failed requests
 cat logs/coral.log | jq 'select(.stage == "chat_request_failed")'
 ```
+
+---
+
+## Developer debug payload (`DEBUG_CHAT=true`)
+
+The `/api/v1/chat/query` endpoint returns a `debug` object alongside the answer
+when `CORAL_DEBUG_CHAT=true` is set in the environment:
+
+```bash
+CORAL_DEBUG_CHAT=true uvicorn app.main:app --reload
+```
+
+Response shape:
+
+```json
+{
+  "answer": { "..." : "..." },
+  "request_id": "a3f9c12e-...",
+  "debug": {
+    "route_type": "sql_only",
+    "route_risk": "safe",
+    "query_plan_task": "fee_lookup",
+    "query_plan_source": "classifier",
+    "sql_queries_executed": ["SELECT fee_category, ..."],
+    "row_count": 12,
+    "retrieval_count": 0,
+    "answer_strategy": "template_only",
+    "llm_called": false,
+    "verifier_passed": true,
+    "verifier_repaired": false,
+    "verifier_warnings": [],
+    "fallback_steps": ["sql_exact"],
+    "timings": {
+      "intent_ms": null,
+      "sql_ms": 18.4,
+      "rag_ms": null,
+      "llm_ms": null,
+      "total_ms": 43.1
+    }
+  }
+}
+```
+
+`debug` is always `null` unless `CORAL_DEBUG_CHAT=true`. Never enable this in production.
+
+---
+
+## Privacy rules — what is never logged
+
+| Data type | Behavior |
+|-----------|----------|
+| Full transaction descriptions | Never — only merchant prefix (≤30 chars) in filter summary |
+| Account numbers | Never logged |
+| Full document text | Never — only chunk IDs and document IDs |
+| SQL parameter values | Never — only the parameterized template (`:param` placeholders) |
+| Full SQL result rows | Only in `DEBUG` mode, first 3 rows only |
+
+---
+
+## Common failure patterns
+
+| Symptom | Where to look |
+|---------|---------------|
+| Wrong intent classified | `chat_router_classified` → check `classifier_intent` vs `query_intent` |
+| SQL returned 0 rows | `sql_execution_completed` → `row_count: 0`, `exact_match: false`; check `suggestion_count` |
+| SQL filter relaxed | `chat_router_done` → `fallback_steps` contains `"sql_relaxed_filters"` |
+| LLM hallucinated a number | `response_generation_completed` → `verifier_passed: false`, `verifier_repaired: true` |
+| Answer built from RAG not SQL | `chat_router_done` → `rag_chunks > 0`, `sql_rows == 0` |
+| Clarification requested | `chat_router_done` → `final_answer_status: "clarification_needed"` |
+| No data after all fallbacks | `chat_router_done` → `final_answer_status: "no_data_after_fallback"` |
+| LLM call timed out | `answer_builder.llm_failed` → check `error` field |
 
 ---
 
@@ -226,6 +329,29 @@ WARNING  coral  LangGraph components exist but are not connected to chat route
 ```
 
 All chat requests use the SQL-first `query_router → sql_query → answer_builder` pipeline.
+
+---
+
+## Streaming path logs (`/api/v1/chat/stream`)
+
+The SSE streaming endpoint runs a simplified pipeline without `build_route_decision`, `fact_builder`, or `answer_verifier`. Its log events differ from the batch path:
+
+| Event | Stage key | Key fields |
+|-------|-----------|------------|
+| Stream started | `stream_start` | `request_id`, `question` (≤200 chars) |
+| Intent classified | `stream_classified` | `request_id`, `intent`, `data_source`, `confidence`, `route_type` |
+| SQL done | `stream_sql` | `request_id`, `row_count`, `duration_ms` |
+| Stream complete | `stream_done` | `request_id`, `intent`, `route`, `sql_rows`, `rag_chunks`, `token_count`, `llm_ms`, `total_ms` |
+
+**Differences from batch path:**
+- `route_type` / `route_risk` are not logged in `stream_done` — the streaming path does not call `build_route_decision`.
+- `answer_strategy`, `verifier_passed`, `verifier_repaired` are not present — streaming does not run through `answer_builder` or `answer_verifier`.
+- `fact_builder_completed` is never emitted — streaming builds the answer inline.
+
+```bash
+# Follow streaming logs
+grep "stream_" logs/coral.log | jq '{stage, request_id, intent, sql_rows, total_ms}'
+```
 
 ---
 

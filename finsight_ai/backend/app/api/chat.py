@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 
 from app.config import settings
 from app.core.logger import get_logger, get_request_id
-from app.domain.entities import AnswerTimings, ChatRequest, ChatResponse
+from app.domain.entities import AnswerTimings, ChatDebugPayload, ChatRequest, ChatResponse
 from app.domain.errors import CoralError
 from app.services.chat_router import route
 from app.chat.streaming import stream_chat
@@ -95,15 +95,46 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
                 "classifier_intent": outcome.classification.intent.value,
                 "query_intent": outcome.query_intent.value,
                 "selected_route": outcome.route,
+                "route_type": outcome.route_decision.route_type.value if outcome.route_decision else "unknown",
+                "route_risk": outcome.route_decision.route_risk.value if outcome.route_decision else "unknown",
                 "sql_rows": outcome.sql_rows,
                 "rag_chunks": outcome.rag_chunks,
                 "fallback_steps": outcome.fallback_steps,
                 "final_answer_status": outcome.final_answer_status,
+                "answer_strategy": answer.answer_strategy,
+                "llm_called": answer.llm_called,
+                "verifier_passed": answer.verifier_passed,
+                "verifier_repaired": answer.verifier_repaired,
                 "duration_ms": total_ms,
             },
         )
 
-        return ChatResponse(answer=answer, raw_text=answer.summary, request_id=req_id)
+        debug_payload: ChatDebugPayload | None = None
+        if settings.debug_chat:
+            debug_payload = ChatDebugPayload(
+                route_type=outcome.route_decision.route_type.value if outcome.route_decision else "",
+                route_risk=outcome.route_decision.route_risk.value if outcome.route_decision else "",
+                query_plan_task=outcome.query_plan.task_type if outcome.query_plan else "",
+                query_plan_source=outcome.query_plan.plan_source if outcome.query_plan else "",
+                sql_queries_executed=list(answer.sql_used),
+                row_count=answer.rows_used,
+                retrieval_count=outcome.rag_chunks,
+                answer_strategy=answer.answer_strategy,
+                llm_called=answer.llm_called,
+                verifier_passed=answer.verifier_passed,
+                verifier_repaired=answer.verifier_repaired,
+                verifier_warnings=list(answer.verifier_warnings),
+                fallback_steps=list(outcome.fallback_steps),
+                timings={
+                    "intent_ms": timings.intent_ms,
+                    "sql_ms": timings.sql_ms,
+                    "rag_ms": timings.rag_ms,
+                    "llm_ms": timings.llm_ms,
+                    "total_ms": timings.total_ms,
+                },
+            )
+
+        return ChatResponse(answer=answer, raw_text=answer.summary, request_id=req_id, debug=debug_payload)
 
     except CoralError as exc:
         duration_ms = round((time.perf_counter() - total_start) * 1000, 1)

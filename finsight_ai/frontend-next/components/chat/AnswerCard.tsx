@@ -202,15 +202,31 @@ function CaveatBar({ caveats }: { caveats: string[] }) {
   );
 }
 
+function BasedOnBar({ basedOn, rowsUsed }: { basedOn?: string; rowsUsed?: number }) {
+  if (!basedOn && !rowsUsed) return null;
+  const label = basedOn || (rowsUsed ? `${rowsUsed} rows` : "");
+  if (!label) return null;
+  return (
+    <div
+      className="px-5 py-2 flex items-center gap-1.5 text-[10px] font-medium"
+      style={{ borderTop: "1px solid var(--answer-divider)", color: "var(--text-dim)" }}
+    >
+      <span style={{ color: "rgba(34,211,238,0.45)" }}>Based on</span>
+      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+    </div>
+  );
+}
+
 interface CardShellProps {
   children: React.ReactNode;
   className?: string;
   chartPayload?: ChartPayload | null;
   sqlUsed?: string[];
   rowsUsed?: number;
+  basedOn?: string;
 }
 
-function CardShell({ children, className, chartPayload, sqlUsed, rowsUsed }: CardShellProps) {
+function CardShell({ children, className, chartPayload, sqlUsed, rowsUsed, basedOn }: CardShellProps) {
   return (
     <motion.div
       initial={{ opacity: 0, x: -12 }}
@@ -221,6 +237,7 @@ function CardShell({ children, className, chartPayload, sqlUsed, rowsUsed }: Car
     >
       {children}
       {chartPayload && <AnswerChart payload={chartPayload} />}
+      <BasedOnBar basedOn={basedOn} rowsUsed={rowsUsed} />
       {sqlUsed && sqlUsed.length > 0 && <SqlDisclosure sql={sqlUsed} rowCount={rowsUsed ?? 0} />}
     </motion.div>
   );
@@ -234,7 +251,7 @@ interface CardExtraProps {
 function MetricAnswer({ answer, onFollowup }: CardExtraProps) {
   const bullets = answer.highlights.slice(0, 4);
   return (
-    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used} basedOn={answer.based_on}>
       <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
         <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
       </div>
@@ -264,7 +281,7 @@ function MetricAnswer({ answer, onFollowup }: CardExtraProps) {
 
 function SummaryAnswer({ answer, onFollowup }: CardExtraProps) {
   return (
-    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used} basedOn={answer.based_on}>
       <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
         <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
       </div>
@@ -322,7 +339,7 @@ function RankedListAnswer({ answer, onFollowup }: CardExtraProps) {
   };
   const totalRows = section?.rows ? (section.rows as unknown[]).length : answer.highlights.length;
   return (
-    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used} basedOn={answer.based_on}>
       <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
         <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
         {answer.summary && <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{answer.summary}</p>}
@@ -339,7 +356,7 @@ function RankedListAnswer({ answer, onFollowup }: CardExtraProps) {
 function TableAnswer({ answer, onFollowup }: CardExtraProps) {
   const section = answer.sections.find((s) => s.type === "table" && s.rows && s.columns);
   return (
-    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used} basedOn={answer.based_on}>
       <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
         <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
         {answer.summary && <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{answer.summary}</p>}
@@ -388,7 +405,7 @@ function TableAnswer({ answer, onFollowup }: CardExtraProps) {
 
 function ComparisonAnswer({ answer, onFollowup }: CardExtraProps) {
   return (
-    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used}>
+    <CardShell chartPayload={answer.chart_payload} sqlUsed={answer.sql_used} rowsUsed={answer.rows_used} basedOn={answer.based_on}>
       <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
         <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
       </div>

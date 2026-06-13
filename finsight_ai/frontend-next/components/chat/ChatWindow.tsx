@@ -2,14 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import {
-  Send, Trash2, Loader2, Sparkles, FileText, Lock,
+  Send, Loader2, Sparkles, FileText, Lock,
   CheckCircle2, ChevronDown,
   Landmark, TrendingUp, CreditCard, FileSearch, ReceiptText,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { api, ApiError, NetworkError } from "@/lib/api-client";
+import { ApiError, NetworkError } from "@/lib/api-client";
 import { useAppStore } from "@/store/appStore";
-import type { ChatMessage, ChatResponse } from "@/types/index";
+import type { ChatMessage, StructuredAnswer } from "@/types/index";
 import { ChatBubble } from "./ChatBubble";
 import { AnswerCard } from "./AnswerCard";
 import CoralMascot from "@/components/coral/CoralMascot";
@@ -124,9 +124,42 @@ const ChatIntro = memo(function ChatIntro({ onQuestion }: { onQuestion: (q: stri
   );
 });
 
+// ── Streaming status bubble ───────────────────────────────────────────────────
+const StreamStatusBubble = memo(function StreamStatusBubble({ status }: { status: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -8 }}
+      transition={{ duration: 0.18 }}
+      className="flex items-center gap-2.5 pl-1"
+    >
+      <CoralMascot size="xs" animated={false} glow={false} />
+      <div
+        className="flex items-center gap-2 px-4 py-2.5 rounded-3xl rounded-bl-lg text-xs font-medium"
+        style={{
+          background: "var(--glass-dark-bg)",
+          border: "1px solid var(--border-accent)",
+          boxShadow: "0 4px 16px var(--card-shadow)",
+          color: "rgba(34,211,238,0.70)",
+        }}
+      >
+        <motion.span
+          className="w-1.5 h-1.5 rounded-full shrink-0"
+          style={{ background: "rgba(34,211,238,0.60)" }}
+          animate={{ opacity: [0.3, 1, 0.3] }}
+          transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+        />
+        {status}
+      </div>
+    </motion.div>
+  );
+});
+
 function MessageItem({ message, onFollowup }: { message: ChatMessage; onFollowup: (q: string) => void }) {
   if (message.role === "user") return <ChatBubble role="user" content={message.content} timestamp={message.timestamp} />;
-  if (message.answer)          return <AnswerCard answer={message.answer} onFollowup={onFollowup} timestamp={message.timestamp} />;
+  if (message.streamStatus) return <StreamStatusBubble status={message.streamStatus} />;
+  if (message.answer)        return <AnswerCard answer={message.answer} onFollowup={onFollowup} timestamp={message.timestamp} />;
   return <ChatBubble role="assistant" content={message.content} timestamp={message.timestamp} errorRequestId={message.error_request_id} />;
 }
 
@@ -320,20 +353,82 @@ export default function ChatWindow() {
     const q = (question || input).trim();
     if (!q || loading) return;
 
-    if (process.env.NODE_ENV === "development") console.time("chat-query");
+    if (process.env.NODE_ENV === "development") console.time("chat-stream");
 
     setInput("");
     addChatMessage({ role: "user", content: q });
     setLoading(true);
 
+    // Add a placeholder assistant message that we'll update as events arrive
+    const placeholderIdx = useAppStore.getState().chatHistory.length;
+    addChatMessage({ role: "assistant", content: "", streamStatus: "Understanding your question…" });
+
     try {
-      const history = useAppStore.getState().chatHistory.slice(-6).map((m) => ({ role: m.role, content: m.content }));
-      const resp = await api.postChat<ChatResponse>("/chat/query", { question: q, history });
-      addChatMessage({
-        role: "assistant",
-        content: resp.raw_text || resp.answer?.summary || "No response received.",
-        answer: resp.answer,
+      const history = useAppStore.getState().chatHistory
+        .slice(-8, -1)  // exclude the placeholder we just added
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      const response = await fetch("/api/v1/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q, history }),
+        signal: AbortSignal.timeout(180_000),
       });
+
+      if (!response.ok || !response.body) {
+        throw new ApiError(response.status, "Stream request failed");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const updateMessage = (patch: Partial<ChatMessage>) => {
+        useAppStore.getState().updateLastAssistantMessage(patch);
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        let currentEvent = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (currentEvent === "status") {
+                updateMessage({ streamStatus: data.message, content: "" });
+              } else if (currentEvent === "intent") {
+                // intent classified — update status
+                updateMessage({ streamStatus: "Querying your data…" });
+              } else if (currentEvent === "answer_token") {
+                updateMessage({ content: data.text, streamStatus: undefined });
+              } else if (currentEvent === "done") {
+                const answer = data.answer as StructuredAnswer | undefined;
+                updateMessage({
+                  content: answer?.summary || data.text || "",
+                  answer,
+                  streamStatus: undefined,
+                });
+              } else if (currentEvent === "error") {
+                updateMessage({
+                  content: `Error: ${data.message}`,
+                  streamStatus: undefined,
+                });
+              }
+            } catch {
+              // ignore malformed SSE data lines
+            }
+          }
+        }
+      }
     } catch (err: unknown) {
       let errorMsg: string;
       let reqId: string | undefined;
@@ -345,14 +440,16 @@ export default function ChatWindow() {
         errorMsg = err.status === 500
           ? `The backend returned an error (500). Check FastAPI logs. Detail: ${err.detail}`
           : `Coral could not answer (${err.status}): ${err.detail}`;
+      } else if (err instanceof Error && err.name === "TimeoutError") {
+        errorMsg = "The request timed out. qwen3:8b inference can take up to 3 minutes.";
       } else {
         errorMsg = `Unexpected error: ${err instanceof Error ? err.message : String(err)}`;
       }
 
-      addChatMessage({ role: "assistant", content: errorMsg, error_request_id: reqId });
+      useAppStore.getState().updateLastAssistantMessage({ content: errorMsg, streamStatus: undefined, error_request_id: reqId });
     } finally {
       setLoading(false);
-      if (process.env.NODE_ENV === "development") console.timeEnd("chat-query");
+      if (process.env.NODE_ENV === "development") console.timeEnd("chat-stream");
     }
   }, [input, loading, addChatMessage]);
 
@@ -372,7 +469,12 @@ export default function ChatWindow() {
               {chatHistory.map((msg, i) => (
                 <MessageItem key={i} message={msg} onFollowup={send} />
               ))}
-              <AnimatePresence>{loading && <TypingIndicator />}</AnimatePresence>
+              {/* Only show typing indicator when there's no streaming placeholder */}
+              <AnimatePresence>
+                {loading && !chatHistory.some((m) => m.role === "assistant" && m.streamStatus) && (
+                  <TypingIndicator />
+                )}
+              </AnimatePresence>
               <div ref={messagesEndRef} />
             </div>
           ) : (

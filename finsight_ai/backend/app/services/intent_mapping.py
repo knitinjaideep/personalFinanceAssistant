@@ -16,6 +16,9 @@ from app.domain.classification import (
     DataSource,
     ExtractedEntities,
     IntentClassificationResult,
+    RouteDecision,
+    RouteRisk,
+    RouteType,
     TimeRange,
 )
 from app.domain.enums import QueryIntent
@@ -79,8 +82,10 @@ _RULES: list[tuple[ChatIntent, list[str], list[str]]] = [
         r"\bversus\b",
         r"\bcompared\s+to\b",
         r"\bdifference\s+between\b",
-        r"\bmore\s+(?:than|in)\b.{0,30}\b(?:january|february|march|april|may|june|july|august|september|october|november|december|last\s+month|this\s+month)\b",
+        r"\bmore\s+(?:than|in|on)\b.{0,40}\b(?:january|february|march|april|may|june|july|august|september|october|november|december|last\s+month|this\s+month|the\s+month\s+before|previous\s+month)\b",
         r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b.{0,30}\bvs\b",
+        r"\b(?:last\s+month|this\s+month|previous\s+month).{0,40}\b(?:or|vs\.?)\b.{0,40}\b(?:month\s+before|previous\s+month|prior\s+month)\b",
+        r"\bdid\s+i\s+spend\s+more\b",
     ], []),
 
     (ChatIntent.RECURRING_TRANSACTIONS, [
@@ -106,8 +111,10 @@ _RULES: list[tuple[ChatIntent, list[str], list[str]]] = [
         r"\bfees?\s+(?:did|do|have)\b",
         r"\btotal\s+fees?\b",
         r"\bfees?\s+(?:in|for|charged|paid)\b",
+        r"\b(?:morgan\s*stan(?:ley|ly|ley|ely)|chase|amex|discover|etrade|fidelity|schwab)\b.{0,30}\bfee[zs]?\b",
+        r"\bfee[zs]?\b.{0,30}\b(?:morgan\s*stan(?:ley|ly|ley|ely)|chase|amex|discover|etrade)\b",
     ], [
-        r"\bfees?\b", r"\bcharged?\s+(?:me|us)\b", r"\bpenalt(?:y|ies)\b",
+        r"\bfee[zs]?\b", r"\bcharged?\s+(?:me|us)\b", r"\bpenalt(?:y|ies)\b",
     ]),
 
     (ChatIntent.INVESTMENT_SUMMARY, [
@@ -121,6 +128,9 @@ _RULES: list[tuple[ChatIntent, list[str], list[str]]] = [
         r"\bwhat\s+(?:am\s+i|do\s+i\s+have)\s+invested\b",
         r"\bstock\s+(?:holdings?|positions?|portfolio)\b",
         r"\b(?:morgan\s+stanley|etrade|e\*trade)\b.{0,40}\b(?:total|balance|value|holding)\b",
+        r"\btotal\s+invested\b",
+        r"\bhow\s+much\s+(?:is|are)\s+(?:my\s+)?(?:total\s+)?invest(?:ed|ment|ments)\b",
+        r"\bmy\s+(?:total\s+)?invested\s+(?:amount|value|balance)\b",
     ], [
         r"\binvested?\b", r"\bstocks?\b", r"\bbonds?\b", r"\betf\b",
         r"\bequit(?:y|ies)\b", r"\bsecurities\b",
@@ -143,15 +153,17 @@ _RULES: list[tuple[ChatIntent, list[str], list[str]]] = [
     ]),
 
     (ChatIntent.BALANCE_SUMMARY, [
-        r"\b(?:what(?:'s|\s+is)\s+(?:my\s+)?|current\s+)balance\b",
+        r"\b(?:what(?:'s|\s+is)\s+(?:my\s+)?(?:\w+\s+){0,3})balance[s]?\b",
         r"\bhow\s+much\s+(?:do|did)\s+i\s+have\b",
         r"\bcash\s+(?:balance|on\s+hand)\b",
-        r"\baccount\s+balance\b",
+        r"\baccount\s+balances?\b",
         r"\bending\s+balance\b",
         r"\bcurrent\s+(?:balance|amount)\b",
         r"\bwhat\s+do\s+i\s+have\s+in\b",
+        r"\bwhat\s+(?:are|is)\s+my\s+(?:\w+\s+){0,4}balance[s]?\b",
+        r"\bmy\s+(?:\w+\s+){0,3}balance[s]?\b",
     ], [
-        r"\bbalance\b",
+        r"\bbalances?\b",
     ]),
 
     (ChatIntent.DOCUMENT_LOOKUP, [
@@ -162,8 +174,10 @@ _RULES: list[tuple[ChatIntent, list[str], list[str]]] = [
         r"\bterms\s+and\s+conditions\b",
         r"\binterest\s+rate\s+(?:on|in|from)\s+(?:my|the)\s+statement\b",
         r"\bwhat\s+(?:does|did)\s+(?:amex|chase|discover|morgan|etrade)\b.{0,30}\bsay\b",
+        r"\bwhat\s+statements?\s+(?:do\s+i\s+have|are\s+available|have\s+i\s+uploaded)\b",
+        r"\bstatements?\s+(?:do\s+i\s+have|available|uploaded|from)\b",
     ], [
-        r"\bdocument\b", r"\bstatement\b.{0,20}\b(?:says?|shows?|mentions?)\b",
+        r"\bdocument\b", r"\bstatement\b.{0,20}\b(?:says?|shows?|mentions?|have|from)\b",
     ]),
 
     # spending_summary must come before transaction_search (more specific)
@@ -177,12 +191,18 @@ _RULES: list[tuple[ChatIntent, list[str], list[str]]] = [
         r"\bmonthly\s+(?:spend|spending|expenses?)\b",
         r"\bspend(?:ing)?\s+by\b",
         r"\btop\s+\d*\s*(?:categories|merchants?|expenses?|spending)\b",
+        r"\b(?:dining|grocery|groceries|food|restaurant|entertainment|travel|shopping|utilities|gas|fuel|healthcare|medical)\s+(?:spend|spending|expenses?)\b",
+        r"\b(?:my\s+)?(?:dining|grocery|groceries|food|restaurant|entertainment|travel|shopping)\s+(?:budget|cost|costs|total|amount)\b",
+        r"\bwhy\s+(?:did|was|is|are)\s+(?:my\s+)?(?:\w+\s+){0,3}(?:spending|spend|expenses?|charges?|bill)\b",
+        r"\bhow\s+much\s+(?:is\s+)?(?:my\s+)?(?:\w+\s+){0,3}(?:spend|spending)\b",
+        r"\bwhat\s+about\b.{0,40}\b(?:dining|grocery|groceries|food|restaurant|entertainment|travel|shopping|spending|spend|expenses?)\b",
+        r"\bwhat\s+about\b.{0,30}\b(?:january|february|march|april|may|june|july|august|september|october|november|december|last\s+month|this\s+month|this\s+quarter|this\s+year)\b",
     ], [
         r"\bspend(?:ing)?\b", r"\bspent\b", r"\bexpenses?\b",
     ]),
 
     (ChatIntent.TRANSACTION_SEARCH, [
-        r"\bshow\s+(?:me\s+)?(?:all\s+|my\s+|the\s+)?transactions?\b",
+        r"\bshow\s+(?:me\s+)?(?:\w+\s+){0,4}transactions?\b",
         r"\blist\b.{0,25}\b(?:transactions?|charges?|purchases?|payments?)\b",
         r"\bfind\s+(?:all\s+|the\s+)?transactions?\b",
         r"\bwhat\s+(?:transactions?|charges?|purchases?)\b",
@@ -192,6 +212,8 @@ _RULES: list[tuple[ChatIntent, list[str], list[str]]] = [
         r"\btransactions?\s+(?:from|at|in|on|over|under|above|below|between)\b",
         r"\bpayments?\s+(?:to|from|made|i\s+made)\b",
         r"\bwhere\s+did\s+i\s+(?:spend|buy|shop|pay)\b",
+        r"\bshow\s+(?:me\s+)?(?:all\s+)?(?:my\s+)?(?:\w+\s+){0,5}(?:charges?|transactions?|purchases?)\b",
+        r"\bfind\s+(?:\w+\s+){0,3}charges?\b",
     ], [
         r"\btransactions?\b", r"\bcharges?\b", r"\bpurchases?\b",
     ]),
@@ -396,4 +418,161 @@ def rule_classify(question: str) -> IntentClassificationResult:
         needs_clarification=False,
         clarifying_question=None,
         source="rule",
+    )
+
+
+# ── Complexity gate ────────────────────────────────────────────────────────────
+# Patterns that indicate the question requires LLM reasoning, not just SQL lookup.
+# These are NOT intent-classification signals — they describe *how hard* the
+# question is to answer, regardless of what intent the classifier chose.
+
+_COMPLEXITY_SIGNALS: list[tuple[str, re.Pattern[str]]] = [
+    ("why",              re.compile(r"\bwhy\b", re.IGNORECASE)),
+    ("trend",            re.compile(r"\btrend(?:ing|s)?\b", re.IGNORECASE)),
+    ("change",           re.compile(r"\b(?:change[sd]?|chang(?:ing|ed))\b", re.IGNORECASE)),
+    ("increase",         re.compile(r"\bincrease[sd]?\b", re.IGNORECASE)),
+    ("decrease",         re.compile(r"\bdecrease[sd]?\b", re.IGNORECASE)),
+    ("unusual",          re.compile(r"\b(?:unusual|unexpected|strange|anomal(?:y|ous)|outlier)\b", re.IGNORECASE)),
+    ("high_low",         re.compile(r"\b(?:high(?:er|est)?|low(?:er|est)?)\s+(?:than\s+(?:usual|normal|average|last)|spending|charges?|fees?)\b", re.IGNORECASE)),
+    ("document_detail",  re.compile(r"\b(?:statement|document|pdf|disclosure|terms|conditions|interest\s+rate)\s+(?:says?|shows?|mentions?|explains?|describes?)\b", re.IGNORECASE)),
+    ("vague_this_that",  re.compile(r"\b(?:this|that)\s+(?:transaction|charge|payment|one|item|amount|purchase)\b", re.IGNORECASE)),
+    ("how_am_i_doing",   re.compile(r"\bhow\s+(?:am\s+i\s+doing|is\s+my|are\s+my)\b", re.IGNORECASE)),
+    ("best_worst",       re.compile(r"\b(?:best|worst)\b", re.IGNORECASE)),
+    ("what_about",       re.compile(r"\bwhat\s+about\b", re.IGNORECASE)),
+    ("vague_happened",   re.compile(r"\bwhat\s+(?:happened|changed|went\s+(?:up|down|wrong))\b", re.IGNORECASE)),
+    ("projection",       re.compile(r"\b(?:predict|forecast|project(?:ion)?|will\s+i|should\s+i)\b", re.IGNORECASE)),
+    ("vague_tell_me",    re.compile(r"\btell\s+me\s+(?:about|more|more\s+about)\b", re.IGNORECASE)),
+]
+
+# Intents that are always analytically complex enough to benefit from LLM planning.
+_ALWAYS_COMPLEX_INTENTS: frozenset[ChatIntent] = frozenset({
+    ChatIntent.COMPARISON,
+})
+
+# Intents that are always document-oriented (FTS/RAG primary, never simple SQL).
+_DOCUMENT_INTENTS: frozenset[ChatIntent] = frozenset({
+    ChatIntent.DOCUMENT_LOOKUP,
+})
+
+# Intents that can be safe SQL when filters are present.
+_SQL_CAPABLE_INTENTS: frozenset[ChatIntent] = frozenset({
+    ChatIntent.TRANSACTION_SEARCH,
+    ChatIntent.SPENDING_SUMMARY,
+    ChatIntent.BALANCE_SUMMARY,
+    ChatIntent.INCOME_SUMMARY,
+    ChatIntent.RECURRING_TRANSACTIONS,
+    ChatIntent.FEES_SUMMARY,
+    ChatIntent.ACCOUNT_SUMMARY,
+})
+
+
+def _detect_complexity(q: str) -> list[str]:
+    """Return a list of complexity signal names that match the question."""
+    return [name for name, pattern in _COMPLEXITY_SIGNALS if pattern.search(q)]
+
+
+def build_route_decision(
+    classification: IntentClassificationResult,
+    *,
+    question: str = "",
+) -> RouteDecision:
+    """Translate a classification result into a concrete routing decision.
+
+    The decision is based on three inputs (in priority order):
+      1. Intent type — document intents always go to DOCUMENT_SEARCH.
+      2. Complexity signals — trigger NEEDS_LLM_PLANNER regardless of confidence.
+      3. Rule confidence — below threshold triggers NEEDS_LLM_PLANNER.
+
+    The returned RouteDecision drives whether the LLM is called in
+    ``intent_classifier.classify()`` and which SQL/RAG path runs in
+    ``chat_router.route()``.
+    """
+    intent = classification.intent
+    ents = classification.entities
+    q = question.lower() if question else ""
+    complexity = _detect_complexity(q)
+    rule_conf = classification.confidence
+
+    # ── Unknown / needs clarification ────────────────────────────────────────
+    if intent == ChatIntent.UNKNOWN:
+        return RouteDecision(
+            route_type=RouteType.CLARIFICATION,
+            route_risk=RouteRisk.NEEDS_CLARIFICATION,
+            intent=intent,
+            entities=ents,
+            reason="Intent could not be determined; clarification required.",
+            complexity_signals=complexity,
+            rule_confidence=rule_conf,
+        )
+
+    # ── Document-oriented intents ─────────────────────────────────────────────
+    if intent in _DOCUMENT_INTENTS:
+        return RouteDecision(
+            route_type=RouteType.DOCUMENT_SEARCH,
+            route_risk=RouteRisk.SAFE,
+            intent=intent,
+            entities=ents,
+            reason="Document-lookup intent routes to FTS/RAG by default.",
+            complexity_signals=complexity,
+            rule_confidence=rule_conf,
+        )
+
+    # ── Always-complex intents (e.g. comparison) ──────────────────────────────
+    if intent in _ALWAYS_COMPLEX_INTENTS:
+        return RouteDecision(
+            route_type=RouteType.SQL_ANALYSIS,
+            route_risk=RouteRisk.NEEDS_LLM_PLANNER,
+            intent=intent,
+            entities=ents,
+            reason=f"Intent '{intent.value}' always requires LLM analysis.",
+            complexity_signals=complexity,
+            rule_confidence=rule_conf,
+        )
+
+    # ── Investment / fees — inherently hybrid ─────────────────────────────────
+    if intent in (ChatIntent.INVESTMENT_SUMMARY, ChatIntent.FEES_SUMMARY):
+        risk = RouteRisk.NEEDS_LLM_PLANNER if complexity else RouteRisk.SAFE
+        return RouteDecision(
+            route_type=RouteType.HYBRID,
+            route_risk=risk,
+            intent=intent,
+            entities=ents,
+            reason="Investment/fees questions benefit from both SQL and document evidence.",
+            complexity_signals=complexity,
+            rule_confidence=rule_conf,
+        )
+
+    # ── Complexity signals detected ───────────────────────────────────────────
+    if complexity:
+        return RouteDecision(
+            route_type=RouteType.SQL_ANALYSIS,
+            route_risk=RouteRisk.NEEDS_LLM_PLANNER,
+            intent=intent,
+            entities=ents,
+            reason=f"Complexity signals detected: {', '.join(complexity)}.",
+            complexity_signals=complexity,
+            rule_confidence=rule_conf,
+        )
+
+    # ── Low rule confidence ───────────────────────────────────────────────────
+    if rule_conf < RULE_CONFIDENCE_THRESHOLD:
+        return RouteDecision(
+            route_type=RouteType.SQL_ANALYSIS,
+            route_risk=RouteRisk.NEEDS_LLM_PLANNER,
+            intent=intent,
+            entities=ents,
+            reason=f"Rule confidence {rule_conf:.2f} below threshold {RULE_CONFIDENCE_THRESHOLD}; LLM planner needed.",
+            complexity_signals=complexity,
+            rule_confidence=rule_conf,
+        )
+
+    # ── Safe simple SQL ───────────────────────────────────────────────────────
+    return RouteDecision(
+        route_type=RouteType.SIMPLE_SQL,
+        route_risk=RouteRisk.SAFE,
+        intent=intent,
+        entities=ents,
+        reason="High-confidence rule match with no complexity signals.",
+        complexity_signals=[],
+        rule_confidence=rule_conf,
     )

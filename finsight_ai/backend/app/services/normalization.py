@@ -23,7 +23,7 @@ from datetime import date, timedelta
 # Aliases are matched as case-insensitive substrings of the cleaned token.
 
 _INSTITUTIONS: dict[str, tuple[str, list[str]]] = {
-    "morgan_stanley":   ("Morgan Stanley", ["morgan stanley", "morgan", "morgon", "stanley", "ms", "msft_advisory"]),
+    "morgan_stanley":   ("Morgan Stanley", ["morgan stanley", "morgan", "morgon", "stanley", "stanly", "stanely", "ms", "msft_advisory"]),
     "chase":            ("Chase", ["chase", "jpmorgan chase", "jp morgan", "jpmorgan"]),
     "etrade":           ("E*TRADE", ["etrade", "e*trade", "e-trade", "e trade"]),
     "amex":             ("American Express", ["amex", "american express", "americanexpress", "am ex"]),

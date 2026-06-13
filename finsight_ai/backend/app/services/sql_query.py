@@ -4,10 +4,22 @@ for structured financial questions.
 
 All handlers receive a QueryContext and build safe parameterized queries.
 No raw user input is ever interpolated into SQL strings.
+
+Fallback safety contract
+────────────────────────
+Every handler that applies user-supplied filters MUST:
+  1. Execute an EXACT query honouring all filters.
+  2. If exact rows == 0, compute SUGGESTION queries separately.
+  3. Return both via the SQLResult keys:
+       exact_match   : bool               — True when exact rows > 0
+       suggestions   : list[SuggestionResult]  — labelled alternatives
+       searched_filters : dict            — what filters were applied
+  The answer_builder MUST NOT present suggestions as the answer.
 """
 
 from __future__ import annotations
 
+import datetime
 import time
 from typing import Any
 
@@ -20,15 +32,51 @@ from app.domain.enums import QueryIntent
 
 logger = get_logger(__name__)
 
-# ── Return type ───────────────────────────────────────────────────────────────
+# ── Return types ──────────────────────────────────────────────────────────────
 
 # Each handler returns:
-#   rows    : list[dict]   — data rows
-#   columns : list[str]    — ordered column names
-#   summary : str          — human-readable single sentence
-#   sql_used: str          — the parameterized SQL template shown to the user
+#   rows             : list[dict]         — data rows (exact match only)
+#   columns          : list[str]          — ordered column names
+#   summary          : str                — human-readable single sentence
+#   sql_used         : str                — the parameterized SQL template
+#   exact_match      : bool               — True iff exact query returned rows
+#   searched_filters : dict               — human-readable filter summary
+#   suggestions      : list[dict]         — labelled suggestion blocks (empty if exact hit)
 
 SQLResult = dict[str, Any]
+
+# A single suggestion block: {label, rows, columns, summary}
+SuggestionResult = dict[str, Any]
+
+
+# ── Logging helpers ───────────────────────────────────────────────────────────
+
+def _truncate(text: str, limit: int) -> str:
+    return text[:limit] + "…" if len(text) > limit else text
+
+
+def _safe_filter_summary(ctx: QueryContext) -> dict:
+    """Return a log-safe filter summary — no account numbers, no raw descriptions."""
+    f: dict = {}
+    if ctx.institution:
+        f["institution"] = ctx.institution
+    if ctx.category:
+        f["category"] = ctx.category
+    if ctx.merchant:
+        # Keep only the first 30 chars; never log full transaction descriptions.
+        f["merchant_prefix"] = ctx.merchant[:30]
+    if ctx.account_name:
+        f["account_name"] = ctx.account_name[:30]
+    if ctx.timeframe_label:
+        f["period"] = ctx.timeframe_label
+    elif ctx.date_from or ctx.date_to:
+        f["date_from"] = str(ctx.date_from) if ctx.date_from else None
+        f["date_to"] = str(ctx.date_to) if ctx.date_to else None
+    if ctx.amount_min is not None:
+        f["amount_min"] = ctx.amount_min
+    if ctx.amount_max is not None:
+        f["amount_max"] = ctx.amount_max
+    return f
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -41,32 +89,33 @@ async def execute_for_intent(intent: QueryIntent, question: str, ctx: QueryConte
 
     req_id = get_request_id()
     logger.info(
-        "sql_planning_started",
-        extra={"stage": "sql_planning_started", "request_id": req_id, "intent": intent.value},
+        "sql_execution_started",
+        extra={
+            "stage": "sql_execution_started",
+            "request_id": req_id,
+            "intent": intent.value,
+            "filters": _safe_filter_summary(ctx),
+        },
     )
     t0 = time.perf_counter()
     try:
         result = await handler(question, ctx)
         duration_ms = round((time.perf_counter() - t0) * 1000, 1)
         row_count = len(result.get("rows", []))
+        sql_used = result.get("sql_used", "")
 
-        logger.info(
-            "sql_planning_completed",
-            extra={
-                "stage": "sql_planning_completed",
-                "request_id": req_id,
-                "intent": intent.value,
-                "duration_ms": duration_ms,
-            },
-        )
         logger.info(
             "sql_execution_completed",
             extra={
                 "stage": "sql_execution_completed",
                 "request_id": req_id,
                 "intent": intent.value,
-                "result_count": row_count,
+                "row_count": row_count,
+                "exact_match": result.get("exact_match", True),
+                "suggestion_count": len(result.get("suggestions", [])),
                 "sql_summary": result.get("summary", ""),
+                # Log the parameterized template (no user values — safe to log).
+                "sql_template": _truncate(sql_used, 500),
                 "duration_ms": duration_ms,
             },
         )
@@ -75,7 +124,7 @@ async def execute_for_intent(intent: QueryIntent, question: str, ctx: QueryConte
     except Exception as exc:
         duration_ms = round((time.perf_counter() - t0) * 1000, 1)
         logger.error(
-            "sql_query.failed",
+            "sql_execution_failed",
             extra={
                 "stage": "sql_execution_failed",
                 "request_id": req_id,
@@ -90,7 +139,31 @@ async def execute_for_intent(intent: QueryIntent, question: str, ctx: QueryConte
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _empty(msg: str = "") -> SQLResult:
-    return {"rows": [], "columns": [], "summary": msg, "sql_used": ""}
+    return {
+        "rows": [], "columns": [], "summary": msg, "sql_used": "",
+        "exact_match": False, "searched_filters": {}, "suggestions": [],
+    }
+
+
+def _exact_result(
+    rows: list[dict],
+    columns: list[str],
+    summary: str,
+    sql_used: str,
+    searched_filters: dict,
+    suggestions: list[SuggestionResult] | None = None,
+) -> SQLResult:
+    """Wrap a completed handler result with exact_match metadata."""
+    has_rows = bool(rows)
+    return {
+        "rows": rows,
+        "columns": columns,
+        "summary": summary,
+        "sql_used": sql_used,
+        "exact_match": has_rows,
+        "searched_filters": searched_filters,
+        "suggestions": suggestions or [],
+    }
 
 
 def _date_clause(
@@ -125,6 +198,169 @@ def _account_clause(ctx: QueryContext, params: dict, alias: str = "a") -> str:
         return ""
     params["account_name"] = f"%{ctx.account_name.lower()}%"
     return f" AND LOWER({alias}.account_name) LIKE :account_name"
+
+
+def _describe_filters(ctx: QueryContext) -> dict:
+    """Build a human-readable filter summary from a QueryContext."""
+    f: dict[str, Any] = {}
+    if ctx.merchant:
+        f["merchant"] = ctx.merchant
+    if ctx.category:
+        f["category"] = ctx.category
+    if ctx.institution:
+        f["institution"] = ctx.institution.replace("_", " ").title()
+    if ctx.account_name:
+        f["account"] = ctx.account_name.title()
+    if ctx.timeframe_label:
+        f["period"] = ctx.timeframe_label
+    elif ctx.date_from or ctx.date_to:
+        f["date_from"] = str(ctx.date_from) if ctx.date_from else None
+        f["date_to"] = str(ctx.date_to) if ctx.date_to else None
+    return f
+
+
+# ── Suggestion helpers ─────────────────────────────────────────────────────────
+
+async def _suggest_merchant_nearby_dates(
+    merchant: str,
+    ctx: QueryContext,
+    date_col: str = "t.transaction_date",
+) -> SuggestionResult | None:
+    """Find transactions for the same merchant outside the requested date window."""
+    params: dict[str, Any] = {}
+    params["merchant"] = f"%{merchant}%"
+    merchant_frag = " AND LOWER(COALESCE(t.merchant_name, t.description)) LIKE :merchant"
+
+    # Exclude the original date window so we only show different periods
+    exclude_frag = ""
+    if ctx.date_from and ctx.date_to:
+        params["ex_from"] = str(ctx.date_from)
+        params["ex_to"] = str(ctx.date_to)
+        exclude_frag = f" AND NOT ({date_col} BETWEEN :ex_from AND :ex_to)"
+
+    sql = f"""
+        SELECT
+            t.transaction_date,
+            COALESCE(t.merchant_name, t.description) AS merchant,
+            t.amount,
+            COALESCE(t.category, 'other') AS category,
+            i.name AS institution,
+            a.account_name
+        FROM transactions t
+        JOIN accounts     a ON t.account_id     = a.id
+        JOIN institutions i ON a.institution_id = i.id
+        WHERE 1=1
+          {merchant_frag}{exclude_frag}
+        ORDER BY t.transaction_date DESC
+        LIMIT 10
+    """
+
+    async with get_session() as session:
+        result = await session.execute(text(sql), params)
+        rows = [dict(r._mapping) for r in result.fetchall()]
+
+    if not rows:
+        return None
+    dates = sorted({r["transaction_date"] for r in rows if r.get("transaction_date")})
+    date_range = f"{dates[0]} – {dates[-1]}" if len(dates) > 1 else dates[0] if dates else "unknown dates"
+    return {
+        "label": f"'{merchant.title()}' transactions found — but in different periods ({date_range})",
+        "rows": rows,
+        "columns": ["transaction_date", "merchant", "amount", "category", "institution", "account_name"],
+        "summary": f"Found {len(rows)} '{merchant}' transaction(s) outside the requested period.",
+    }
+
+
+async def _suggest_category_in_period(
+    category: str,
+    ctx: QueryContext,
+) -> SuggestionResult | None:
+    """Find transactions in the same category and same date range (drops merchant filter)."""
+    params: dict[str, Any] = {}
+    params["category"] = category.lower()
+    category_frag = " AND LOWER(t.category) = :category"
+    date_frag = _date_clause(ctx, "t.transaction_date", params)
+
+    institution_frag = ""
+    if ctx.institution:
+        institution_frag = " AND LOWER(i.institution_type) = :institution_sug"
+        params["institution_sug"] = ctx.institution.lower()
+
+    sql = f"""
+        SELECT
+            COALESCE(t.category, 'other') AS category,
+            COUNT(*) AS transaction_count,
+            ROUND(SUM(ABS(CAST(t.amount AS REAL))), 2) AS total_spent,
+            MIN(t.transaction_date) AS earliest,
+            MAX(t.transaction_date) AS latest,
+            i.name AS institution
+        FROM transactions t
+        JOIN accounts     a ON t.account_id     = a.id
+        JOIN institutions i ON a.institution_id = i.id
+        WHERE CAST(t.amount AS REAL) < 0
+          AND t.transaction_type NOT IN ('transfer', 'payment', 'refund')
+          {_and(date_frag)}{category_frag}{institution_frag}
+        GROUP BY t.category, i.name
+        ORDER BY total_spent DESC
+        LIMIT 10
+    """
+
+    async with get_session() as session:
+        result = await session.execute(text(sql), params)
+        rows = [dict(r._mapping) for r in result.fetchall()]
+
+    if not rows:
+        return None
+    total = sum(float(r.get("total_spent") or 0) for r in rows)
+    period = f" in {ctx.timeframe_label}" if ctx.timeframe_label else ""
+    return {
+        "label": f"Other '{category}' spending found{period} (different merchant)",
+        "rows": rows,
+        "columns": ["category", "transaction_count", "total_spent", "earliest", "latest", "institution"],
+        "summary": f"Found ${total:,.2f} in '{category}' spending{period} from other merchants.",
+    }
+
+
+async def _suggest_institution_date_range(
+    ctx: QueryContext,
+) -> SuggestionResult | None:
+    """Return the available date range for this institution/account so the user knows what data exists."""
+    params: dict[str, Any] = {}
+    institution_frag = ""
+    if ctx.institution:
+        institution_frag = " AND LOWER(i.institution_type) = :institution_dr"
+        params["institution_dr"] = ctx.institution.lower()
+
+    account_frag = _account_clause(ctx, params)
+
+    sql = f"""
+        SELECT
+            i.name AS institution,
+            a.account_name,
+            MIN(t.transaction_date) AS earliest_transaction,
+            MAX(t.transaction_date) AS latest_transaction,
+            COUNT(*) AS total_transactions
+        FROM transactions t
+        JOIN accounts     a ON t.account_id     = a.id
+        JOIN institutions i ON a.institution_id = i.id
+        WHERE 1=1
+          {institution_frag}{account_frag}
+        GROUP BY i.name, a.account_name
+        ORDER BY i.name, a.account_name
+    """
+
+    async with get_session() as session:
+        result = await session.execute(text(sql), params)
+        rows = [dict(r._mapping) for r in result.fetchall()]
+
+    if not rows:
+        return None
+    return {
+        "label": "Available date range for this account",
+        "rows": rows,
+        "columns": ["institution", "account_name", "earliest_transaction", "latest_transaction", "total_transactions"],
+        "summary": f"Transaction data is available for {len(rows)} account(s).",
+    }
 
 
 # ── Handler: spending_by_category ────────────────────────────────────────────
@@ -175,16 +411,36 @@ async def _spending_by_category(question: str, ctx: QueryContext) -> SQLResult:
         result = await session.execute(text(sql), params)
         rows = [dict(r._mapping) for r in result.fetchall()]
 
-    total = sum(float(r.get("total_spent") or 0) for r in rows)
-    period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
-    cat_label = f" on {ctx.category}" if ctx.category else ""
-    acct_label = f" with {ctx.account_name.title()}" if ctx.account_name else ""
-    return {
-        "rows": rows,
-        "columns": ["category", "institution", "account_name", "transaction_count", "total_spent", "avg_per_txn", "earliest", "latest"],
-        "summary": f"Total spending{cat_label}{acct_label}{period}: ${total:,.2f} across {len(rows)} categories.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["category", "institution", "account_name", "transaction_count", "total_spent", "avg_per_txn", "earliest", "latest"]
+    searched = _describe_filters(ctx)
+
+    if rows:
+        total = sum(float(r.get("total_spent") or 0) for r in rows)
+        period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
+        cat_label = f" on {ctx.category}" if ctx.category else ""
+        acct_label = f" with {ctx.account_name.title()}" if ctx.account_name else ""
+        summary = f"Total spending{cat_label}{acct_label}{period}: ${total:,.2f} across {len(rows)} categories."
+        return _exact_result(rows, columns, summary, sql.strip(), searched)
+
+    # ── Exact query returned nothing — build suggestions, do NOT answer with them ──
+    suggestions: list[SuggestionResult] = []
+
+    if ctx.merchant and (ctx.date_from or ctx.date_to):
+        sug = await _suggest_merchant_nearby_dates(ctx.merchant, ctx)
+        if sug:
+            suggestions.append(sug)
+
+    if ctx.category and ctx.merchant:
+        sug = await _suggest_category_in_period(ctx.category, ctx)
+        if sug:
+            suggestions.append(sug)
+
+    if ctx.institution or ctx.account_name:
+        sug = await _suggest_institution_date_range(ctx)
+        if sug:
+            suggestions.append(sug)
+
+    return _exact_result([], columns, "", sql.strip(), searched, suggestions)
 
 
 # ── Handler: subscription_lookup ─────────────────────────────────────────────
@@ -222,12 +478,13 @@ async def _subscription_lookup(question: str, ctx: QueryContext) -> SQLResult:
         rows = [dict(r._mapping) for r in result.fetchall()]
 
     total = sum(float(r.get("monthly_amount") or 0) for r in rows)
-    return {
-        "rows": rows,
-        "columns": ["merchant", "category", "institution", "monthly_amount", "occurrences", "first_seen", "last_seen"],
-        "summary": f"Found {len(rows)} recurring charges totaling ${total:,.2f}.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["merchant", "category", "institution", "monthly_amount", "occurrences", "first_seen", "last_seen"]
+    searched = _describe_filters(ctx)
+    return _exact_result(
+        rows, columns,
+        f"Found {len(rows)} recurring charges totaling ${total:,.2f}.",
+        sql.strip(), searched,
+    )
 
 
 # ── Handler: fee_summary ──────────────────────────────────────────────────────
@@ -266,12 +523,13 @@ async def _fee_summary(question: str, ctx: QueryContext) -> SQLResult:
     total = sum(float(r.get("total_amount") or 0) for r in rows)
     period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
     inst_label = f" at {ctx.institution.replace('_', ' ').title()}" if ctx.institution else ""
-    return {
-        "rows": rows,
-        "columns": ["fee_category", "institution", "fee_count", "total_amount", "avg_amount", "earliest", "latest"],
-        "summary": f"Total fees{inst_label}{period}: ${total:,.2f} across {len(rows)} categories.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["fee_category", "institution", "fee_count", "total_amount", "avg_amount", "earliest", "latest"]
+    searched = _describe_filters(ctx)
+    return _exact_result(
+        rows, columns,
+        f"Total fees{inst_label}{period}: ${total:,.2f} across {len(rows)} categories.",
+        sql.strip(), searched,
+    )
 
 
 # ── Handler: transaction_lookup ───────────────────────────────────────────────
@@ -332,14 +590,34 @@ async def _transaction_lookup(question: str, ctx: QueryContext) -> SQLResult:
         result = await session.execute(text(sql), params)
         rows = [dict(r._mapping) for r in result.fetchall()]
 
-    period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
-    acct_label = f" on {ctx.account_name.title()}" if ctx.account_name else ""
-    return {
-        "rows": rows,
-        "columns": ["transaction_date", "merchant", "description", "amount", "transaction_type", "category", "institution", "account_name", "account_type"],
-        "summary": f"Found {len(rows)} transactions{acct_label}{period}.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["transaction_date", "merchant", "description", "amount", "transaction_type", "category", "institution", "account_name", "account_type"]
+    searched = _describe_filters(ctx)
+
+    if rows:
+        period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
+        acct_label = f" on {ctx.account_name.title()}" if ctx.account_name else ""
+        summary = f"Found {len(rows)} transactions{acct_label}{period}."
+        return _exact_result(rows, columns, summary, sql.strip(), searched)
+
+    # ── Exact query returned nothing — build suggestions ──────────────────────
+    suggestions: list[SuggestionResult] = []
+
+    if ctx.merchant and (ctx.date_from or ctx.date_to):
+        sug = await _suggest_merchant_nearby_dates(ctx.merchant, ctx)
+        if sug:
+            suggestions.append(sug)
+
+    if ctx.category and ctx.merchant:
+        sug = await _suggest_category_in_period(ctx.category, ctx)
+        if sug:
+            suggestions.append(sug)
+
+    if ctx.institution or ctx.account_name:
+        sug = await _suggest_institution_date_range(ctx)
+        if sug:
+            suggestions.append(sug)
+
+    return _exact_result([], columns, "", sql.strip(), searched, suggestions)
 
 
 # ── Handler: balance_lookup ───────────────────────────────────────────────────
@@ -392,12 +670,13 @@ async def _balance_lookup(question: str, ctx: QueryContext) -> SQLResult:
             latest_rows.append(r)
 
     latest_total = sum(float(r.get("total_value") or 0) for r in latest_rows)
-    return {
-        "rows": rows,
-        "columns": ["account_name", "account_type", "institution", "snapshot_date", "total_value", "cash_value", "invested_value"],
-        "summary": f"Latest balance across {len(latest_rows)} accounts: ${latest_total:,.2f}.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["account_name", "account_type", "institution", "snapshot_date", "total_value", "cash_value", "invested_value"]
+    searched = _describe_filters(ctx)
+    return _exact_result(
+        rows, columns,
+        f"Latest balance across {len(latest_rows)} accounts: ${latest_total:,.2f}.",
+        sql.strip(), searched,
+    )
 
 
 # ── Handler: holdings_total ───────────────────────────────────────────────────
@@ -463,12 +742,9 @@ async def _holdings_total(question: str, ctx: QueryContext) -> SQLResult:
         rows = [dict(r._mapping) for r in result.fetchall()]
 
     total = sum(float(r.get("market_value") or 0) for r in rows)
-    return {
-        "rows": rows,
-        "columns": ["symbol", "description", "quantity", "market_value", "asset_class", "percent_of_portfolio", "unrealized_gain_loss", "institution", "account_type"],
-        "summary": f"Total invested: ${total:,.2f} across {len(rows)} positions.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["symbol", "description", "quantity", "market_value", "asset_class", "percent_of_portfolio", "unrealized_gain_loss", "institution", "account_type"]
+    searched = _describe_filters(ctx)
+    return _exact_result(rows, columns, f"Total invested: ${total:,.2f} across {len(rows)} positions.", sql.strip(), searched)
 
 
 # ── Handler: holdings_lookup ──────────────────────────────────────────────────
@@ -506,12 +782,9 @@ async def _holdings_lookup(question: str, ctx: QueryContext) -> SQLResult:
         rows = [dict(r._mapping) for r in result.fetchall()]
 
     total = sum(float(r.get("market_value") or 0) for r in rows)
-    return {
-        "rows": rows,
-        "columns": ["symbol", "description", "quantity", "price", "market_value", "asset_class", "percent_of_portfolio", "institution"],
-        "summary": f"Found {len(rows)} holdings worth ${total:,.2f} total.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["symbol", "description", "quantity", "price", "market_value", "asset_class", "percent_of_portfolio", "institution"]
+    searched = _describe_filters(ctx)
+    return _exact_result(rows, columns, f"Found {len(rows)} holdings worth ${total:,.2f} total.", sql.strip(), searched)
 
 
 # ── Handler: cash_flow_summary ────────────────────────────────────────────────
@@ -550,12 +823,9 @@ async def _cash_flow_summary(question: str, ctx: QueryContext) -> SQLResult:
 
     net = sum(float(r.get("net_flow") or 0) for r in rows)
     period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
-    return {
-        "rows": rows,
-        "columns": ["institution", "account_type", "total_inflow", "total_outflow", "net_flow", "txn_count"],
-        "summary": f"Net cash flow{period}: ${net:,.2f}.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["institution", "account_type", "total_inflow", "total_outflow", "net_flow", "txn_count"]
+    searched = _describe_filters(ctx)
+    return _exact_result(rows, columns, f"Net cash flow{period}: ${net:,.2f}.", sql.strip(), searched)
 
 
 # ── Handler: document_availability ───────────────────────────────────────────
@@ -577,12 +847,12 @@ async def _document_availability(question: str, ctx: QueryContext) -> SQLResult:
     async with get_session() as session:
         result = await session.execute(text(sql))
         rows = [dict(r._mapping) for r in result.fetchall()]
-    return {
-        "rows": rows,
-        "columns": ["original_filename", "institution_type", "status", "page_count", "upload_time", "statement_count"],
-        "summary": f"Found {len(rows)} uploaded documents.",
-        "sql_used": sql.strip(),
-    }
+    return _exact_result(
+        rows,
+        ["original_filename", "institution_type", "status", "page_count", "upload_time", "statement_count"],
+        f"Found {len(rows)} uploaded documents.",
+        sql.strip(), {},
+    )
 
 
 # ── Handler: institution_coverage ────────────────────────────────────────────
@@ -607,12 +877,12 @@ async def _institution_coverage(question: str, ctx: QueryContext) -> SQLResult:
     async with get_session() as session:
         result = await session.execute(text(sql))
         rows = [dict(r._mapping) for r in result.fetchall()]
-    return {
-        "rows": rows,
-        "columns": ["name", "institution_type", "account_count", "statement_count", "transaction_count", "earliest", "latest"],
-        "summary": f"Data from {len(rows)} institutions.",
-        "sql_used": sql.strip(),
-    }
+    return _exact_result(
+        rows,
+        ["name", "institution_type", "account_count", "statement_count", "transaction_count", "earliest", "latest"],
+        f"Data from {len(rows)} institutions.",
+        sql.strip(), {},
+    )
 
 
 # ── Handler: statement_coverage ──────────────────────────────────────────────
@@ -635,12 +905,12 @@ async def _statement_coverage(question: str, ctx: QueryContext) -> SQLResult:
     async with get_session() as session:
         result = await session.execute(text(sql))
         rows = [dict(r._mapping) for r in result.fetchall()]
-    return {
-        "rows": rows,
-        "columns": ["institution", "account_type", "statement_type", "period_start", "period_end", "extraction_status", "overall_confidence"],
-        "summary": f"Found {len(rows)} parsed statements.",
-        "sql_used": sql.strip(),
-    }
+    return _exact_result(
+        rows,
+        ["institution", "account_type", "statement_type", "period_start", "period_end", "extraction_status", "overall_confidence"],
+        f"Found {len(rows)} parsed statements.",
+        sql.strip(), {},
+    )
 
 
 # ── Handler: recurring_transactions ──────────────────────────────────────────
@@ -690,12 +960,13 @@ async def _recurring_transactions(question: str, ctx: QueryContext) -> SQLResult
 
     total = sum(float(r.get("avg_amount") or 0) for r in rows)
     period = f" ({ctx.timeframe_label})" if ctx.timeframe_label else ""
-    return {
-        "rows": rows,
-        "columns": ["merchant", "category", "institution", "account_name", "avg_amount", "occurrences", "distinct_months", "first_seen", "last_seen"],
-        "summary": f"Found {len(rows)} recurring merchants{period} averaging ${total:,.2f}/month total.",
-        "sql_used": sql.strip(),
-    }
+    columns = ["merchant", "category", "institution", "account_name", "avg_amount", "occurrences", "distinct_months", "first_seen", "last_seen"]
+    searched = _describe_filters(ctx)
+    return _exact_result(
+        rows, columns,
+        f"Found {len(rows)} recurring merchants{period} averaging ${total:,.2f}/month total.",
+        sql.strip(), searched,
+    )
 
 
 # ── Handler: spending_comparison ──────────────────────────────────────────────
@@ -787,17 +1058,19 @@ async def _spending_comparison(question: str, ctx: QueryContext) -> SQLResult:
     diff = total_a - total_b
     direction = "up" if diff > 0 else "down"
 
-    return {
-        "rows": rows,
-        "columns": ["category", "period_a_spend", "period_b_spend", "change"],
-        "summary": (
+    columns = ["category", "period_a_spend", "period_b_spend", "change"]
+    searched = _describe_filters(ctx)
+    result = _exact_result(
+        rows, columns,
+        (
             f"Spending in {period_a_label} (${total_a:,.2f}) vs {period_b_label} (${total_b:,.2f}) "
             f"— {direction} ${abs(diff):,.2f}."
         ),
-        "period_a_label": period_a_label,
-        "period_b_label": period_b_label,
-        "sql_used": sql.strip(),
-    }
+        sql.strip(), searched,
+    )
+    result["period_a_label"] = period_a_label
+    result["period_b_label"] = period_b_label
+    return result
 
 
 # ── Dispatch table ────────────────────────────────────────────────────────────

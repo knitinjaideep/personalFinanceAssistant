@@ -18,9 +18,9 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
   if (role === "user") {
     return (
       <motion.div
-        initial={{ opacity: 0, x: 12 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.22 }}
+        initial={{ opacity: 0, transform: "translateX(12px)" }}
+        animate={{ opacity: 1, transform: "translateX(0px)" }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
         className="flex flex-col items-end gap-1"
       >
         <div
@@ -43,9 +43,9 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: -12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.22 }}
+      initial={{ opacity: 0, transform: "translateX(-12px)" }}
+      animate={{ opacity: 1, transform: "translateX(0px)" }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       className="flex items-start gap-2.5"
     >
       <div
