@@ -27,19 +27,22 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
         variants={userBubbleVariants}
         initial="hidden"
         animate="visible"
-        className="flex flex-col items-end gap-1"
+        className="flex flex-col items-end gap-1.5"
       >
         <div
-          className="max-w-lg px-4 py-3 rounded-3xl rounded-br-lg text-white coral-card-body leading-relaxed"
+          className="max-w-lg px-5 py-3.5 rounded-[22px] rounded-br-[6px] text-white leading-relaxed text-[0.93rem]"
           style={{
-            background: "linear-gradient(135deg, #FF7A5A 0%, #FFA38F 100%)",
-            boxShadow: "0 4px 20px rgba(255,122,90,0.25)",
+            background: "var(--chat-user-bg)",
+            boxShadow: "var(--chat-user-shadow)",
+            fontWeight: 450,
           }}
         >
           {content}
         </div>
         {timestamp && (
-          <span className="coral-badge-text mr-1" style={{ color: "var(--text-muted)" }}>{formatTime(timestamp)}</span>
+          <span className="coral-badge-text mr-1 opacity-50" style={{ color: "var(--text-muted)" }}>
+            {formatTime(timestamp)}
+          </span>
         )}
       </motion.div>
     );
@@ -50,18 +53,18 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
       variants={assistantBubbleVariants}
       initial="hidden"
       animate="visible"
-      className="flex items-start gap-2.5"
+      className="flex items-start gap-3"
     >
-      <CoralMascot variant="main" size="xs" animated={false} className="mt-0.5 shrink-0" />
-      <div className="flex flex-col items-start gap-1 min-w-0">
+      <CoralMascot variant="main" size="xs" animated={false} className="mt-1 shrink-0" />
+      <div className="flex flex-col items-start gap-1.5 min-w-0">
         <div
-          className="max-w-2xl px-4 py-3 rounded-3xl rounded-bl-lg coral-card-body leading-relaxed"
+          className="max-w-2xl px-5 py-3.5 rounded-[22px] rounded-bl-[6px] leading-relaxed text-[0.93rem]"
           style={{
-            background: isLight ? "rgba(255,255,255,0.82)" : "rgba(7,24,38,0.70)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
-            border: `1px solid var(--border-accent)`,
-            boxShadow: `0 4px 20px var(--card-shadow)`,
+            background: isLight ? "rgba(255,255,255,0.84)" : "rgba(6,22,40,0.72)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: `1px solid var(--chat-card-border)`,
+            boxShadow: "var(--chat-card-shadow)",
             color: "var(--text-primary)",
           }}
         >
@@ -72,7 +75,7 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
             className="mt-1 px-3 py-2 rounded-xl text-[10px] font-mono"
             style={{
               background: "var(--glass-bg)",
-              border: `1px solid var(--border-accent)`,
+              border: `1px solid var(--chat-card-border)`,
               color: "rgba(34,211,238,0.55)",
             }}
           >
@@ -81,7 +84,9 @@ export function ChatBubble({ role, content, timestamp, errorRequestId }: ChatBub
           </div>
         )}
         {timestamp && (
-          <span className="coral-badge-text ml-1" style={{ color: "var(--text-muted)" }}>{formatTime(timestamp)}</span>
+          <span className="coral-badge-text ml-1 opacity-50" style={{ color: "var(--text-muted)" }}>
+            {formatTime(timestamp)}
+          </span>
         )}
       </div>
     </motion.div>

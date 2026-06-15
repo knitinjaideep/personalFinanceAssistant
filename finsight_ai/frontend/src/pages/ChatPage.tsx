@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import {
-  Send, Trash2, Loader2, Upload,
+  Send, Trash2, Loader2, Upload, ArrowRight,
   Lock, CheckCircle2, ChevronDown,
   Home, Landmark, TrendingUp, FileText, MessageSquare, Sun, Moon,
 } from "lucide-react";
@@ -13,7 +13,7 @@ import { AnswerCard } from "../components/chat/AnswerCard";
 import { UploadModal } from "../components/upload/UploadModal";
 import { BulkUploadModal } from "../components/upload/BulkUploadModal";
 import { DocumentsModal } from "../components/documents/DocumentsModal";
-import { fadeVariants } from "../design/motion";
+import { fadeVariants, staggerContainer, staggerChild } from "../design/motion";
 import { CoralMascot } from "../components/CoralMascot";
 
 const NAV_ITEMS: { id: ActivePage; label: string; icon: React.ReactNode }[] = [
@@ -33,29 +33,22 @@ function TypingIndicator() {
       initial="hidden"
       animate="visible"
       exit="exit"
-      className="flex items-center gap-2.5 pl-1"
+      className="flex items-center gap-3"
     >
-      <CoralMascot variant="main" size="xs" className="shrink-0" />
-      <div
-        className="flex items-center gap-1.5 px-4 py-3 rounded-3xl rounded-bl-lg"
-        style={{
-          background: "var(--glass-dark-bg)",
-          backdropFilter: "blur(12px)",
-          border: "1px solid var(--border-accent)",
-          boxShadow: "0 4px 16px var(--card-shadow)",
-        }}
-      >
+      <CoralMascot variant="main" size="xs" className="shrink-0 mt-0.5" />
+      <div className="chat-status-pill">
+        {/* Three underwater bubble dots */}
         {[0, 1, 2].map((i) => (
           <motion.span
             key={i}
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: "rgba(34,211,238,0.60)" }}
-            animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
-            transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.18, ease: "easeInOut" }}
+            className="chat-bubble-dot"
+            animate={{ y: [0, -5, 0], opacity: [0.45, 1, 0.45] }}
+            transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.20, ease: "easeInOut" }}
+            aria-hidden
           />
         ))}
+        <span className="text-xs font-medium ml-0.5">Coral is thinking…</span>
       </div>
-      <span className="font-medium" style={{ color: "var(--text-muted)" }}>Coral is thinking…</span>
     </motion.div>
   );
 }
@@ -497,6 +490,78 @@ export function ChatPage() {
           onClearChat={clearChat}
           hasMessages={hasMessages}
         />
+
+        {/* ── Empty state hero ─────────────────────────────────────────────── */}
+        {!hasMessages && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute inset-0 flex flex-col items-center justify-center"
+            style={{ paddingTop: NAV_HEIGHT, paddingBottom: COMPOSER_OFFSET }}
+          >
+            {/* Ambient glow orb behind mascot */}
+            <div
+              className="absolute pointer-events-none"
+              style={{
+                width: 320, height: 320,
+                background: "radial-gradient(ellipse, rgba(34,211,238,0.10) 0%, transparent 70%)",
+                filter: "blur(24px)",
+              }}
+              aria-hidden
+            />
+
+            <CoralMascot variant="main" size="md" animated className="chat-mascot mb-6 relative z-10" />
+
+            <h1
+              className="chat-hero-title relative z-10 text-center font-bold tracking-tight"
+              style={{
+                fontFamily: "'Sora', 'Manrope', ui-sans-serif, system-ui, sans-serif",
+                fontSize: "clamp(1.9rem, 3vw + 0.5rem, 2.75rem)",
+                letterSpacing: "-0.03em",
+                color: "var(--text-primary)",
+                marginBottom: "0.5rem",
+              }}
+            >
+              Ask Coral anything
+            </h1>
+            <p
+              className="chat-subtitle-secondary relative z-10 text-center max-w-sm"
+              style={{ color: "var(--text-muted)", fontSize: "0.93rem", lineHeight: 1.65 }}
+            >
+              Your private financial assistant. All data stays on your device.
+            </p>
+
+            {/* Suggested prompts */}
+            <motion.div
+              variants={staggerContainer}
+              initial="hidden"
+              animate="visible"
+              className="chat-suggestion-grid relative z-10 mt-8 flex flex-wrap justify-center gap-2.5 max-w-lg px-6"
+            >
+              {[
+                "What did I spend last month?",
+                "Show my top 5 expenses",
+                "How much in fees this year?",
+                "Compare last two months",
+              ].map((q) => (
+                <motion.button
+                  key={q}
+                  variants={staggerChild}
+                  whileHover={{ scale: 1.04, y: -2 }}
+                  whileTap={{ scale: 0.96 }}
+                  transition={{ type: "spring", stiffness: 460, damping: 26 }}
+                  onClick={() => send(q)}
+                  className="chat-followup-chip"
+                >
+                  {q}
+                  <ArrowRight size={10} style={{ opacity: 0.55 }} />
+                </motion.button>
+              ))}
+            </motion.div>
+          </motion.div>
+        )}
 
         {/* ── Active message state ─────────────────────────────────────────── */}
         {hasMessages && (
