@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from app.chat.affordability import analyze as analyze_affordability
 from app.chat.query_planner import QueryPlan, plan as build_query_plan
 from app.chat.services.conversation_context import conversation_context
 from app.config import settings
@@ -29,6 +30,7 @@ from app.domain.classification import (
     DataSource,
     IntentClassificationResult,
     RouteDecision,
+    RouteType,
 )
 from app.domain.entities import QueryContext, StructuredAnswer
 from app.domain.enums import QueryIntent, QueryPath
@@ -174,6 +176,35 @@ async def route(
         return _finalize(
             _clarification_answer(question, classification, query_intent),
             classification, query_intent, "clarification", CLARIFICATION_NEEDED,
+            steps, 0, 0, req_id, decision, query_plan,
+        )
+
+    # ── Affordability fast path — never needs SQL via the normal pipeline ─────
+    if decision.route_type == RouteType.AFFORDABILITY and query_plan.affordability is not None:
+        steps.append("affordability_analysis")
+        aff = query_plan.affordability
+        answer = await analyze_affordability(
+            task_type=aff.task_type,
+            purchase_price=aff.purchase_price,
+            purchase_item=aff.purchase_item,
+            purchase_category=aff.purchase_category,
+            req_id=req_id,
+            question=question,
+            # Pass semantic context through — framing/caveats only, not math
+            semantic_scenario_type=aff.semantic_scenario_type,
+            semantic_parser_called=aff.semantic_parser_called,
+            semantic_parser_confidence=aff.semantic_parser_confidence,
+            protected_goals=aff.protected_goals,
+            secondary_goals=aff.secondary_goals,
+            time_horizon=aff.time_horizon,
+            constraints=aff.constraints,
+            user_is_asking_for=aff.user_is_asking_for,
+        )
+        answer.request_id = req_id
+        if conversation_id:
+            await _record_turn(conversation_id, classification, ctx, answer.summary)
+        return _finalize(
+            answer, classification, query_intent, "affordability", ANSWERED,
             steps, 0, 0, req_id, decision, query_plan,
         )
 

@@ -6,6 +6,7 @@ Clean abstraction over SQLModel queries. Services never construct raw SQL.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date
 from typing import Any
@@ -114,22 +115,32 @@ async def delete_document_cascade(session: AsyncSession, doc_id: str) -> None:
 
 # ── Institutions ─────────────────────────────────────────────────────────────
 
+# Concurrent ingestion tasks (bulk upload fires one asyncio task per document)
+# each run their own find-or-create check-then-act in a separate session/
+# transaction. SQLite gives no row locking to prevent two tasks from both
+# seeing "no match" and inserting duplicates, so we serialize the
+# check-then-act with a process-wide lock instead.
+_institution_lock = asyncio.Lock()
+_account_lock = asyncio.Lock()
+
+
 async def get_or_create_institution(
     session: AsyncSession, institution_type: str, name: str
 ) -> InstitutionModel:
-    result = await session.execute(
-        select(InstitutionModel)
-        .where(InstitutionModel.institution_type == institution_type)
-        .order_by(InstitutionModel.created_at)
-    )
-    # Tolerate pre-existing duplicates: deterministically reuse the oldest match
-    # rather than raising MultipleResultsFound.
-    inst = result.scalars().first()
-    if inst is None:
-        inst = InstitutionModel(name=name, institution_type=institution_type)
-        session.add(inst)
-        await session.flush()
-    return inst
+    async with _institution_lock:
+        result = await session.execute(
+            select(InstitutionModel)
+            .where(InstitutionModel.institution_type == institution_type)
+            .order_by(InstitutionModel.created_at)
+        )
+        # Tolerate pre-existing duplicates: deterministically reuse the oldest match
+        # rather than raising MultipleResultsFound.
+        inst = result.scalars().first()
+        if inst is None:
+            inst = InstitutionModel(name=name, institution_type=institution_type)
+            session.add(inst)
+            await session.flush()
+        return inst
 
 
 # ── Accounts ─────────────────────────────────────────────────────────────────
@@ -189,28 +200,29 @@ async def get_or_create_account(
             .order_by(AccountModel.created_at)
         )
 
-    result = await session.execute(stmt)
-    # Tolerate pre-existing duplicates: deterministically reuse the oldest match
-    # rather than raising MultipleResultsFound.
-    acct = result.scalars().first()
-    if acct is None:
-        acct = AccountModel(
-            institution_id=institution_id,
-            institution_type=institution_type,
-            account_number_masked=account_number_masked,
-            account_type=account_type,
-            account_name=account_name,
-        )
-        session.add(acct)
-        await session.flush()
-    else:
-        # Update stale account_type — the parser is authoritative; an account
-        # created from an earlier (or wrong) parse may have the wrong type.
-        _VAGUE_TYPES = {"unknown", "brokerage", ""}
-        if acct.account_type in _VAGUE_TYPES and account_type not in _VAGUE_TYPES:
-            acct.account_type = account_type
+    async with _account_lock:
+        result = await session.execute(stmt)
+        # Tolerate pre-existing duplicates: deterministically reuse the oldest match
+        # rather than raising MultipleResultsFound.
+        acct = result.scalars().first()
+        if acct is None:
+            acct = AccountModel(
+                institution_id=institution_id,
+                institution_type=institution_type,
+                account_number_masked=account_number_masked,
+                account_type=account_type,
+                account_name=account_name,
+            )
+            session.add(acct)
             await session.flush()
-    return acct
+        else:
+            # Update stale account_type — the parser is authoritative; an account
+            # created from an earlier (or wrong) parse may have the wrong type.
+            _VAGUE_TYPES = {"unknown", "brokerage", ""}
+            if acct.account_type in _VAGUE_TYPES and account_type not in _VAGUE_TYPES:
+                acct.account_type = account_type
+                await session.flush()
+        return acct
 
 
 # ── Statements ───────────────────────────────────────────────────────────────

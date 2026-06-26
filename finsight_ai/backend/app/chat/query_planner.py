@@ -58,6 +58,10 @@ PlanTaskType = Literal[
     "investment_summary",       # portfolio / holdings total
     "document_search",          # FTS / RAG text retrieval
     "hybrid_analysis",          # SQL + document evidence combined
+    "purchase_affordability",   # can I/we afford a specific item (non-home)
+    "home_affordability",       # can I/we afford a house / mortgage
+    "goal_affordability",       # can I/we afford a goal (vacation, education, etc.)
+    "cash_reserve_analysis",    # general liquidity / reserve check
     "clarification",            # too vague to plan; ask user
 ]
 
@@ -212,6 +216,7 @@ class QueryPlan(BaseModel):
     comparison: ComparisonSpec | None = None
     retrieval: RetrievalSpec | None = None
     chart: ChartSpec | None = None
+    affordability: AffordabilitySpec | None = None
 
     # Clarification
     clarification_needed: bool = False
@@ -263,6 +268,7 @@ _INTENT_TO_TASK: dict[ChatIntent, PlanTaskType] = {
     ChatIntent.ACCOUNT_SUMMARY: "balance_lookup",
     ChatIntent.COMPARISON: "compare_spending",
     ChatIntent.RECURRING_TRANSACTIONS: "list_transactions",
+    ChatIntent.AFFORDABILITY: "purchase_affordability",  # overridden by _classify_purchase
     ChatIntent.UNKNOWN: "clarification",
 }
 
@@ -293,6 +299,95 @@ _AUTO_CHART_INTENTS: dict[ChatIntent, tuple[str, str, str]] = {
     ChatIntent.SPENDING_SUMMARY: ("bar", "category", "amount"),
     ChatIntent.INCOME_SUMMARY: ("bar", "month", "amount"),
 }
+
+
+# ── Affordability extraction helpers ─────────────────────────────────────────
+
+# Dollar / number extraction: "$1.3 million", "$75,000", "1300000"
+_PRICE_RE = re.compile(
+    r"\$?\s*([\d,]+(?:\.\d+)?)\s*(million|billion|k\b)?",
+    re.IGNORECASE,
+)
+_MILLION_RE = re.compile(r"\b([\d.]+)\s*million\b", re.IGNORECASE)
+_BILLION_RE = re.compile(r"\b([\d.]+)\s*billion\b", re.IGNORECASE)
+_K_RE = re.compile(r"\b([\d.]+)\s*k\b", re.IGNORECASE)
+
+_HOME_TERMS: frozenset[str] = frozenset({
+    "house", "home", "mortgage", "property", "condo", "apartment",
+    "townhouse", "real estate", "down payment", "closing costs",
+})
+_CAR_TERMS: frozenset[str] = frozenset({
+    "car", "vehicle", "truck", "suv", "tesla", "bmw", "mercedes",
+    "auto", "automobile",
+})
+_VACATION_TERMS: frozenset[str] = frozenset({
+    "vacation", "trip", "travel", "holiday", "cruise", "flight",
+})
+_LUXURY_TERMS: frozenset[str] = frozenset({
+    "bag", "handbag", "purse", "birkin", "hermes", "watch", "rolex",
+    "jewelry", "jewellery", "ring", "necklace", "bracelet", "luxury",
+    "designer",
+})
+
+
+def _extract_purchase_price(q: str) -> float | None:
+    """Extract the first dollar amount from the question. Returns None if not found."""
+    m = _MILLION_RE.search(q)
+    if m:
+        return float(m.group(1)) * 1_000_000
+    m = _BILLION_RE.search(q)
+    if m:
+        return float(m.group(1)) * 1_000_000_000
+    m = _K_RE.search(q)
+    if m:
+        return float(m.group(1)) * 1_000
+    # Plain number with optional $ and commas
+    for m in re.finditer(r"\$\s*([\d,]+(?:\.\d+)?)", q, re.IGNORECASE):
+        val = float(m.group(1).replace(",", ""))
+        if val >= 100:  # ignore tiny numbers that are likely not purchase prices
+            return val
+    return None
+
+
+def _classify_purchase(q: str) -> tuple[PlanTaskType, str, str]:
+    """Return (task_type, purchase_item, purchase_category) for an affordability question."""
+    if any(t in q for t in _HOME_TERMS):
+        return "home_affordability", "home/real estate", "real_estate"
+    if any(t in q for t in _CAR_TERMS):
+        return "purchase_affordability", "car/vehicle", "vehicle"
+    if any(t in q for t in _VACATION_TERMS):
+        return "goal_affordability", "vacation/travel", "travel"
+    if any(t in q for t in _LUXURY_TERMS):
+        item = "luxury item"
+        for term in ("birkin", "hermes", "rolex"):
+            if term in q:
+                item = term.title()
+                break
+        return "purchase_affordability", item, "luxury_discretionary"
+    return "purchase_affordability", "purchase", "general"
+
+
+class AffordabilitySpec(BaseModel):
+    """Parameters for an affordability analysis — all extracted deterministically."""
+    task_type: str = "purchase_affordability"
+    purchase_price: float | None = None
+    purchase_item: str = "purchase"
+    purchase_category: str = "general"
+    # Amount extracted from question entities (may differ from purchase_price)
+    amount_from_entities: float | None = None
+
+    # ── Semantic scenario fields (populated by SemanticScenarioParser when triggered) ──
+    # These influence framing and caveats only. Python math/verdict are unaffected.
+    semantic_scenario_type: str = ""                    # from SemanticScenarioResult.scenario_type
+    semantic_parser_called: bool = False
+    semantic_parser_confidence: float = 0.0
+    protected_goals: list[str] = Field(default_factory=list)
+    secondary_goals: list[dict] = Field(default_factory=list)  # serialised GoalSpec dicts
+    time_horizon: str | None = None
+    constraints: list[str] = Field(default_factory=list)
+    user_is_asking_for: str = ""                        # can_afford|impact_analysis|safety_check|...
+    clarification_needed_semantic: bool = False
+    clarifying_question_semantic: str | None = None
 
 
 # ── Deterministic planner ─────────────────────────────────────────────────────
@@ -365,14 +460,143 @@ def _make_comparison_spec(
     )
 
 
-def plan_deterministic(
+async def _plan_affordability(
     classification: IntentClassificationResult,
     ctx: QueryContext,
     question: str,
 ) -> QueryPlan:
-    """Build a QueryPlan using only rule-based logic. Zero LLM latency."""
+    """Build a QueryPlan for an affordability question.
+
+    For simple/explicit affordability questions, uses pure deterministic logic.
+    For complex multi-goal / impact / safety questions, calls SemanticScenarioParser
+    to extract richer scenario structure (goals, protected goals, time horizon, etc.).
+    The semantic result influences framing only — Python math and verdict are unaffected.
+    """
+    q = question.lower()
+    ents = classification.entities
+
+    task_type_str, purchase_item, purchase_category = _classify_purchase(q)
+    task_type: PlanTaskType = task_type_str  # type: ignore[assignment]
+
+    # Extract purchase price from question text first, then fall back to entities
+    purchase_price = _extract_purchase_price(q)
+    amount_from_entities = ents.amount_min  # classifier may have put it here
+
+    # ── Semantic scenario enrichment ────────────────────────────────────────
+    from app.domain.classification import RouteType
+    from app.chat.semantic_scenario_parser import (
+        should_use_semantic_scenario_parser,
+        parse_semantic_scenario,
+    )
+
+    semantic_parser_called = False
+    semantic_scenario_type = ""
+    semantic_parser_confidence = 0.0
+    protected_goals: list[str] = []
+    secondary_goals: list[dict] = []
+    time_horizon: str | None = None
+    constraints: list[str] = []
+    user_is_asking_for = ""
+    clarification_needed_semantic = False
+    clarifying_question_semantic: str | None = None
+
+    if should_use_semantic_scenario_parser(question, "affordability", "affordability"):
+        try:
+            semantic = await parse_semantic_scenario(
+                question=question,
+                route_type="affordability",
+                intent="affordability",
+            )
+            semantic_parser_called = True
+            semantic_scenario_type = semantic.scenario_type
+            semantic_parser_confidence = semantic.confidence
+            protected_goals = semantic.protected_goals or []
+            secondary_goals = [
+                g.model_dump() for g in (semantic.secondary_goals or [])
+            ]
+            time_horizon = semantic.time_horizon
+            constraints = semantic.constraints or []
+            user_is_asking_for = semantic.user_is_asking_for or ""
+            clarification_needed_semantic = semantic.clarification_needed
+            clarifying_question_semantic = semantic.clarifying_question
+
+            # If Gemma found an explicit purchase amount, prefer it when
+            # the deterministic extractor found nothing.
+            if purchase_price is None and semantic.purchase_amount is not None:
+                purchase_price = float(semantic.purchase_amount)
+
+            # If Gemma found a more specific purchase item, use it
+            # (only when the deterministic extractor produced a generic label).
+            if semantic.purchase_item and purchase_item in ("purchase", "luxury item"):
+                purchase_item = semantic.purchase_item
+            if semantic.purchase_category and purchase_category == "general":
+                purchase_category = semantic.purchase_category
+
+            logger.info(
+                "query_planner.semantic_scenario_used",
+                extra={
+                    "semantic_scenario_type": semantic_scenario_type,
+                    "protected_goals": protected_goals,
+                    "user_is_asking_for": user_is_asking_for,
+                    "confidence": semantic_parser_confidence,
+                    "purchase_price_override": purchase_price,
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "query_planner.semantic_scenario_error",
+                extra={"error": str(exc)},
+            )
+            semantic_parser_called = True  # mark attempted
+
+    aff_spec = AffordabilitySpec(
+        task_type=task_type_str,
+        purchase_price=purchase_price,
+        purchase_item=purchase_item,
+        purchase_category=purchase_category,
+        amount_from_entities=amount_from_entities,
+        semantic_scenario_type=semantic_scenario_type,
+        semantic_parser_called=semantic_parser_called,
+        semantic_parser_confidence=semantic_parser_confidence,
+        protected_goals=protected_goals,
+        secondary_goals=secondary_goals,
+        time_horizon=time_horizon,
+        constraints=constraints,
+        user_is_asking_for=user_is_asking_for,
+        clarification_needed_semantic=clarification_needed_semantic,
+        clarifying_question_semantic=clarifying_question_semantic,
+    )
+
+    # No date/category/institution filters — affordability uses full snapshot
+    filters = QueryFilters(limit=500)
+
+    return QueryPlan(
+        task_type=task_type,
+        intent=classification.intent,
+        data_sources=["sql"],
+        filters=filters,
+        metrics=[
+            MetricRequest(name="balance", aggregation="sum", field="total_value"),
+        ],
+        affordability=aff_spec,
+        clarification_needed=False,
+        plan_source="deterministic",
+        plan_confidence=classification.confidence,
+    )
+
+
+async def plan_deterministic(
+    classification: IntentClassificationResult,
+    ctx: QueryContext,
+    question: str,
+) -> QueryPlan:
+    """Build a QueryPlan using only rule-based logic (plus optional semantic scenario parsing for affordability)."""
     intent = classification.intent
     ents = classification.entities
+
+    # ── Affordability — dedicated fast path ──────────────────────────────────
+    if intent == ChatIntent.AFFORDABILITY:
+        return await _plan_affordability(classification, ctx, question)
 
     task = _INTENT_TO_TASK.get(intent, "clarification")
     metric_tuple = _INTENT_TO_METRIC.get(intent, ("total_spent", "sum", "amount"))
@@ -656,7 +880,7 @@ async def plan(
         ctx = _build_context(classification)
 
     # Deterministic plan is always built first (fast path and LLM fallback).
-    det_plan = plan_deterministic(classification, ctx, question)
+    det_plan = await plan_deterministic(classification, ctx, question)
 
     # Choose planning path based on route_risk.
     if decision.route_risk == RouteRisk.NEEDS_LLM_PLANNER:

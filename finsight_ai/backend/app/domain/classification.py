@@ -24,6 +24,7 @@ class RouteType(str, Enum):
     SQL_ANALYSIS = "sql_analysis"      # SQL but LLM planner helps interpret/format
     DOCUMENT_SEARCH = "document_search"  # FTS / RAG primary path
     HYBRID = "hybrid"                  # SQL + FTS combined
+    AFFORDABILITY = "affordability"    # financial decision / can-I-afford analysis
     CLARIFICATION = "clarification"    # question is too vague to route
     UNSUPPORTED = "unsupported"        # outside scope (e.g. non-covered institution)
 
@@ -48,6 +49,7 @@ class ChatIntent(str, Enum):
     ACCOUNT_SUMMARY = "account_summary"
     COMPARISON = "comparison"
     RECURRING_TRANSACTIONS = "recurring_transactions"
+    AFFORDABILITY = "affordability"
     UNKNOWN = "unknown"
 
 

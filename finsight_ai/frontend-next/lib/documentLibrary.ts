@@ -41,10 +41,9 @@ export function normalizeMonth(value: string | number | null | undefined): numbe
   if (MONTH_LOOKUP[raw] != null) return MONTH_LOOKUP[raw];
   const alpha = raw.replace(/[^a-z]/g, "");
   if (MONTH_LOOKUP[alpha] != null) return MONTH_LOOKUP[alpha];
-  for (const [token, num] of Object.entries(MONTH_LOOKUP)) {
-    if (token.length >= 3 && alpha.includes(token)) return num;
-  }
-  if (alpha.length > 3) { const t = alpha.slice(1); if (MONTH_LOOKUP[t] != null) return MONTH_LOOKUP[t]; }
+  // Allow at most one stray leading character ("AJan" → "Jan", "Xfeb" → "feb").
+  // No open-ended substring matching — "arjun".includes("jun") is a false positive.
+  if (alpha.length >= 3 && alpha.length <= 10) { const t = alpha.slice(1); if (MONTH_LOOKUP[t] != null) return MONTH_LOOKUP[t]; }
   return null;
 }
 
@@ -129,7 +128,12 @@ export function inferYear(doc: DocumentSummary): number | null {
 
 export function inferMonth(doc: DocumentSummary): number | null {
   const tokens = doc.filename.replace(/\.pdf$/i, "").split(/[_\-\s.]+/);
-  for (const tok of tokens) { const m = normalizeMonth(tok); if (m) return m; }
+  for (const tok of tokens) {
+    // Skip bare numbers — they're sequence suffixes (_1, _8) or year fragments, not months.
+    if (/^\d+$/.test(tok)) continue;
+    const m = normalizeMonth(tok);
+    if (m) return m;
+  }
   if (doc.statement_month) return doc.statement_month;
   if (doc.period_end) { const mm = Number(doc.period_end.slice(5, 7)); if (mm >= 1 && mm <= 12) return mm; }
   return null;

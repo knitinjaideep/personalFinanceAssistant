@@ -43,6 +43,7 @@ Classify the question into exactly one intent from this list:
 - account_summary          : a high-level overview of accounts
 - comparison               : compare spending between two periods or institutions
 - recurring_transactions   : subscriptions, recurring charges, auto-payments, memberships
+- affordability            : can I/we afford X? do I have enough money for X? should I buy X?
 - unknown                  : cannot tell
 
 Pick the data_source:
@@ -103,6 +104,12 @@ Q: "Compare my Chase spending in March vs April"
 
 Q: "What is my current investment allocation?"
 {"intent":"investment_summary","confidence":0.9,"entities":{"category":null,"merchant":null,"institution":null,"account":null,"compare_to":null,"time_range":{"type":"none","value":null,"start_date":null,"end_date":null}},"data_source":"hybrid","needs_clarification":false,"clarifying_question":null}
+
+Q: "Can we afford a Birkin bag by Hermes?"
+{"intent":"affordability","confidence":0.97,"entities":{"category":null,"merchant":"hermes","institution":null,"account":null,"compare_to":null,"time_range":{"type":"none","value":null,"start_date":null,"end_date":null},"amount_min":null,"amount_max":null},"data_source":"sql","needs_clarification":false,"clarifying_question":null}
+
+Q: "Do I have enough money for a 1.3 million house?"
+{"intent":"affordability","confidence":0.97,"entities":{"category":null,"merchant":null,"institution":null,"account":null,"compare_to":null,"time_range":{"type":"none","value":null,"start_date":null,"end_date":null},"amount_min":1300000.0,"amount_max":null},"data_source":"sql","needs_clarification":false,"clarifying_question":null}
 """
 
 

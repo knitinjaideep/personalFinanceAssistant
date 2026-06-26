@@ -131,6 +131,8 @@ def category_display_name(canonical: str | None) -> str | None:
 _ACCOUNT_FILLER = {
     "card", "cards", "account", "acct", "the", "my", "credit", "statement",
     "visa", "mastercard", "amex",
+    # Account type words — don't treat these as account names
+    "checking", "savings", "brokerage", "investment", "current", "balance",
 }
 
 # Known aliases → the canonical token most likely to appear in account_name.

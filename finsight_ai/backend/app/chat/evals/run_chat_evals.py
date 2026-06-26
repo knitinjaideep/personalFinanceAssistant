@@ -49,7 +49,11 @@ class EvalResult:
     failures: list[str] = field(default_factory=list)
     actual_intent: str = ""
     actual_domain: str = ""
+    actual_route_type: str = ""
+    actual_task_type: str = ""
     actual_answer: str = ""
+    actual_semantic_parser_called: bool = False
+    actual_semantic_scenario_type: str = ""
     duration_ms: float = 0.0
 
 
@@ -57,7 +61,7 @@ class EvalResult:
 
 async def run_one_eval(case: dict[str, Any]) -> EvalResult:
     from app.services.intent_classifier import classify
-    from app.services.intent_mapping import to_query_intent
+    from app.services.intent_mapping import build_route_decision, to_query_intent
     from app.services import sql_query, text_search
     from app.services.normalization import (
         normalize_account,
@@ -67,7 +71,8 @@ async def run_one_eval(case: dict[str, Any]) -> EvalResult:
     )
     from app.domain.entities import QueryContext
     from app.domain.enums import QueryPath
-    from app.domain.classification import DataSource
+    from app.domain.classification import DataSource, RouteType
+    from app.chat.query_planner import plan as build_query_plan
     from datetime import date as _date
 
     eval_id = case["id"]
@@ -122,7 +127,10 @@ async def run_one_eval(case: dict[str, Any]) -> EvalResult:
         if not any(v in (actual_val or "") for v in allowed_values):
             failures.append(f"entity[{ent_key}]: got {actual_val!r}, expected one of {allowed_values}")
 
-    # 3. Run pipeline to get answer text
+    # 2b. Build route decision + query plan for route_type / task_type checks
+    decision = build_route_decision(classification, question=question)
+    actual_route_type = decision.route_type.value
+
     tr = ents.time_range
     date_from = date_to = None
     label = ""
@@ -145,30 +153,79 @@ async def run_one_eval(case: dict[str, Any]) -> EvalResult:
         account_type=None, account_name=account_name,
     )
 
-    query_intent = to_query_intent(classification.intent)
-    ds = classification.data_source
-    if ds == DataSource.SQL:
-        path = QueryPath.SQL
-    elif ds == DataSource.RAG:
-        path = QueryPath.FTS
-    else:
-        path = QueryPath.HYBRID
+    query_plan = await build_query_plan(classification, decision, question=question, ctx=ctx)
+    actual_task_type = query_plan.task_type
 
+    # Check route_type
+    exp_route_type = expected.get("route_type")
+    if exp_route_type:
+        allowed_rt = [exp_route_type] if isinstance(exp_route_type, str) else exp_route_type
+        if not any(actual_route_type == rt for rt in allowed_rt):
+            failures.append(f"route_type: got {actual_route_type!r}, expected one of {allowed_rt}")
+
+    # Check task_type
+    exp_task_type = expected.get("task_type")
+    if exp_task_type:
+        allowed_tt = [exp_task_type] if isinstance(exp_task_type, str) else exp_task_type
+        if not any(actual_task_type == tt for tt in allowed_tt):
+            failures.append(f"task_type: got {actual_task_type!r}, expected one of {allowed_tt}")
+
+    # Check purchase_price extraction (affordability evals)
+    exp_price = expected.get("purchase_price")
+    if exp_price is not None and query_plan.affordability is not None:
+        actual_price = query_plan.affordability.purchase_price
+        if actual_price is None or abs(actual_price - float(exp_price)) > 1.0:
+            failures.append(
+                f"purchase_price: got {actual_price!r}, expected ~{exp_price}"
+            )
+
+    # Check semantic_parser_called (semantic scenario evals)
+    exp_semantic = expected.get("semantic_parser_called")
+    if exp_semantic is not None and query_plan.affordability is not None:
+        actual_semantic = query_plan.affordability.semantic_parser_called
+        if actual_semantic != bool(exp_semantic):
+            failures.append(
+                f"semantic_parser_called: got {actual_semantic!r}, expected {bool(exp_semantic)!r}"
+            )
+
+    # 3. Run pipeline to get answer text
+    # For affordability, use the affordability analyzer directly
     actual_answer = ""
     try:
-        if path in (QueryPath.SQL, QueryPath.HYBRID):
-            sql_result = await sql_query.execute_for_intent(query_intent, question, ctx)
-            actual_answer = sql_result.get("summary", "")
-            if not sql_result.get("rows") and (ctx.category or ctx.merchant):
-                relaxed = ctx.model_copy(update={"category": None, "merchant": None})
-                sql_result2 = await sql_query.execute_for_intent(query_intent, question, relaxed)
-                if sql_result2.get("rows"):
-                    actual_answer = sql_result2.get("summary", actual_answer)
+        if decision.route_type == RouteType.AFFORDABILITY and query_plan.affordability is not None:
+            from app.chat.affordability import analyze as analyze_affordability
+            aff = query_plan.affordability
+            ans = await analyze_affordability(
+                task_type=aff.task_type,
+                purchase_price=aff.purchase_price,
+                purchase_item=aff.purchase_item,
+                purchase_category=aff.purchase_category,
+                question=question,
+            )
+            actual_answer = ans.summary or ""
+        else:
+            query_intent = to_query_intent(classification.intent)
+            ds = classification.data_source
+            if ds == DataSource.SQL:
+                path = QueryPath.SQL
+            elif ds == DataSource.RAG:
+                path = QueryPath.FTS
+            else:
+                path = QueryPath.HYBRID
 
-        if not actual_answer and path in (QueryPath.FTS, QueryPath.HYBRID):
-            chunks = await text_search.search(question)
-            if chunks:
-                actual_answer = chunks[0].get("snippet", chunks[0].get("content", ""))[:200]
+            if path in (QueryPath.SQL, QueryPath.HYBRID):
+                sql_result = await sql_query.execute_for_intent(query_intent, question, ctx)
+                actual_answer = sql_result.get("summary", "")
+                if not sql_result.get("rows") and (ctx.category or ctx.merchant):
+                    relaxed = ctx.model_copy(update={"category": None, "merchant": None})
+                    sql_result2 = await sql_query.execute_for_intent(query_intent, question, relaxed)
+                    if sql_result2.get("rows"):
+                        actual_answer = sql_result2.get("summary", actual_answer)
+
+            if not actual_answer and path in (QueryPath.FTS, QueryPath.HYBRID):
+                chunks = await text_search.search(question)
+                if chunks:
+                    actual_answer = chunks[0].get("snippet", chunks[0].get("content", ""))[:200]
     except Exception as exc:
         failures.append(f"pipeline error: {exc}")
 
@@ -185,6 +242,12 @@ async def run_one_eval(case: dict[str, Any]) -> EvalResult:
 
     duration_ms = round((time.perf_counter() - t0) * 1000, 1)
 
+    actual_semantic_parser_called = False
+    actual_semantic_scenario_type = ""
+    if query_plan.affordability is not None:
+        actual_semantic_parser_called = query_plan.affordability.semantic_parser_called
+        actual_semantic_scenario_type = query_plan.affordability.semantic_scenario_type
+
     return EvalResult(
         eval_id=eval_id,
         question=question,
@@ -192,7 +255,11 @@ async def run_one_eval(case: dict[str, Any]) -> EvalResult:
         failures=failures,
         actual_intent=actual_intent,
         actual_domain=actual_domain,
+        actual_route_type=actual_route_type,
+        actual_task_type=actual_task_type,
         actual_answer=actual_answer[:150],
+        actual_semantic_parser_called=actual_semantic_parser_called,
+        actual_semantic_scenario_type=actual_semantic_scenario_type,
         duration_ms=duration_ms,
     )
 
@@ -203,9 +270,11 @@ async def run_evals(
     cases: list[dict],
     fail_fast: bool = False,
 ) -> list[EvalResult]:
+    import os
+    os.environ.setdefault("LOG_LEVEL", "WARNING")
     from app.db.engine import init_db
     from app.core.logger import configure_logging
-    configure_logging(level="WARNING")
+    configure_logging()
     await init_db()
 
     results: list[EvalResult] = []
@@ -249,7 +318,9 @@ def print_summary(results: list[EvalResult]) -> None:
             if not r.passed:
                 print(f"\n  [{r.eval_id}]")
                 print(f"    Q: {r.question!r}")
-                print(f"    intent={r.actual_intent}  domain={r.actual_domain}")
+                print(f"    intent={r.actual_intent}  domain={r.actual_domain}  route={r.actual_route_type}  task={r.actual_task_type}")
+                if r.actual_semantic_parser_called or r.actual_semantic_scenario_type:
+                    print(f"    semantic_called={r.actual_semantic_parser_called}  semantic_type={r.actual_semantic_scenario_type!r}")
                 print(f"    answer={r.actual_answer!r}")
                 for f in r.failures:
                     print(f"    ✗ {f}")

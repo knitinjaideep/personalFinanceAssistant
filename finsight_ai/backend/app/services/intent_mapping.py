@@ -43,6 +43,7 @@ CHAT_TO_QUERY_INTENT: dict[ChatIntent, QueryIntent] = {
     ChatIntent.ACCOUNT_SUMMARY: QueryIntent.BALANCE_LOOKUP,
     ChatIntent.COMPARISON: QueryIntent.SPENDING_COMPARISON,
     ChatIntent.RECURRING_TRANSACTIONS: QueryIntent.RECURRING_TRANSACTIONS,
+    ChatIntent.AFFORDABILITY: QueryIntent.BALANCE_LOOKUP,  # affordability needs balances + holdings
     ChatIntent.UNKNOWN: QueryIntent.HYBRID_FINANCIAL_QUESTION,
 }
 
@@ -57,6 +58,7 @@ DEFAULT_DATA_SOURCE: dict[ChatIntent, DataSource] = {
     ChatIntent.ACCOUNT_SUMMARY: DataSource.SQL,
     ChatIntent.COMPARISON: DataSource.SQL,
     ChatIntent.RECURRING_TRANSACTIONS: DataSource.SQL,
+    ChatIntent.AFFORDABILITY: DataSource.SQL,
     ChatIntent.UNKNOWN: DataSource.HYBRID,
 }
 
@@ -150,6 +152,27 @@ _RULES: list[tuple[ChatIntent, list[str], list[str]]] = [
         r"\bhow\s+much\s+money\s+(?:came\s+in|did\s+i\s+(?:receive|make|earn|get))\b",
     ], [
         r"\bdeposit\b", r"\bearned?\b", r"\bincome\b",
+    ]),
+
+    # Affordability must come before BALANCE_SUMMARY — "do I have enough money"
+    # would otherwise match the balance summary weak patterns.
+    (ChatIntent.AFFORDABILITY, [
+        r"\bcan\s+(?:we|i)\s+afford\b",
+        r"\bcan\s+(?:we|i)\s+buy\b",
+        r"\bshould\s+(?:we|i)\s+buy\b",
+        r"\bis\s+it\s+okay\s+to\s+buy\b",
+        r"\bcan\s+(?:we|i)\s+spend\b",
+        r"\bdo\s+(?:we|i)\s+have\s+enough\s+(?:money|cash|funds)\b",
+        r"\bwould\s+(?:this|buying|it)\s+hurt\b",
+        r"\bwould\s+buying\b.{0,60}\b(?:hurt|affect|impact|deplete|drain)\b",
+        r"\bis\s+(?:this|it)\s+too\s+expensive\b",
+        r"\b(?:house|home)\s+affordability\b",
+        r"\bafford\s+a\b.{0,60}\b(?:house|home|car|bag|watch|ring|vacation|trip)\b",
+        r"\b(?:birkin|hermes|rolex|designer)\b.{0,60}\b(?:hurt|afford|buy|savings?)\b",
+        r"\b(?:hurt|affect|deplete)\b.{0,60}\b(?:savings?|house\s+fund|down\s+payment)\b",
+    ], [
+        r"\bafford\b",
+        r"\benough\s+(?:money|cash|funds)\b",
     ]),
 
     (ChatIntent.BALANCE_SUMMARY, [
@@ -259,6 +282,12 @@ def _extract_merchant(q: str) -> str | None:
     _REJECT_CANDIDATES = {
         "chase", "amex", "discover", "morgan stanley", "etrade",
         "bank of america", "marcus",
+        # Named card/account identifiers — these are accounts, not merchants
+        "amex gold", "gold card", "sapphire preferred", "sapphire reserve",
+        "prime visa", "amazon prime", "freedom unlimited", "freedom flex",
+        "blue cash", "blue cash everyday", "blue cash preferred",
+        "chase sapphire", "chase freedom",
+        "checking", "savings", "brokerage",
         "january", "february", "march", "april", "may", "june",
         "july", "august", "september", "october", "november", "december",
         "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
@@ -465,6 +494,11 @@ _SQL_CAPABLE_INTENTS: frozenset[ChatIntent] = frozenset({
     ChatIntent.ACCOUNT_SUMMARY,
 })
 
+# Affordability intent — always routes to its own dedicated path.
+_AFFORDABILITY_INTENTS: frozenset[ChatIntent] = frozenset({
+    ChatIntent.AFFORDABILITY,
+})
+
 
 def _detect_complexity(q: str) -> list[str]:
     """Return a list of complexity signal names that match the question."""
@@ -501,6 +535,18 @@ def build_route_decision(
             intent=intent,
             entities=ents,
             reason="Intent could not be determined; clarification required.",
+            complexity_signals=complexity,
+            rule_confidence=rule_conf,
+        )
+
+    # ── Affordability — dedicated route, never needs institution/category ─────
+    if intent in _AFFORDABILITY_INTENTS:
+        return RouteDecision(
+            route_type=RouteType.AFFORDABILITY,
+            route_risk=RouteRisk.SAFE,
+            intent=intent,
+            entities=ents,
+            reason="Affordability question routes to dedicated financial-decision analysis.",
             complexity_signals=complexity,
             rule_confidence=rule_conf,
         )

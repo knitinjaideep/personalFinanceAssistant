@@ -741,10 +741,52 @@ async def _holdings_total(question: str, ctx: QueryContext) -> SQLResult:
         result = await session.execute(text(sql), params)
         rows = [dict(r._mapping) for r in result.fetchall()]
 
-    total = sum(float(r.get("market_value") or 0) for r in rows)
-    columns = ["symbol", "description", "quantity", "market_value", "asset_class", "percent_of_portfolio", "unrealized_gain_loss", "institution", "account_type"]
+    if rows:
+        total = sum(float(r.get("market_value") or 0) for r in rows)
+        columns = ["symbol", "description", "quantity", "market_value", "asset_class", "percent_of_portfolio", "unrealized_gain_loss", "institution", "account_type"]
+        searched = _describe_filters(ctx)
+        return _exact_result(rows, columns, f"Total invested: ${total:,.2f} across {len(rows)} positions.", sql.strip(), searched)
+
+    # Fallback: holdings table is empty — use balance_snapshots for investment accounts.
+    # This covers institutions like Morgan Stanley where we parse balances but not per-holding rows.
+    bs_institution_frag = ""
+    if ctx.institution:
+        bs_institution_frag = " AND LOWER(i.institution_type) = :institution"
+
+    bs_sql = f"""
+        WITH latest_snap AS (
+            SELECT account_id, MAX(snapshot_date) AS max_date
+            FROM balance_snapshots
+            GROUP BY account_id
+        )
+        SELECT
+            a.account_name,
+            a.account_type,
+            i.name              AS institution,
+            bs.snapshot_date,
+            bs.total_value      AS market_value,
+            bs.invested_value,
+            bs.cash_value
+        FROM balance_snapshots bs
+        JOIN latest_snap ls  ON bs.account_id = ls.account_id AND bs.snapshot_date = ls.max_date
+        JOIN accounts     a  ON bs.account_id = a.id
+        JOIN institutions i  ON a.institution_id = i.id
+        WHERE LOWER(a.account_type) NOT IN ('checking', 'savings', 'credit')
+          {bs_institution_frag}
+        ORDER BY CAST(bs.total_value AS REAL) DESC
+        LIMIT 50
+    """
     searched = _describe_filters(ctx)
-    return _exact_result(rows, columns, f"Total invested: ${total:,.2f} across {len(rows)} positions.", sql.strip(), searched)
+    async with get_session() as session:
+        bs_result = await session.execute(text(bs_sql), params)
+        bs_rows = [dict(r._mapping) for r in bs_result.fetchall()]
+
+    if bs_rows:
+        total = sum(float(r.get("market_value") or 0) for r in bs_rows)
+        bs_columns = ["account_name", "account_type", "institution", "snapshot_date", "market_value", "invested_value", "cash_value"]
+        return _exact_result(bs_rows, bs_columns, f"Total portfolio value: ${total:,.2f} across {len(bs_rows)} accounts.", bs_sql.strip(), searched)
+
+    return _exact_result([], [], "No investment holdings or balance data found.", sql.strip(), searched)
 
 
 # ── Handler: holdings_lookup ──────────────────────────────────────────────────
