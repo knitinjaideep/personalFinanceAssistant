@@ -11,6 +11,7 @@ import VarianceBadge from "@/components/coral-ds/VarianceBadge";
 import TargetProgressBar from "@/components/coral-ds/TargetProgressBar";
 import MetricComparison from "@/components/coral-ds/MetricComparison";
 import InsightCard from "@/components/coral-ds/InsightCard";
+import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
 import { ShoppingBag, PiggyBank, TrendingUp } from "lucide-react";
 
 export default function DesignSystemPage() {
@@ -85,6 +86,15 @@ export default function DesignSystemPage() {
             <InsightCard icon={<PiggyBank size={17} />} tone="warning" title="Under-saving for House Fund" description="You're $45 behind your monthly savings goal." />
             <InsightCard icon={<TrendingUp size={17} />} tone="good" title="On track for 401(k)" description="Great job! You're meeting your retirement contributions." />
           </div>
+        </section>
+
+        <section>
+          <SectionHeader title="Coral advisor" size="sm" />
+          <CoralAdvisorCard
+            className="mt-4 max-w-xl"
+            headline="You're slightly off plan this month"
+            body="Spending in Wants is running above plan, and you're saving a bit less than your target."
+          />
         </section>
       </div>
     </PageShell>
