@@ -180,6 +180,29 @@
   /* Status text (readable in dark) */
   --success-text:      #4CAF93;
   --warning-strong:    #c89a00;
+
+  /* ── Semantic design-system tokens (dark) ─────────────────────────────── */
+  --coral-primary:              #FF7A5A;
+  --coral-primary-hover:        #E8694B;
+  --coral-primary-soft:         rgba(255,122,90,0.14);
+
+  --financial-needs:            #5B9CFF;
+  --financial-needs-soft:       rgba(91,156,255,0.14);
+  --financial-wants:            #FF8266;
+  --financial-wants-soft:       rgba(255,130,102,0.14);
+  --financial-savings:          #4FC79A;
+  --financial-savings-soft:     rgba(79,199,154,0.14);
+  --financial-investments:      #9C8DFF;
+  --financial-investments-soft: rgba(156,141,255,0.14);
+
+  --status-good:                #4CAF93;
+  --status-good-soft:           rgba(76,175,147,0.14);
+  --status-warning:             #C89A00;
+  --status-warning-soft:        rgba(200,154,0,0.14);
+  --status-danger:               #E45757;
+  --status-danger-soft:         rgba(228,87,87,0.14);
+  --status-neutral:             #8AA5B8;
+  --status-neutral-soft:        rgba(138,165,184,0.14);
 }
 
 [data-theme="light"] {
@@ -308,6 +331,29 @@
 
   --success-text:      #2D8A70;
   --warning-strong:    #8A6A00;
+
+  /* ── Semantic design-system tokens (light) ────────────────────────────── */
+  --coral-primary:              #FF7A5A;
+  --coral-primary-hover:        #E8694B;
+  --coral-primary-soft:         rgba(255,122,90,0.10);
+
+  --financial-needs:            #2F6FE0;
+  --financial-needs-soft:       rgba(47,111,224,0.10);
+  --financial-wants:            #E8593F;
+  --financial-wants-soft:       rgba(232,89,63,0.10);
+  --financial-savings:          #2E9E76;
+  --financial-savings-soft:     rgba(46,158,118,0.10);
+  --financial-investments:      #7A6AE0;
+  --financial-investments-soft: rgba(122,106,224,0.10);
+
+  --status-good:                #2D8A70;
+  --status-good-soft:           rgba(45,138,112,0.10);
+  --status-warning:             #8A6A00;
+  --status-warning-soft:        rgba(138,106,0,0.10);
+  --status-danger:               #C43F3F;
+  --status-danger-soft:         rgba(196,63,63,0.10);
+  --status-neutral:             #5B7284;
+  --status-neutral-soft:        rgba(91,114,132,0.10);
 }
 
 @layer base {

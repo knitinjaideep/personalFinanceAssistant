@@ -47,6 +47,28 @@ const config: Config = {
         positive: "#4CAF93",
         negative: "#E45757",
         highlight: "#FFD166",
+
+        "coral-primary": "var(--coral-primary)",
+        "coral-primary-hover": "var(--coral-primary-hover)",
+        "coral-primary-soft": "var(--coral-primary-soft)",
+
+        "financial-needs": "var(--financial-needs)",
+        "financial-needs-soft": "var(--financial-needs-soft)",
+        "financial-wants": "var(--financial-wants)",
+        "financial-wants-soft": "var(--financial-wants-soft)",
+        "financial-savings": "var(--financial-savings)",
+        "financial-savings-soft": "var(--financial-savings-soft)",
+        "financial-investments": "var(--financial-investments)",
+        "financial-investments-soft": "var(--financial-investments-soft)",
+
+        "status-good": "var(--status-good)",
+        "status-good-soft": "var(--status-good-soft)",
+        "status-warning": "var(--status-warning)",
+        "status-warning-soft": "var(--status-warning-soft)",
+        "status-danger": "var(--status-danger)",
+        "status-danger-soft": "var(--status-danger-soft)",
+        "status-neutral": "var(--status-neutral)",
+        "status-neutral-soft": "var(--status-neutral-soft)",
       },
       borderRadius: {
         "2xl": "16px",
