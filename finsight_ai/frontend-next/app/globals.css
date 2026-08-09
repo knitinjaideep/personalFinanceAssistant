@@ -151,7 +151,7 @@
   /* ── Nav tokens (dark) ── */
   --nav-bg:            rgba(5,22,40,0.55);   /* legacy — kept for compat */
   --nav-bg-strong:     rgba(5,22,40,0.82);
-  --nav-bg-idle:       rgba(5,18,34,0.28);   /* transparent at rest */
+  --nav-bg-idle:       rgba(5,22,40,0.55);   /* lightly translucent at rest */
   --nav-bg-scrolled:   rgba(5,22,40,0.72);   /* richer when scrolled / hovered */
   --nav-border-idle:   rgba(34,211,238,0.10);
   --nav-border-hover:  rgba(34,211,238,0.26);
@@ -303,7 +303,7 @@
   /* ── Nav tokens (light) ── */
   --nav-bg:            rgba(255,255,255,0.62);
   --nav-bg-strong:     rgba(255,255,255,0.90);
-  --nav-bg-idle:       rgba(255,255,255,0.38);
+  --nav-bg-idle:       rgba(255,255,255,0.62);
   --nav-bg-scrolled:   rgba(255,255,255,0.84);
   --nav-border-idle:   rgba(31,111,139,0.14);
   --nav-border-hover:  rgba(31,111,139,0.30);

@@ -245,18 +245,25 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
           /*
            * group/nav — all children can react to nav-level hover via
            * group-hover/nav: variants without adding JS state.
-           *
-           * Idle:  ~30% opaque glass that blends into the underwater scene.
-           * Hover: richer glass surface + lift + cyan glow ring.
+           * nav-container drives the idle → hover background/border/shadow
+           * transition via CSS (see .nav-container rules in globals.css),
+           * since Tailwind group-hover can't interpolate between two
+           * dynamic CSS var() values.
            */
           className="
-            group/nav
+            group/nav nav-container
             pointer-events-auto mt-5
             flex items-center justify-between gap-3
             rounded-full
             px-3 sm:px-4 py-2
           "
-          style={{ background: "transparent", border: "none", boxShadow: "none" }}
+          style={{
+            background: "var(--nav-bg-idle)",
+            border: "1px solid var(--nav-border-idle)",
+            boxShadow: "var(--nav-shadow-idle)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+          }}
         >
 
           {/* ── Left: Brand ── */}
