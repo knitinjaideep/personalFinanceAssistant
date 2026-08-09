@@ -6,6 +6,7 @@ import PageHeader from "@/components/coral-ds/PageHeader";
 import GlobalPeriodFilter, { type PeriodRange } from "@/components/coral-ds/GlobalPeriodFilter";
 import SectionHeader from "@/components/coral-ds/SectionHeader";
 import Surface from "@/components/coral-ds/Surface";
+import StatusBadge from "@/components/coral-ds/StatusBadge";
 
 export default function DesignSystemPage() {
   const [month, setMonth] = useState("August 2026");
@@ -39,6 +40,16 @@ export default function DesignSystemPage() {
               A calm base panel used by InsightCard, CoralAdvisorCard, and other content components.
             </p>
           </Surface>
+        </section>
+
+        <section>
+          <SectionHeader title="Badges" size="sm" />
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <StatusBadge status="good">On track</StatusBadge>
+            <StatusBadge status="warning">Slightly behind</StatusBadge>
+            <StatusBadge status="danger">Off plan</StatusBadge>
+            <StatusBadge status="neutral">No data</StatusBadge>
+          </div>
         </section>
       </div>
     </PageShell>
