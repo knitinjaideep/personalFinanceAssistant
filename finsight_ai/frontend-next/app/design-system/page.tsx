@@ -12,7 +12,10 @@ import TargetProgressBar from "@/components/coral-ds/TargetProgressBar";
 import MetricComparison from "@/components/coral-ds/MetricComparison";
 import InsightCard from "@/components/coral-ds/InsightCard";
 import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
-import { ShoppingBag, PiggyBank, TrendingUp } from "lucide-react";
+import { ShoppingBag, PiggyBank, TrendingUp, Landmark } from "lucide-react";
+import EmptyState from "@/components/coral-ds/EmptyState";
+import ErrorState from "@/components/coral-ds/ErrorState";
+import SkeletonState from "@/components/coral-ds/SkeletonState";
 
 export default function DesignSystemPage() {
   const [month, setMonth] = useState("August 2026");
@@ -95,6 +98,19 @@ export default function DesignSystemPage() {
             headline="You're slightly off plan this month"
             body="Spending in Wants is running above plan, and you're saving a bit less than your target."
           />
+        </section>
+
+        <section>
+          <SectionHeader title="States" size="sm" />
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <EmptyState compact icon={<Landmark size={22} />} title="No accounts yet" description="Upload a statement to get started." />
+            <ErrorState compact message="Could not load this section." onRetry={() => {}} />
+            <Surface padding="sm" className="space-y-2">
+              <SkeletonState variant="text" width="60%" />
+              <SkeletonState variant="text" width="40%" />
+              <SkeletonState variant="block" height="2rem" />
+            </Surface>
+          </div>
         </section>
       </div>
     </PageShell>
