@@ -22,7 +22,7 @@ function UnderwaterBackground() {
       aria-hidden
       className="fixed inset-0 -z-10 pointer-events-none select-none overflow-hidden"
     >
-      {/* Real photo background */}
+      {/* Real photo background — masked to the edges so the center reading zone stays clean */}
       <Image
         key={imgSrc}
         src={imgSrc}
@@ -30,7 +30,11 @@ function UnderwaterBackground() {
         fill
         priority
         className="object-cover object-center"
-        style={{ transition: "opacity 0.5s ease" }}
+        style={{
+          transition: "opacity 0.5s ease",
+          maskImage: "radial-gradient(ellipse 68% 62% at 50% 38%, transparent 45%, black 100%)",
+          WebkitMaskImage: "radial-gradient(ellipse 68% 62% at 50% 38%, transparent 45%, black 100%)",
+        }}
         sizes="100vw"
       />
 
@@ -57,7 +61,7 @@ function UnderwaterBackground() {
 
       {/* Drifting light rays — present on every page, both themes */}
       <ShimmerLayer
-        intensity={isLight ? 0.42 : 0.55}
+        intensity={isLight ? 0.28 : 0.36}
         color={isLight ? "rgba(95,168,211,0.22)" : "rgba(103,232,249,0.22)"}
       />
 
@@ -74,7 +78,7 @@ function UnderwaterBackground() {
 
       {/* Floating bubbles — both themes, theme-aware color */}
       <BubbleField
-        intensity={isLight ? 0.85 : 1}
+        intensity={isLight ? 0.55 : 0.65}
         color={isLight ? "rgba(31,111,139,0.55)" : "rgba(103,232,249,0.65)"}
         fill={isLight ? "rgba(31,111,139,0.10)" : "rgba(34,211,238,0.12)"}
       />
