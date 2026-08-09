@@ -41,7 +41,7 @@ export default function TargetProgressBar({ label, actual, target, bucket, class
         <motion.div
           className="h-full rounded-full"
           style={{ background: color }}
-          initial={{ width: prefersReducedMotion ? `${clampedActual}%` : 0 }}
+          initial={{ width: 0 }}
           animate={{ width: `${clampedActual}%` }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.6, ease: [0.22, 1, 0.36, 1] }}
         />
