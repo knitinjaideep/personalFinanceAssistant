@@ -10,6 +10,8 @@ import StatusBadge from "@/components/coral-ds/StatusBadge";
 import VarianceBadge from "@/components/coral-ds/VarianceBadge";
 import TargetProgressBar from "@/components/coral-ds/TargetProgressBar";
 import MetricComparison from "@/components/coral-ds/MetricComparison";
+import InsightCard from "@/components/coral-ds/InsightCard";
+import { ShoppingBag, PiggyBank, TrendingUp } from "lucide-react";
 
 export default function DesignSystemPage() {
   const [month, setMonth] = useState("August 2026");
@@ -73,6 +75,15 @@ export default function DesignSystemPage() {
           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
             <MetricComparison label="401(k)" actual="5.8%" target="6%" />
             <MetricComparison label="Roth IRA" actual="2.1%" target="4%" />
+          </div>
+        </section>
+
+        <section>
+          <SectionHeader title="Insight cards" size="sm" />
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <InsightCard icon={<ShoppingBag size={17} />} tone="danger" title="Overspending in Wants" description="You're over your Wants target by $80 this month." />
+            <InsightCard icon={<PiggyBank size={17} />} tone="warning" title="Under-saving for House Fund" description="You're $45 behind your monthly savings goal." />
+            <InsightCard icon={<TrendingUp size={17} />} tone="good" title="On track for 401(k)" description="Great job! You're meeting your retirement contributions." />
           </div>
         </section>
       </div>
