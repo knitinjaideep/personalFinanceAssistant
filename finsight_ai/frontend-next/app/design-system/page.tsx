@@ -7,6 +7,7 @@ import GlobalPeriodFilter, { type PeriodRange } from "@/components/coral-ds/Glob
 import SectionHeader from "@/components/coral-ds/SectionHeader";
 import Surface from "@/components/coral-ds/Surface";
 import StatusBadge from "@/components/coral-ds/StatusBadge";
+import VarianceBadge from "@/components/coral-ds/VarianceBadge";
 
 export default function DesignSystemPage() {
   const [month, setMonth] = useState("August 2026");
@@ -49,6 +50,9 @@ export default function DesignSystemPage() {
             <StatusBadge status="warning">Slightly behind</StatusBadge>
             <StatusBadge status="danger">Off plan</StatusBadge>
             <StatusBadge status="neutral">No data</StatusBadge>
+            <VarianceBadge value={80} />
+            <VarianceBadge value={-45} />
+            <VarianceBadge value={12} format="percent" direction="negative-good" />
           </div>
         </section>
       </div>
