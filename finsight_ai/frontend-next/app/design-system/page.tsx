@@ -4,6 +4,7 @@ import { useState } from "react";
 import PageShell from "@/components/coral-ds/PageShell";
 import PageHeader from "@/components/coral-ds/PageHeader";
 import GlobalPeriodFilter, { type PeriodRange } from "@/components/coral-ds/GlobalPeriodFilter";
+import SectionHeader from "@/components/coral-ds/SectionHeader";
 
 export default function DesignSystemPage() {
   const [month, setMonth] = useState("August 2026");
@@ -25,7 +26,11 @@ export default function DesignSystemPage() {
         }
       />
 
-      <div className="space-y-12">{/* Later tasks append <section> blocks here */}</div>
+      <div className="space-y-12">
+        <section>
+          <SectionHeader eyebrow="Foundations" title="Section header" description="Used above every content section." size="sm" />
+        </section>
+      </div>
     </PageShell>
   );
 }
