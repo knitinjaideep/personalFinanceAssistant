@@ -9,6 +9,7 @@ import Surface from "@/components/coral-ds/Surface";
 import StatusBadge from "@/components/coral-ds/StatusBadge";
 import VarianceBadge from "@/components/coral-ds/VarianceBadge";
 import TargetProgressBar from "@/components/coral-ds/TargetProgressBar";
+import MetricComparison from "@/components/coral-ds/MetricComparison";
 
 export default function DesignSystemPage() {
   const [month, setMonth] = useState("August 2026");
@@ -65,6 +66,14 @@ export default function DesignSystemPage() {
             <TargetProgressBar label="Savings" actual={12} target={15} bucket="savings" />
             <TargetProgressBar label="Investments" actual={16} target={15} bucket="investments" />
           </Surface>
+        </section>
+
+        <section>
+          <SectionHeader title="Metric comparison" size="sm" />
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <MetricComparison label="401(k)" actual="5.8%" target="6%" />
+            <MetricComparison label="Roth IRA" actual="2.1%" target="4%" />
+          </div>
         </section>
       </div>
     </PageShell>
