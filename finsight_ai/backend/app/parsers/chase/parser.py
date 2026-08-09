@@ -191,11 +191,13 @@ def _extract_transactions(doc: ParsedDocument, is_credit: bool) -> list[Extracte
 # Matches: "01/16 Description -1,234.56 14,297.86" (checking: date desc amount balance)
 # Matches: "01/16 01/15 Description -1,234.56 14,297.86" (checking: date settle desc amount balance)
 # Matches: "12/01 MERCHANT NAME NJ 16.96" (credit: date desc amount)
+#   \d* (not \d{1,3}) — sub-dollar amounts sometimes print with no leading
+#   digit at all ("-.86", ".01" instead of "-0.86", "0.01").
 _CHECKING_TX_RE = re.compile(
     r"^(\d{2}/\d{2})"            # transaction date
     r"(?:\s+\d{2}/\d{2})?"       # optional settlement date
     r"\s+(.+?)"                   # description (non-greedy)
-    r"\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})"  # amount
+    r"\s+([-]?\d*(?:,\d{3})*\.\d{2})"  # amount
     r"(?:\s+[\d,]+\.\d{2})?$",   # optional balance
     re.MULTILINE,
 )
@@ -203,7 +205,7 @@ _CHECKING_TX_RE = re.compile(
 _CREDIT_TX_RE = re.compile(
     r"^(\d{2}/\d{2})"            # transaction date
     r"\s+(.+?)"                   # description
-    r"\s+([-]?\d{1,3}(?:,\d{3})*\.\d{2})$",  # amount at end of line
+    r"\s+([-]?\d*(?:,\d{3})*\.\d{2})$",  # amount at end of line
     re.MULTILINE,
 )
 

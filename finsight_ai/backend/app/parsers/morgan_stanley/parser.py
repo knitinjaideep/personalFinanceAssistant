@@ -56,6 +56,71 @@ _ACCOUNT_RE = re.compile(
 )
 _AMOUNT_RE = re.compile(r"\$?([\d,]+\.\d{2})")
 
+# "CASH FLOW ACTIVITY BY DATE" text line, e.g.:
+#   "1/27 Cash Transfer FUNDS TRANSFERRED CONFIRMATION # 259585626 $5,000.00"
+#   "1/26 1/27 Bought PAYCHEX INC ACTED AS AGENT 6.000 106.1900 (637.14)"
+# Activity date, optional settlement date, free-text description, trailing signed amount.
+_ACTIVITY_TXN_RE = re.compile(
+    r"^(?P<date>\d{1,2}/\d{1,2})(?:\s+\d{1,2}/\d{1,2})?\s+"
+    r"(?P<desc>.+?)\s+"
+    r"(?P<amount>[\$(]*-?[\d,]+\.\d{2}\)?)\s*$"
+)
+# Rollup/summary lines that happen to end in a dollar figure but aren't transactions.
+_NON_TXN_DESC_RE = re.compile(
+    r"^(net\s+credits|net\s+activity|total\b|percentage\s+of|activity\s+date)", re.IGNORECASE
+)
+
+# Holdings table line, e.g.:
+#   "MSILF MMKT WEALTH CLASS (MWMXX) 36,291.500 N/A $1.0000 N/A $36,291.50 $1,365.65 3.76"
+#   "3M CO (MMM) 7/16/24 4.000 $103.310 $153.160 $413.24 $612.64 $199.40 LT $11.68 1.91"
+# Description, ticker in parens, optional trade date, then Quantity/UnitCost/SharePrice/
+# TotalCost/MarketValue columns — Market Value is always the 5th token after the ticker
+# (or after the trade date, when present), regardless of whether "$" prefixes are printed.
+#   .+  (greedy) so a description with an earlier parenthetical, e.g.
+#   "COMCAST CORP (NEW) CLASS A (CMCSA) ..." or "WASTE MGMT INC (DELA) (WM) ...",
+#   still resolves to the real ticker — the rightmost "(...)" group — not "(NEW)"/"(DELA)".
+_HOLDING_LINE_RE = re.compile(r"^(?P<desc>.+)\s+\((?P<symbol>[A-Z][A-Z0-9.'\-]{0,7})\)\s+(?P<rest>.+)$")
+_TRADE_DATE_TOKEN_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}$")
+_QTY_TOKEN_RE = re.compile(r"^[\d,]+\.\d{3}$")
+_MONEY_TOKEN_RE = re.compile(r"^\$?\(?[\d,]+\.\d{2}\)?$")
+# A follow-on tax lot for a multi-lot position, printed without repeating the
+# security name/ticker, e.g.:
+#   "10/31/25 1.000 146.010 142.420 146.01 142.42 (3.59)ST R"
+_CONTINUATION_LOT_RE = re.compile(r"^\d{1,2}/\d{1,2}/\d{2,4}\s+(?P<rest>.+)$")
+
+
+def _parse_signed_amount(text: str | None) -> Decimal | None:
+    """Parse a currency string to Decimal, treating parens (or a leading '-') as negative."""
+    if not text:
+        return None
+    is_negative = "(" in text or text.strip().startswith("-")
+    cleaned = re.sub(r"[^\d.]", "", text)
+    if not cleaned:
+        return None
+    try:
+        value = Decimal(cleaned)
+    except InvalidOperation:
+        return None
+    return -value if is_negative else value
+
+
+def _parse_short_date(month_day: str, period_end: date | None) -> date | None:
+    """Parse a bare 'M/D' activity date using the statement period to supply the year."""
+    try:
+        month_str, day_str = month_day.split("/")
+        month, day = int(month_str), int(day_str)
+    except (ValueError, AttributeError):
+        return None
+    year = period_end.year if period_end else date.today().year
+    # A December activity date inside a January-ending statement belongs to the prior year.
+    if period_end and month == 12 and period_end.month == 1:
+        year -= 1
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
 _STATEMENT_TYPE_PATTERNS = {
     "brokerage": [r"brokerage\s+account", r"individual\s+account", r"portfolio\s+summary"],
     "advisory": [r"advisory\s+(fee|account|service)", r"managed\s+account"],
@@ -110,7 +175,7 @@ class MorganStanleyParser(InstitutionParser):
         account_masked = acct_match.group(1) if acct_match else ""
 
         # Extract financial data from all pages
-        transactions = _extract_transactions(document)
+        transactions = _extract_transactions(document, period_end)
         fees = _extract_fees(document, period_end)
         holdings = _extract_holdings(document)
         balances = _extract_balances(document, period_end)
@@ -202,8 +267,61 @@ def _parse_amount(text: str) -> Decimal | None:
     return None
 
 
-def _extract_transactions(doc: ParsedDocument) -> list[ExtractedTransaction]:
-    """Extract transactions from tables that look like transaction history."""
+def _extract_transactions(doc: ParsedDocument, period_end: date | None = None) -> list[ExtractedTransaction]:
+    """Extract transactions from the statement.
+
+    Morgan Stanley statements print the "CASH FLOW ACTIVITY BY DATE" section as
+    plain TEXT lines, not ruled tables (pdfplumber never finds a usable table on
+    these statements), so text-line parsing is the primary strategy. Table
+    parsing is kept as a fallback for the rare statement that does export one.
+    """
+    transactions = _extract_transactions_from_text(doc, period_end)
+    if transactions:
+        return transactions
+    return _extract_transactions_from_tables(doc)
+
+
+def _extract_transactions_from_text(
+    doc: ParsedDocument, period_end: date | None
+) -> list[ExtractedTransaction]:
+    transactions: list[ExtractedTransaction] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for page in doc.pages:
+        for raw_line in page.raw_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            m = _ACTIVITY_TXN_RE.match(line)
+            if not m:
+                continue
+            desc = m.group("desc").strip()
+            if not desc or _NON_TXN_DESC_RE.search(desc):
+                continue
+            amount = _parse_signed_amount(m.group("amount"))
+            if amount is None:
+                continue
+            txn_date = _parse_short_date(m.group("date"), period_end)
+            if txn_date is None:
+                continue
+
+            key = (str(txn_date), desc.lower(), str(amount))
+            if key in seen:
+                continue
+            seen.add(key)
+
+            transactions.append(ExtractedTransaction(
+                transaction_date=txn_date,
+                description=desc,
+                amount=amount,
+                transaction_type=_classify_transaction(desc),
+                source_page=page.page_number,
+            ))
+    return transactions
+
+
+def _extract_transactions_from_tables(doc: ParsedDocument) -> list[ExtractedTransaction]:
+    """Fallback: parse transactions from ruled tables, for statements that export one."""
     transactions = []
     for page in doc.pages:
         for table in page.tables:
@@ -334,7 +452,104 @@ def _extract_fees_from_tables(doc: ParsedDocument, period_end: date | None) -> l
 
 
 def _extract_holdings(doc: ParsedDocument) -> list[ExtractedHolding]:
-    """Extract holdings from portfolio/holdings tables."""
+    """Extract security holdings from the statement.
+
+    Like the activity section, the HOLDINGS section is plain TEXT (no ruled
+    table), so text-line parsing is primary; table parsing is a fallback.
+    """
+    holdings = _extract_holdings_from_text(doc)
+    if holdings:
+        return holdings
+    return _extract_holdings_from_tables(doc)
+
+
+def _holding_from_tokens(
+    desc: str, symbol: str | None, tokens: list[str], page_number: int
+) -> ExtractedHolding | None:
+    """Build a Holding from the numeric columns following a security's description.
+
+    Columns are: Quantity, Unit Cost, Share Price, Total Cost, Market Value, ...
+    Market Value is always the 5th token — this holds across every column layout
+    Morgan Stanley uses (money-market funds, single-lot stocks, per-lot rows).
+    """
+    if not tokens:
+        return None
+    # Skip the leading trade-date column when present (stock lots only).
+    if _TRADE_DATE_TOKEN_RE.match(tokens[0]):
+        tokens = tokens[1:]
+    if len(tokens) < 5 or not _QTY_TOKEN_RE.match(tokens[0]):
+        return None
+    market_value_tok = tokens[4]
+    if not _MONEY_TOKEN_RE.match(market_value_tok):
+        return None
+    market_value = _parse_signed_amount(market_value_tok)
+    if market_value is None or market_value <= 0:
+        return None
+
+    quantity = _parse_signed_amount(tokens[0])
+    price_tok = tokens[2]
+    price = _parse_signed_amount(price_tok) if _MONEY_TOKEN_RE.match(price_tok) else None
+
+    return ExtractedHolding(
+        symbol=symbol,
+        description=desc,
+        quantity=quantity,
+        price=price,
+        market_value=market_value,
+        source_page=page_number,
+    )
+
+
+def _extract_holdings_from_text(doc: ParsedDocument) -> list[ExtractedHolding]:
+    holdings: list[ExtractedHolding] = []
+    seen: set[tuple[str, str]] = set()
+    # Tracks the security a bare "continuation lot" line (no ticker) belongs to.
+    current_desc: str | None = None
+    current_symbol: str | None = None
+
+    for page in doc.pages:
+        for raw_line in page.raw_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            m = _HOLDING_LINE_RE.match(line)
+            if m:
+                desc = m.group("desc").strip()
+                symbol = m.group("symbol")
+                holding = _holding_from_tokens(desc, symbol, m.group("rest").split(), page.page_number)
+                if holding is None:
+                    continue
+                key = (symbol or desc.lower(), str(holding.market_value))
+                if key not in seen:
+                    seen.add(key)
+                    holdings.append(holding)
+                current_desc, current_symbol = desc, symbol
+                continue
+
+            # A "Total ..." rollup line closes out the multi-lot position above it;
+            # nothing after it belongs to that security anymore.
+            if line.lower().startswith("total"):
+                current_desc, current_symbol = None, None
+                continue
+
+            # A follow-on lot for the security named on an earlier line.
+            if current_symbol is not None:
+                cm = _CONTINUATION_LOT_RE.match(line)
+                if cm:
+                    holding = _holding_from_tokens(
+                        current_desc, current_symbol, cm.group("rest").split(), page.page_number
+                    )
+                    if holding is not None:
+                        key = (current_symbol, str(holding.market_value))
+                        if key not in seen:
+                            seen.add(key)
+                            holdings.append(holding)
+    return holdings
+
+
+def _extract_holdings_from_tables(doc: ParsedDocument) -> list[ExtractedHolding]:
+    """Fallback: parse holdings from ruled tables, for statements that export one."""
     holdings = []
     for page in doc.pages:
         for table in page.tables:

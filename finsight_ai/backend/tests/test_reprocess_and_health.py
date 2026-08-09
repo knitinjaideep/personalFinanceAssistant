@@ -378,3 +378,75 @@ async def test_credit_card_zero_transactions_still_flagged(temp_db):
 
     missing = await rs.find_documents_missing_data()
     assert "amex_empty" in {d.document_id for d in missing}
+
+
+async def _attach_chase_statement(
+    doc_id: str, *, with_balance: bool, with_activity_header: bool
+) -> str:
+    """A Chase credit-card statement with zero transactions, optionally with a
+    confirmed $0 balance and/or the raw activity-table column header chunk
+    (Chase prints "Merchant Name or Transaction Description" only when it also
+    prints an activity table — its presence with zero transactions is the
+    signal that something should have been parsed but wasn't)."""
+    async with get_session() as session:
+        inst = await repo.get_or_create_institution(session, "chase", "Chase")
+        acct = await repo.get_or_create_account(
+            session, institution_id=inst.id, institution_type="chase",
+            account_number_masked="****4242", account_type="credit_card",
+        )
+        stmt = await repo.create_statement(
+            session,
+            document_id=doc_id, institution_id=inst.id, institution_type="chase",
+            account_id=acct.id, account_type="credit_card", statement_type="credit_card",
+            period_start=date(2025, 1, 1), period_end=date(2025, 1, 31),
+            extraction_status="success", overall_confidence=0.9, warnings="[]",
+        )
+        if with_balance:
+            await repo.bulk_create_balance_snapshots(session, [{
+                "account_id": acct.id, "statement_id": stmt.id,
+                "snapshot_date": date(2025, 1, 31), "total_value": "0.00",
+            }])
+        chunk_text = (
+            "Date of Transaction Merchant Name or Transaction Description $ Amount"
+            if with_activity_header else "Account Summary Previous Balance $0.00"
+        )
+        await repo.bulk_create_text_chunks(session, [
+            {"document_id": doc_id, "chunk_index": 0, "content": chunk_text,
+             "page_number": 1, "institution_type": "chase"},
+        ])
+        return stmt.id
+
+
+async def test_chase_confirmed_zero_balance_no_activity_table_not_flagged(temp_db):
+    """A Chase statement with a confirmed $0.00 balance and NO activity-table
+    header at all means Chase genuinely printed no activity that period —
+    this must NOT be flagged (there is nothing to extract, not a bug)."""
+    await _make_document("chase_quiet", status="parsed", institution="chase")
+    await _attach_chase_statement("chase_quiet", with_balance=True, with_activity_header=False)
+
+    health = await rs.ingestion_health()
+    flagged = {d["document_id"] for d in health["documents"]}
+    assert "chase_quiet" not in flagged
+    assert health["summary"]["incomplete_documents"] == 0
+
+
+async def test_chase_activity_header_present_but_zero_transactions_is_flagged(temp_db):
+    """Regression guard for the real bug this distinction exists to catch:
+    Chase printed an activity table (so there was something to parse) but zero
+    transactions were extracted — that's a genuine extraction defect and must
+    still be flagged, even though a $0 balance was also captured."""
+    await _make_document("chase_missed", status="parsed", institution="chase")
+    await _attach_chase_statement("chase_missed", with_balance=True, with_activity_header=True)
+
+    missing = await rs.find_documents_missing_data()
+    assert "chase_missed" in {d.document_id for d in missing}
+
+
+async def test_chase_zero_transactions_no_balance_still_flagged(temp_db):
+    """Without even a confirmed balance, there's no positive evidence extraction
+    succeeded — default (flag it) still applies."""
+    await _make_document("chase_nothing", status="parsed", institution="chase")
+    await _attach_chase_statement("chase_nothing", with_balance=False, with_activity_header=False)
+
+    missing = await rs.find_documents_missing_data()
+    assert "chase_nothing" in {d.document_id for d in missing}

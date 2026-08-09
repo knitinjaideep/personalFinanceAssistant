@@ -73,5 +73,5 @@ SOURCES_BY_SLUGS: dict[tuple[str, str], StatementSource] = {
 }
 
 PARSEABLE_INSTITUTION_TYPES: frozenset[str] = frozenset({
-    "morgan_stanley", "chase", "etrade", "amex", "discover"
+    "morgan_stanley", "chase", "etrade", "amex", "discover", "bofa"
 })

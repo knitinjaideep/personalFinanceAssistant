@@ -61,6 +61,17 @@ ISSUE_FAILED = "failed"
 # as "must have transactions" for the complete/incomplete verdict.
 _HOLDINGS_INSTITUTIONS = {"morgan_stanley", "etrade"}
 
+# Chase's own literal column header for its activity table ("Date of
+# Transaction / Merchant Name or Transaction Description / $ Amount"),
+# printed above PURCHASE/PAYMENTS AND OTHER CREDITS whenever there was any
+# card activity that period — and omitted entirely when there wasn't. Some
+# Chase-generated statements render section headers with every character
+# doubled (a PDF font/rendering artifact — "AACCCCOOUUNNTT AACCTTIIVVIITTYY"),
+# which breaks substring search on "ACCOUNT ACTIVITY" itself, but this column
+# header renders cleanly, making it a reliable "was there anything to print"
+# signal distinct from "extraction found nothing."
+_CHASE_ACTIVITY_HEADER = "Merchant Name or Transaction"
+
 
 @dataclass
 class DocIssues:
@@ -128,6 +139,15 @@ async def _inspect_document(session, doc: DocumentModel) -> DocIssues:
         # the doc also has no holdings/balances/fees (i.e. nothing was extracted).
         if is_holdings_style:
             if not has_any_financial_data:
+                issues.append(ISSUE_ZERO_TRANSACTIONS)
+        elif (doc.institution_type or "").lower() == "chase" and balance_count > 0:
+            # A confirmed $0 balance plus no activity-table header at all means
+            # Chase genuinely printed no activity that period (not a missed
+            # extraction) — only flag if the header IS present (real signal
+            # something should have been parsed but wasn't).
+            chunks = await repo.get_chunks_for_document(session, doc.id)
+            has_activity_header = any(_CHASE_ACTIVITY_HEADER in (c.content or "") for c in chunks)
+            if has_activity_header:
                 issues.append(ISSUE_ZERO_TRANSACTIONS)
         else:
             issues.append(ISSUE_ZERO_TRANSACTIONS)
