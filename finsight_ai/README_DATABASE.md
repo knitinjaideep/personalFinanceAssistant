@@ -38,6 +38,12 @@ Or use TablePlus, DB Browser for SQLite, or DBeaver for a GUI.
 | `amex_details` | Membership rewards, credit limit |
 | `discover_details` | Cashback earned/redeemed, APR |
 
+Bank of America (`institution_type = 'bofa'`) has a full parser but **no**
+detail table — it only ever populates the canonical tables above. Marcus and
+529 are catalog-only stubs with no parser registered at all (see
+`backend/app/config/statement_catalog.py`), so they won't appear in any table
+until a parser is written for them.
+
 ### Scanner tracking fields (on `documents` table)
 
 | Column | Purpose |
@@ -60,6 +66,12 @@ Or use TablePlus, DB Browser for SQLite, or DBeaver for a GUI.
 ---
 
 ## Example SQL queries
+
+The full, actively-maintained query reference lives in
+[`queries.sql`](queries.sql) at the repo root — schema exploration, balances,
+holdings, spending, fees, institution-detail tables, derived metrics, FTS5
+search, and data-quality checks, all copy-paste ready. A couple of the most
+common ones:
 
 ### Total portfolio value (latest balance per account)
 ```sql
@@ -85,7 +97,7 @@ SELECT
     COUNT(*)                            AS txn_count
 FROM transactions t
 JOIN accounts a ON a.id = t.account_id
-WHERE a.institution_type IN ('chase','amex','discover')
+WHERE a.institution_type IN ('chase','amex','discover','bofa')
   AND t.transaction_type IN ('purchase','withdrawal','other')
   AND CAST(t.amount AS REAL) > 0
   AND t.transaction_date >= date('now', '-12 months')
@@ -93,85 +105,9 @@ GROUP BY month
 ORDER BY month;
 ```
 
-### Total fees by category
-```sql
-SELECT
-    fee_category,
-    COUNT(*)                       AS count,
-    SUM(CAST(amount AS REAL))      AS total
-FROM fees
-GROUP BY fee_category
-ORDER BY total DESC;
-```
-
-### Top 10 holdings by market value
-```sql
-SELECT
-    h.symbol,
-    h.description,
-    h.market_value,
-    h.unrealized_gain_loss,
-    a.account_name,
-    a.institution_type
-FROM holdings h
-JOIN accounts a ON a.id = h.account_id
-JOIN statements s ON s.id = h.statement_id
-WHERE s.period_end = (
-    SELECT MAX(period_end) FROM statements
-    WHERE account_id = h.account_id
-)
-ORDER BY CAST(h.market_value AS REAL) DESC
-LIMIT 10;
-```
-
-### Documents per institution with parse status
-```sql
-SELECT
-    institution_type,
-    COUNT(*)                                         AS total,
-    SUM(CASE WHEN status='parsed' THEN 1 ELSE 0 END) AS parsed,
-    SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,
-    MAX(upload_time)                                 AS last_ingested
-FROM documents
-GROUP BY institution_type
-ORDER BY total DESC;
-```
-
-### Statement coverage (date ranges per institution)
-```sql
-SELECT
-    d.institution_type,
-    MIN(s.period_start) AS earliest,
-    MAX(s.period_end)   AS latest,
-    COUNT(DISTINCT d.id) AS doc_count
-FROM statements s
-JOIN documents d ON d.id = s.document_id
-GROUP BY d.institution_type
-ORDER BY doc_count DESC;
-```
-
-### Spending by category (all time)
-```sql
-SELECT
-    COALESCE(category, 'other') AS category,
-    SUM(CAST(amount AS REAL))   AS total,
-    COUNT(*)                    AS txn_count
-FROM transactions t
-JOIN accounts a ON a.id = t.account_id
-WHERE a.institution_type IN ('chase','amex','discover')
-  AND CAST(t.amount AS REAL) > 0
-GROUP BY category
-ORDER BY total DESC;
-```
-
-### Files pending ingestion (via scanner hash check)
-```sql
--- Documents with a hash that have not been successfully parsed
-SELECT original_filename, institution_type, status, file_hash, source_file_path
-FROM documents
-WHERE status != 'parsed'
-ORDER BY upload_time DESC;
-```
+See [`queries.sql`](queries.sql) for the rest (fees by category, top holdings,
+document/statement coverage, FTS5 search, institution-detail tables, data
+quality checks, and more).
 
 ---
 

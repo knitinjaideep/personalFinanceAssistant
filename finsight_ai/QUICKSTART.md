@@ -23,15 +23,16 @@ Ollama must be running before you start the backend. Open a terminal and pull th
 ```bash
 ollama serve   # skip if Ollama is already running as a background service
 
-ollama pull qwen3:8b          # LLM for extraction, analysis, and chat
+ollama pull qwen3:8b          # classification + extraction
+ollama pull gemma4:latest     # chat + analysis
 ollama pull nomic-embed-text  # embedding model for vector search
 ```
 
-Verify both are available:
+Verify all three are available:
 
 ```bash
 ollama list
-# Should show qwen3:8b and nomic-embed-text
+# Should show qwen3:8b, gemma4:latest, and nomic-embed-text
 ```
 
 ---
@@ -39,7 +40,7 @@ ollama list
 ## Step 2 — Backend Setup
 
 ```bash
-cd coral/backend
+cd finsight_ai/backend
 
 # Create and activate a virtual environment
 python3.11 -m venv .venv
@@ -60,14 +61,18 @@ Start the backend:
 python run.py
 ```
 
-You should see:
+You should see startup logs confirming the database initialized and the
+configured chat model (`gemma4:latest` by default) is available in Ollama,
+followed by:
 
 ```
-INFO  Coral starting up...
-INFO  Database initialized
-INFO  Chroma vector store ready
 INFO  Uvicorn running on http://localhost:8000
 ```
+
+Note: `langgraph` and `chromadb` are still listed as dependencies and will
+install, but neither is wired into any route — the startup log explicitly
+reports `langgraph_wired_to_chat: False`. Chat runs entirely on SQLite
+(FTS5 + JSON-embedding cosine similarity), not LangGraph/Chroma.
 
 **API docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
 
@@ -78,7 +83,7 @@ INFO  Uvicorn running on http://localhost:8000
 Open a new terminal tab:
 
 ```bash
-cd coral/frontend
+cd finsight_ai/frontend-next
 
 npm install
 npm run dev
@@ -87,12 +92,12 @@ npm run dev
 You should see:
 
 ```
-  VITE v5.x.x  ready in Xms
-
-  ➜  Local:   http://localhost:3000/
+  ▲ Next.js 14.x.x
+  - Local:   http://localhost:3001
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3001](http://localhost:3001) in your browser. The dev
+server proxies `/api/v1/*` to the backend on port 8000.
 
 ---
 
@@ -121,22 +126,24 @@ What is my current allocation breakdown?
 Compare my fees month-over-month.
 ```
 
-The chat uses **hybrid retrieval** — vector search for document context plus generated SQL for precise aggregations.
+The chat pipeline (`services/chat_router.py`) classifies your question, then
+answers with **pre-written deterministic SQL** (never LLM-generated SQL),
+falling back to FTS5 + in-SQLite vector search over document text when SQL
+comes back empty. See [README_ARCHITECTURE.md](README_ARCHITECTURE.md) for the full pipeline.
 
 ---
 
 ## Directory Layout (after first run)
 
 ```
-coral/
+finsight_ai/
 ├── backend/
 │   ├── .env               ← your local config (git-ignored)
 │   └── data/
 │       ├── db/
 │       │   └── finsight.db    ← SQLite database (auto-created)
-│       ├── uploads/           ← uploaded PDFs stored here
-│       └── chroma/            ← vector store (auto-created)
-└── frontend/
+│       └── uploads/           ← uploaded PDFs stored here
+└── frontend-next/
     └── node_modules/      ← installed by npm install
 ```
 
@@ -147,18 +154,23 @@ coral/
 All settings are controlled by `backend/.env`. The most commonly adjusted values:
 
 ```bash
-# Use a different model for any task
-CORAL_OLLAMA_CHAT_MODEL=llama3.1:8b
-CORAL_OLLAMA_EXTRACTION_MODEL=mistral:7b
+# Use a different model per task role
+CORAL_OLLAMA_CHAT_MODEL=gemma4:latest
+CORAL_OLLAMA_CLASSIFICATION_MODEL=qwen3:8b
+CORAL_OLLAMA_EXTRACTION_MODEL=qwen3:8b
 
 # Increase context window for large statements
 CORAL_OLLAMA_NUM_CTX=16384
 
-# Return more chunks per RAG query (default: 6)
-CORAL_CHROMA_RETRIEVAL_TOP_K=10
+# Return more chunks per vector/FTS query (defaults: 6 / 10)
+CORAL_SEARCH_VECTOR_TOP_K=10
+CORAL_SEARCH_FTS_TOP_K=15
 
 # Increase max upload size (default: 50 MB)
 CORAL_STORAGE_MAX_FILE_SIZE_MB=100
+
+# Where statement folders live for the scanner (default: ~/Documents/Personal/Coral)
+CORAL_STORAGE_STATEMENTS_ROOT=/your/path/to/Coral
 ```
 
 All variable names follow the pattern `CORAL_<GROUP>_<FIELD>`. See `.env.example` for the full list.
@@ -167,36 +179,33 @@ All variable names follow the pattern `CORAL_<GROUP>_<FIELD>`. See `.env.example
 
 ## Troubleshooting
 
-**Backend fails to start with `OllamaConnectionError`**
+**Backend fails to start / `ollama_unreachable` in logs**
 - Make sure Ollama is running: `ollama serve`
 - Check it's reachable: `curl http://localhost:11434/api/tags`
 
-**`OllamaModelNotFoundError` during ingestion**
-- The model wasn't pulled: `ollama pull qwen3:8b && ollama pull nomic-embed-text`
+**`ollama_model_unavailable` in logs during startup or ingestion**
+- The model wasn't pulled: `ollama pull gemma4:latest && ollama pull qwen3:8b && ollama pull nomic-embed-text`
 
 **Frontend shows blank page or network errors**
 - Confirm the backend is running on port 8000
-- Check the browser console for CORS errors — the backend allows `http://localhost:3000` by default
+- Check the browser console for CORS errors — the backend allows `http://localhost:3000` and `http://localhost:3001` by default (`cors_origins` in `backend/app/config/__init__.py`)
 
-**PDF stuck on "Processing"**
+**PDF stuck on "processing"**
 - Check backend logs for extraction errors
 - Very large PDFs (100+ pages) can take several minutes depending on hardware
-
-**`pip install` fails on `chromadb`**
-- Ensure you're using Python 3.11+: `python --version`
-- On Apple Silicon: `pip install --upgrade pip` before installing
 
 ---
 
 ## Running Tests
 
 ```bash
-cd coral/backend
+cd finsight_ai/backend
 source .venv/bin/activate
 
 pytest                        # run all tests
 pytest -v                     # verbose output
-pytest tests/test_parsers.py  # run a specific file
+pytest app/chat/tests/        # chat pipeline tests
+python app/chat/evals/run_chat_evals.py  # golden-question eval suite
 ```
 
 ---
@@ -204,7 +213,7 @@ pytest tests/test_parsers.py  # run a specific file
 ## Linting & Type Checking
 
 ```bash
-cd coral/backend
+cd finsight_ai/backend
 source .venv/bin/activate
 
 ruff check .        # lint
@@ -213,7 +222,7 @@ mypy app/           # type check
 ```
 
 ```bash
-cd coral/frontend
+cd finsight_ai/frontend-next
 npm run lint
 ```
 
@@ -223,9 +232,8 @@ npm run lint
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| Frontend | http://localhost:3000 | React UI |
+| Frontend (frontend-next) | http://localhost:3001 | Next.js UI |
 | Backend API | http://localhost:8000 | FastAPI REST + SSE |
 | API Docs | http://localhost:8000/docs | Swagger UI |
 | Ollama | http://localhost:11434 | Local LLM inference |
-| SQLite | `data/db/finsight.db` | Structured financial data |
-| Chroma | `data/chroma/` | Vector embeddings |
+| SQLite | `backend/data/db/finsight.db` | Structured financial data + FTS5 + vector embeddings (all in one file) |

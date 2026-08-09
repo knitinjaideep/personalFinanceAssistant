@@ -1,72 +1,53 @@
 ```mermaid
 flowchart TD
     subgraph API["FastAPI Layer"]
-        UP["POST /documents/upload"]
-        SSE["GET /documents/{id}/stream (SSE)"]
+        UP["POST /documents/upload-local\n(structured upload)"]
+        SCAN["POST /scan/ingest\n(folder scanner)"]
         CHAT["POST /chat/query or /chat/stream"]
     end
 
-    subgraph Ingestion["LangGraph Ingestion Pipeline (async background task)"]
+    subgraph Ingestion["Ingestion pipeline (services/ingestion.py, sequential async)"]
         direction TB
-        PN["parse_node\nPDFParser → ParsedDocument"]
-        CN["classify_node\nAll agents → can_handle() → best confidence wins"]
-        RN{"route_to_institution\nconditional edge"}
-        MS["morgan_stanley_node\nMorganStanleyAgent.run()"]
-        CH["chase_node\nChaseAgent (stub)"]
-        ET["etrade_node\nETradeAgent (stub)"]
-        UN["unknown_node"]
-        PE["persist_node\nSQL repos → Statement + Transactions + Fees + Holdings"]
-        EM["embed_node\nDocumentChunker → Ollama embeddings → Chroma"]
-        RP["report_node\nAggregate errors, emit final event"]
+        REG["Register document\n(documents table)"]
+        PARSE["pdfplumber\nPDF → raw text + tables"]
+        DETECT["ParserRegistry.detect_institution()\nAll parsers' can_handle() →\nbest confidence wins (regex, no LLM)"]
+        EXTRACT["parser.extract()\nmorgan_stanley / chase / etrade /\namex / discover / bank_of_america"]
+        PERSIST["Persist canonical rows:\ninstitution, account, statement,\ntransactions, fees, holdings, balances"]
+        DETAIL["Persist bank-specific detail row\n(chase_details, morgan_stanley_details, ...\nBofA has none)"]
+        CHUNK["Chunk text →\ntext_chunks + text_chunks_fts (FTS5)"]
+        EMBED["Optional: nomic-embed-text\n→ JSON embedding in text_chunks.embedding"]
     end
 
-    subgraph RAG["RAG Subsystem"]
-        HR["HybridRetriever\nVector (Chroma) + SQL (SQLite)"]
-        CS["ChatService\nPrompt builder + ModelRouter"]
+    subgraph Storage["Storage — single SQLite file"]
+        SQ[("SQLite\nCanonical tables + detail tables +\ntext_chunks + text_chunks_fts + embeddings")]
     end
 
-    subgraph Storage["Storage"]
-        SQ[("SQLite\nStatements, Accounts,\nTransactions, Fees, Holdings")]
-        CR[("Chroma\nText chunks + embeddings")]
+    subgraph ChatPipeline["Chat (see README_ARCHITECTURE.md for full diagram)"]
+        CR["chat_router.route()\nclassify → route decision →\nSQL handlers (13, deterministic) →\nFTS5/vector fallback →\nanswer_builder"]
+        AFF["chat/domains/affordability\n7-layer deterministic pipeline\n(bypasses SQL)"]
     end
 
     subgraph LLM["Local Ollama"]
-        QW["qwen3:8b\nclassification / extraction / chat"]
+        QW["qwen3:8b\nclassification / extraction"]
+        GM["gemma4:latest\nchat / analysis narration"]
         NE["nomic-embed-text\nembeddings"]
     end
 
-    subgraph Events["EventBus (per-document)"]
-        EB["SSEEvent queue\nparse_started → institution_hypotheses\n→ fields_detected → persist_completed\n→ embedding_completed → stream_done"]
-    end
+    UP --> REG
+    SCAN --> REG
+    REG --> PARSE --> DETECT --> EXTRACT --> PERSIST --> DETAIL --> CHUNK --> EMBED
+    PERSIST --> SQ
+    CHUNK --> SQ
+    EMBED --> SQ
+    EMBED -->|"generate embeddings"| NE
 
-    UP -->|"202 Accepted + document_id"| IngestionService
-    IngestionService -->|"asyncio.create_task"| PN
-    IngestionService -->|"register bus"| EB
-    SSE -->|"subscribe"| EB
-
-    PN --> CN
-    CN -->|"calls all agents"| RN
-    RN --> MS
-    RN --> CH
-    RN --> ET
-    RN --> UN
-    MS --> PE
-    CH --> PE
-    ET --> PE
-    UN --> PE
-    PE --> EM
-    EM --> RP
-    RP -->|"stream_done sentinel"| EB
-
-    PE --> SQ
-    EM --> CR
-    EM -->|"generate embeddings"| NE
-    MS -->|"LLM extraction"| QW
-    CN -->|"LLM fallback"| QW
-
-    CHAT --> CS
-    CS --> HR
-    HR --> CR
-    HR --> SQ
-    CS -->|"generate answer"| QW
+    CHAT --> CR
+    CR -->|"classify"| QW
+    CR -->|"affordability route"| AFF
+    CR -->|"SQL + FTS5 + vector"| SQ
+    CR -->|"narrate answer"| GM
+    AFF -->|"balances/transactions"| SQ
+    AFF -->|"narrate verdict (Python already computed it)"| GM
 ```
+
+No LangGraph, no Chroma — both remain unused dependencies (see `README_ARCHITECTURE.md`'s Overview section). Ingestion is a plain sequential async pipeline, not a graph; chat routing is plain Python control flow, not an agent framework. See [README_ARCHITECTURE.md](README_ARCHITECTURE.md) for the detailed chat routing, fallback-chain, and affordability-pipeline diagrams.

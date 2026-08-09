@@ -8,7 +8,14 @@ Coral uses a **local-folder-first** data flow:
 Local folders → Scanner → Parser Registry → SQLite DB → Dashboards + Chat
 ```
 
-No cloud. No LangGraph. No Chroma. No MCP. SQL is the primary source of truth.
+No cloud. SQL is the primary source of truth. `langgraph` and `chromadb` are
+still listed as dependencies in `backend/pyproject.toml` and a stray
+`backend/data/chroma/` directory exists on disk, but neither is wired into any
+route — the chat pipeline is 100% SQL + SQLite FTS5 + in-SQLite cosine-similarity
+vector search (`services/vector_search.py`, embeddings stored as JSON in
+`text_chunks.embedding`). `_log_startup_diagnostics()` in `main.py` logs
+`langgraph_installed` / `langgraph_wired_to_chat: False` on every boot as a
+reminder that it's dead weight.
 
 ---
 
@@ -16,7 +23,8 @@ No cloud. No LangGraph. No Chroma. No MCP. SQL is the primary source of truth.
 
 ### 1. Scan (`GET /api/v1/scan/status`)
 
-The **local scanner** (`services/local_scanner.py`) reads `STATEMENT_SOURCES` from `statement_sources.py` and:
+The **local scanner** (`services/local_scanner.py`) reads `STATEMENT_SOURCES` from
+`app/statement_sources.py` and:
 - Globs each `root_path` for `*.pdf` files (recurses into `YYYY/` subdirs)
 - Computes SHA-256 for each file
 - Checks the `documents` table for existing hashes
@@ -24,9 +32,17 @@ The **local scanner** (`services/local_scanner.py`) reads `STATEMENT_SOURCES` fr
 
 No files are written. This is a read-only status check.
 
-### 2. Ingest (`POST /api/v1/scan/ingest`)
+### 2. Upload (`POST /api/v1/documents/upload-local`)
 
-For each pending file from the scan:
+The structured upload path used by the `frontend-next` Upload page. The
+frontend picks institution/account/year/month from `app/config/statement_catalog.py`
+(via `GET /api/v1/catalog/institutions`), and the backend writes the file to the
+normalized path `$CORAL_STATEMENTS_ROOT/<rel_path>/<year>/<account_slug>_<year>_<MM>_<month>.pdf`
+before handing it to the same ingestion pipeline as the scanner.
+
+### 3. Ingest (`POST /api/v1/scan/ingest`, or triggered from upload)
+
+For each pending file:
 - Calls `ingest_document(file_path, ...)` in `services/ingestion.py`
 - The ingestion pipeline runs sequentially:
   1. Register document in DB (`documents` table)
@@ -34,121 +50,143 @@ For each pending file from the scan:
   3. Detect institution via `ParserRegistry.detect_institution()` (confidence scoring)
   4. Extract structured data via `parser.extract()`
   5. Persist canonical records: institution, account, statement, transactions, fees, holdings, balances
-  6. Save bank-specific detail fields (chase_details, morgan_stanley_details, etc.)
+  6. Save bank-specific detail fields (`chase_details`, `morgan_stanley_details`, etc. — Bank of America has no detail table, only canonical rows)
   7. Chunk text and index in FTS5 (`text_chunks` + `text_chunks_fts`)
-  8. Optionally generate embeddings (if vector_search_enabled)
+  8. Optionally generate embeddings into `text_chunks.embedding` (if `search.vector_search_enabled`)
 
-### 3. Dashboard queries
+### 4. Dashboard queries
 
 All dashboard data comes from `services/dashboard/`:
 - `investment_queries.py` — portfolio value, holdings, fees, balance history
 - `banking_queries.py` — spend by month, by category, top merchants, card summary, cash flow
 - `summary_queries.py` — top-level KPI counts, document coverage
 
-The `api/dashboard.py` router assembles these into three endpoints:
+The `api/dashboard.py` router assembles these into endpoints:
 - `GET /dashboard/investments`
 - `GET /dashboard/banking`
 - `GET /dashboard/summary`
+- `GET /dashboard/coverage`
 
-### 4. Chat
+### 5. Chat
 
-#### Query flow (streaming — `POST /api/v1/chat/stream`)
+Coral's chat has **two intent systems** — know which one you're looking at:
+
+- **`ChatIntent` / `RouteType`** (`domain/classification.py`) — the primary,
+  user-facing system. `services/intent_classifier.py` classifies the raw
+  question into one of these using the LLM (with a rule-based fallback), and
+  `services/chat_router.py::route()` is the actual production entry point
+  (`api/chat.py` calls it directly, and `chat/streaming.py` wraps it for SSE).
+- **`QueryIntent` / `QueryPath`** (`domain/enums.py`) — the internal system the
+  13 deterministic SQL handlers in `services/sql_query.py` actually key off of.
+  `services/intent_mapping.py::CHAT_TO_QUERY_INTENT` maps every `ChatIntent` to
+  a `QueryIntent`. A **separate, older** regex-based classifier still lives at
+  `services/query_router.py` (kept for backward compatibility per
+  `backend/app/chat/CHATBOT_PRINCIPLES.md`) but is not the code path `api/chat.py` uses.
+
+#### Query flow (`services/chat_router.py::route()`, streamed via `chat/streaming.py` → `POST /api/v1/chat/stream`)
 
 ```mermaid
 flowchart TD
-    A([User types a question\nin ChatPage]) --> B
-
-    subgraph Frontend ["Frontend — ChatPage.tsx"]
-        B[streamChat&#40;&#41; opens\nSSE connection to\nPOST /chat/stream]
-        B --> B1["event: status\n'Understanding your question…'"]
-        B1 --> B2["event: intent\ndomain · intent · confidence"]
-        B2 --> B3["event: tool_start\ntool name · intent"]
-        B3 --> B4["event: tool_result\nrow_count · summary"]
-        B4 --> B5["event: answer_token\n&#40;one per LLM token&#41;"]
-        B5 --> B6["event: table  &#40;if rows exist&#41;\n+ event: chart  &#40;if chart built&#41;"]
-        B6 --> B7["event: done\nrequest_id · duration_ms"]
-        B7 --> B8[AnswerCard rendered\nwith StructuredAnswer]
-    end
-
-    subgraph Backend ["Backend — chat/streaming.py"]
-        C[classify intent\nvia Gemma 4 / Ollama\nwith 1 retry + rule fallback]
-        C --> D{needs\nclarification?}
-        D -- yes --> E[emit clarifying\nquestion as answer_token\n→ done]
-        D -- no --> F[resolve route\nSQL / FTS / HYBRID]
-
-        F --> G{SQL path?}
-        G -- yes --> H["sql_query.execute_for_intent&#40;&#41;\n11 deterministic handlers\nno LLM-generated SQL"]
-        H --> I{rows\nreturned?}
-        I -- no rows,\ncategory/merchant set --> J[relax filters:\ndrop category + merchant\nretry SQL]
-        J --> I
-        I -- no rows,\ndate set --> K[date fallback:\ndrop all date filters\nretry SQL]
-        K --> I
-        I -- rows found --> L[emit tool_result\nand continue]
-        I -- still empty --> M{RAG\nfallback}
-
-        G -- no SQL --> M
-        M -- FTS path --> N[text_search.search&#40;&#41;\nSQLite FTS5 full-text]
-        M -- VECTOR path --> O[vector_search.search&#40;&#41;\ncosine similarity\non stored embeddings]
-        N --> P[combine chunks]
-        O --> P
-
-        L --> Q{data\nexists?}
-        P --> Q
-        Q -- no data at all --> R[helpful fallback:\nlist available categories\ndate range · institutions\n+ clarifying question]
-        R --> S[emit answer_token\n→ done]
-
-        Q -- data found --> T[build table payload\nif sql rows exist]
-        T --> U[build chart payload\nvia chart_builder.py]
-        U --> V["generate_stream&#40;&#41;\nOllama token-by-token\nSystem: use only provided data\nnever invent numbers"]
-        V --> W[emit answer_token\nper token]
-        W --> X[emit done]
-    end
-
-    B --> C
-    C -.->|SSE events| B1
-    L -.->|SSE events| B3
-    V -.->|SSE tokens| B5
-    X -.->|SSE done| B7
+    A([User types a question]) --> B[classify&#40;&#41;\nLLM intent classifier\n+ rule fallback]
+    B --> C{conversation_id\nset?}
+    C -- yes --> C1[conversation_context\nresolve follow-up\n&#40;10 turns / 30-min TTL&#41;]
+    C -- no --> D
+    C1 --> D[build_route_decision&#40;&#41;\ncomplexity gate →\nRouteDecision]
+    D --> E[to_query_intent&#40;&#41;\nChatIntent → QueryIntent]
+    E --> F[build_query_plan&#40;&#41;\nchat/query_planner.py\ntyped QueryPlan]
+    F --> G[determine_answer_style&#40;&#41;\nchat/answer_style.py\nAnswerMode + ResponseShape]
+    G --> H{planner needs\nclarification &&\nintent == UNKNOWN?}
+    H -- yes --> H1[clarification answer\n→ done]
+    H -- no --> I{route_type ==\nAFFORDABILITY?}
+    I -- yes --> I1["chat/domains/affordability::analyze&#40;&#41;\n7-layer pipeline\n&#40;bypasses SQL entirely&#41;"]
+    I1 --> Z1[done]
+    I -- no --> J{classifier still\nneeds clarification?}
+    J -- yes --> H1
+    J -- no --> K[resolve_path&#40;&#41;\nSQL / FTS / HYBRID]
+    K --> L{SQL or\nHYBRID path?}
+    L -- yes --> M["sql_query.execute_for_intent&#40;&#41;\n13 deterministic handlers\nno LLM-generated SQL"]
+    M --> N{rows\nreturned?}
+    N -- no,\ncategory/merchant set --> O[relaxed retry:\ndrop category + merchant\n_relaxed = True]
+    O --> N
+    L -- no --> P
+    N --> P{need RAG?\nFTS/VECTOR/HYBRID path,\nor SQL came back empty}
+    P -- yes --> Q[text_search.search&#40;&#41; FTS5\n&#43; vector_search.search&#40;&#41;\ncosine similarity]
+    P -- no --> R
+    Q --> R{rows or chunks\nor suggestions?}
+    R -- yes --> S[answer_builder.build_answer&#40;&#41;\napplies answer_style\nadds relaxation caveat if any]
+    S --> Z2[record_turn&#40;&#41; if\nconversation_id set\n→ done]
+    R -- no --> T[helpful fallback:\navailable categories/institutions\n+ date range + clarifying question]
+    T --> Z3[done]
 ```
 
 #### Fallback chain (ensures no blank answers)
 
 ```mermaid
 flowchart LR
-    S1[Exact SQL\nall filters applied] -->|empty| S2
-    S2[Relaxed SQL\ndrop category + merchant] -->|empty| S3
-    S3[Date fallback SQL\ndrop all date filters] -->|empty| S4
-    S4[RAG fallback\nFTS5 text search] -->|empty| S5
-    S5[Helpful response\nshow available data\n+ clarifying question]
+    S1[Exact SQL\nall filters applied] -->|empty + category/merchant set| S2
+    S2[Relaxed SQL\ndrop category + merchant] -->|still empty| S3
+    S3[RAG fallback\nFTS5 + vector search] -->|empty| S4
+    S4[Helpful response\nshow available data\n+ clarifying question]
 
     S1 -->|rows ✓| A1[Build answer]
-    S2 -->|rows ✓| A2[Build answer\n+ caveat: broadened search]
-    S3 -->|rows ✓| A3[Build answer\n+ caveat: time filter removed]
-    S4 -->|chunks ✓| A4[Build answer\nfrom document text]
+    S2 -->|rows ✓| A2[Build answer\n+ caveat: search broadened]
+    S3 -->|chunks ✓| A3[Build answer\nfrom document text, HYBRID path]
 ```
 
-#### Intent → SQL handler mapping
+#### Affordability fast path (`chat/domains/affordability/`)
 
-| ChatIntent | Internal QueryIntent | Route | SQL handler |
+`RouteType.AFFORDABILITY` questions ("can I afford a $40k car?") skip SQL
+entirely and run a dedicated 7-layer deterministic-math pipeline orchestrated
+by `analyzer.py::analyze()`:
+
+```mermaid
+flowchart LR
+    Q[Question +\nQueryPlan.affordability] --> SP[scenario_parser.py\nderministic regex/heuristic\ntyping: home/car/luxury/\ntravel/private_school/general]
+    SP -.optional.-> SSP["semantic_scenario_parser.py\nLLM extracts MEANING only\n&#40;goals, constraints, horizon&#41;\n— never does math"]
+    SP --> DC[data_collector.py\nbuilds FinancialSnapshot from\nbalance_snapshots + transactions\nNone &#40;not 0&#41; for missing data]
+    SSP --> DC
+    DC --> ME[math_engine.py\nDecimal-only arithmetic:\nDTI, reserve impact,\naffordability ratio,\npost-purchase liquidity]
+    ME --> DE[decision_engine.py\ndeterministic verdict:\nCOMFORTABLE / REASONABLE /\nSTRETCH / NOT_AFFORDABLE /\nNEEDS_MORE_INFO]
+    DE --> AC[advisory_context.py\nsynthesizes math + verdict\ninto advice framing]
+    AC --> NB[narrative_builder.py\nfinal NL answer — direct\nanswer first, 2-4 numbers max]
+    NB --> V[verifier.py\nchecks LLM narrative didn't\nchange verdict or invent numbers]
+    V --> OUT[StructuredAnswer]
+```
+
+The LLM only ever narrates a verdict that Python already computed —
+`math_engine.py` and `decision_engine.py` are pure Decimal arithmetic with no
+LLM involvement, and `verifier.py` is a deterministic safety net that rejects
+any narrative that silently changes the numbers or verdict.
+
+#### Intent → route mapping
+
+| `ChatIntent` | → `QueryIntent` (`intent_mapping.py`) | Route | Notes |
 |---|---|---|---|
 | `spending_summary` | `SPENDING_BY_CATEGORY` | SQL | Groups spend by category/institution |
 | `transaction_search` | `TRANSACTION_LOOKUP` | SQL | Filters by merchant/category/date/account |
 | `income_summary` | `CASH_FLOW_SUMMARY` | SQL | Sums inflow vs outflow by account |
 | `balance_summary` | `BALANCE_LOOKUP` | SQL | Latest balance snapshot per account |
-| `investment_summary` | `HOLDINGS_TOTAL` | HYBRID | Market value from most-recent statement |
-| `fees_summary` | `FEE_SUMMARY` | HYBRID | Fee records by category/institution |
-| `document_lookup` | `TEXT_EXPLANATION` | FTS | FTS5 full-text search on text_chunks |
+| `investment_summary` | `HOLDINGS_TOTAL` | SQL/HYBRID | Market value from most-recent statement |
+| `fees_summary` | `FEE_SUMMARY` | SQL/HYBRID | Fee records by category/institution |
+| `document_lookup` | `TEXT_EXPLANATION` | FTS | FTS5 full-text search on `text_chunks` |
 | `account_summary` | `BALANCE_LOOKUP` | SQL | Account list with balances |
-| `comparison` | `SPENDING_BY_CATEGORY` | SQL | Side-by-side by institution/period |
+| `comparison` | `SPENDING_COMPARISON` | SQL | Side-by-side by institution/period |
+| `recurring_transactions` | `RECURRING_TRANSACTIONS` | SQL | Rows flagged `is_recurring = 1` |
+| `affordability` | `BALANCE_LOOKUP` (unused — bypassed) | **AFFORDABILITY** | Routed straight to `chat/domains/affordability` |
 | `unknown` | `HYBRID_FINANCIAL_QUESTION` | HYBRID | Broad SQL + FTS fallback |
+
+The actual path taken at runtime is decided by `RouteType` (`SIMPLE_SQL`,
+`SQL_ANALYSIS`, `DOCUMENT_SEARCH`, `HYBRID`, `AFFORDABILITY`, `CLARIFICATION`,
+`UNSUPPORTED`), computed by `intent_mapping.py::build_route_decision()` from
+the classifier's confidence plus complexity signals in the question.
 
 #### Non-negotiable rules enforced at every stage
 
-- **Gemma 4 never writes SQL.** All SQL is pre-written Python in `sql_query.py`.
-- **Gemma 4 never invents numbers.** The system prompt contains: *"Do not speculate beyond the provided data. Never invent numbers."*
+- **The LLM never writes SQL.** All SQL is pre-written Python in `sql_query.py` (13 handlers).
+- **The LLM never invents numbers.** Affordability math is pure Decimal arithmetic in `math_engine.py`; `answer_verifier.py` and `chat/domains/affordability/verifier.py` are deterministic safety nets that catch narratives that drift from the computed facts.
 - **No bare "no data" response.** The fallback chain always surfaces what data exists and asks a clarifying question.
-- **All LLM calls are local** (Ollama on `localhost:11434`). No financial data leaves the machine.
-- **Account numbers are masked** in answers and logs (`guardrails.py`).
+- **All LLM calls are local** (Ollama on `localhost:11434`, `chat_model = gemma4:latest` for chat/analysis, `classification_model = qwen3:8b` for classification/extraction). No financial data leaves the machine.
+- **Account numbers are masked** in answers and logs (`chat/guardrails.py`), which also rejects destructive-action requests.
 
 ---
 
@@ -158,36 +196,55 @@ flowchart LR
 
 | Module | Purpose |
 |--------|---------|
-| `statement_sources.py` | Maps local folders → institution/product |
+| `statement_sources.py` | Maps local folders → institution/product for the **scanner** |
+| `config/statement_catalog.py` | Single source of truth for institutions/accounts/buckets/folder layout used by the **structured upload** flow (18 accounts) |
 | `services/local_scanner.py` | Discovers PDFs, computes hashes, checks ingest status |
 | `services/ingestion.py` | Full ingestion pipeline for one document |
 | `parsers/base.py` | `InstitutionParser` ABC + `ParserRegistry` |
-| `parsers/<name>/parser.py` | Institution-specific extraction logic |
+| `parsers/<name>/parser.py` | Institution-specific extraction logic (`morgan_stanley`, `chase`, `etrade`, `amex`, `discover`, `bank_of_america`) |
 | `db/models.py` | SQLModel ORM — canonical + detail tables |
-| `db/repositories.py` | All DB access (no raw SQL in services) |
-| `services/dashboard/investment_queries.py` | Investment dashboard queries |
-| `services/dashboard/banking_queries.py` | Banking dashboard queries |
-| `services/dashboard/summary_queries.py` | KPI summary queries |
+| `db/engine.py` | Engine + idempotent column migrations (`_apply_migrations()`) |
+| `db/fts.py` | FTS5 virtual table setup + `index_chunk()` / `search_fts()` |
+| `services/dashboard/{investment,banking,summary}_queries.py` | Dashboard SQL |
 | `api/dashboard.py` | Dashboard API endpoints |
 | `api/scan.py` | Scan status + ingest trigger endpoints |
-| `services/intent_classifier.py` | Gemma 4 intent classification + rule fallback |
-| `services/chat_router.py` | Main chat pipeline — classify → SQL → RAG → answer |
-| `services/sql_query.py` | 11 deterministic SQL handlers, no LLM SQL |
-| `services/answer_builder.py` | Structures answers, calls LLM for formatting |
+| `api/catalog.py` | Serves the statement catalog to the frontend for upload dropdowns |
+| `services/intent_classifier.py` | LLM `ChatIntent` classification + rule fallback |
+| `services/chat_router.py` | **Primary chat pipeline** — classify → route decision → plan → (affordability \| SQL → RAG fallback) → answer |
+| `services/query_router.py` | Legacy regex-based `QueryIntent` classifier — kept for backward compat, not the live path |
+| `services/sql_query.py` | 13 deterministic SQL handlers, no LLM SQL |
+| `services/intent_mapping.py` | `ChatIntent → QueryIntent` mapping + `build_route_decision()` complexity gate |
+| `services/answer_builder.py` | Structures answers, calls LLM for narrative formatting |
 | `services/normalization.py` | Institution / category / account / date alias resolution |
-| `chat/streaming.py` | SSE streaming pipeline — emits status/token/table/chart events |
-| `chat/guardrails.py` | Destructive action detection, account number masking |
-| `chat/evals/run_chat_evals.py` | Golden question eval runner |
+| `chat/streaming.py` | SSE wrapper around `chat_router.route()` — emits status/intent/tool/token/table/chart/done events |
+| `chat/query_planner.py` | Builds a typed `QueryPlan` between classification and SQL execution |
+| `chat/answer_style.py` | Decides `AnswerMode` / `ResponseShape` — how to answer, independent of what data was found |
+| `chat/answer_verifier.py` | Deterministic check that the LLM narrative matches the underlying `FactBundle` |
+| `chat/fact_builder.py` | Deterministic Python math from SQL rows → `FactBundle` (LLM never calculates) |
+| `chat/insight_builder.py` | `FactBundle` → `InsightBundle` (interpreted meaning, still no LLM math) |
+| `chat/retrieval.py` | Hybrid retrieval: `fts_only` / `vector_only` / `hybrid` (merged + re-ranked) |
+| `chat/semantic_scenario_parser.py` | LLM scenario extractor for complex affordability questions (meaning only, no math) |
+| `chat/guardrails.py` | Destructive-action rejection, account-number masking |
+| `chat/services/conversation_context.py` | In-memory follow-up resolution (10 turns/conversation, 30-min TTL) |
+| `chat/domains/affordability/` | 7-layer affordability pipeline (see diagram above) |
+| `chat/evals/run_chat_evals.py` | Golden-question eval runner (`golden_questions.yaml`) |
 
-### Frontend (`frontend/src/`)
+### Frontend (`frontend-next/`)
 
 | Module | Purpose |
 |--------|---------|
-| `pages/HomePage.tsx` | Dashboard home — KPIs, source cards, bucket dashboards |
-| `pages/ChatPage.tsx` | Chat interface |
-| `api/scan.ts` | Scan status + ingest API calls |
-| `api/dashboard.ts` | Dashboard API calls + TypeScript types |
-| `components/chat/AnswerCard.tsx` | Structured answer renderer (numeric, table, prose, no_data) |
+| `app/page.tsx` | Home — command center with metrics and quick actions |
+| `app/banking/page.tsx` | Banking dashboard |
+| `app/investments/page.tsx` | Investments dashboard |
+| `app/documents/page.tsx` | Documents library, bucketed by institution/year |
+| `app/chat/page.tsx` | Chat interface |
+| `app/upload/page.tsx` | Single + bulk document upload |
+| `lib/api-client.ts` | Backend API client |
+| `store/appStore.ts` | Single Zustand store — chat history, theme |
+| `components/chat/` | Chat UI, including the SSE-streamed answer renderer |
+| `components/{banking,investments,documents,upload,home}/` | Per-page components |
+
+The old Vite/React `frontend/` directory was fully removed — `frontend-next` (Next.js 14 App Router, port 3001) is the only frontend.
 
 ---
 
@@ -208,7 +265,12 @@ class InstitutionParser(ABC):
         # Returns canonical ParsedStatement with transactions, fees, holdings, balances.
 ```
 
-`ParserRegistry.detect_institution()` runs all parsers' `can_handle()` and returns the best match.
+`ParserRegistry.detect_institution()` runs all parsers' `can_handle()` and
+returns the best match. `parsers/base.py::_register_all_parsers()` registers
+six full parsers: Morgan Stanley, Chase, E\*TRADE, Amex, Discover, Bank of
+America. Marcus and 529 are catalog-only stubs (`parseable=False` in
+`statement_catalog.py`) with no parser registered — files are scanned/counted
+but not ingested.
 
 ---
 
@@ -230,34 +292,28 @@ This means:
 
 ---
 
-## Source configuration
+## Source configuration — two parallel systems
 
-`statement_sources.py` contains `STATEMENT_SOURCES: list[StatementSource]`.
+Coral has **two** separate registries describing institutions, for two
+different jobs — don't conflate them:
 
-Each `StatementSource` has:
-- `source_id` — stable key (e.g. "chase_freedom")
-- `institution_type` — routes to the correct parser
-- `account_product` — human-readable label shown in UI
-- `bucket` — "investments" or "banking"
-- `root_path` — absolute path to scan
-- `glob_pattern` — default `"**/*.pdf"` (recurses into YYYY/)
-- `filename_hints` — optional filters when multiple products share a folder
+| | `app/statement_sources.py` | `app/config/statement_catalog.py` |
+|---|---|---|
+| Used by | The folder **scanner** (`local_scanner.py`) | The structured **upload** flow (`api/catalog.py`, upload-local endpoint) |
+| Shape | `STATEMENT_SOURCES: list[StatementSource]` | `ACCOUNT_CATALOG: list[AccountCatalogEntry]` (18 accounts) |
+| Key fields | `source_id`, `institution_type`, `account_product`, `bucket`, `root_path`, `glob_pattern`, `filename_hints` | `institution_slug`, `account_slug`, `bucket`, `parser_type`, `parseable`, `rel_path`, `supported_years` |
+| Parseable set | `PARSEABLE_INSTITUTION_TYPES` frozenset | per-entry `parseable: bool` |
 
-`PARSEABLE_INSTITUTION_TYPES` lists which institution_types have working parsers. Sources with other types are scanned and counted but not ingested.
+Bucket rule (same in both): **banking** = Bank of America, Chase checking,
+Marcus (all sub-accounts); **investments** = everything else (Amex, Chase
+credit cards, Discover, E\*TRADE, Morgan Stanley, 529).
 
 ---
 
-## Query router (chat intents)
+## Adding a new institution
 
-| Intent | SQL path | Example question |
-|--------|----------|-----------------|
-| `fee_summary` | SQL | "How much did I pay in fees?" |
-| `balance_lookup` | SQL | "What's my account balance?" |
-| `holdings_lookup` | SQL | "What stocks do I hold?" |
-| `transaction_lookup` | SQL | "Show me transactions over $500" |
-| `cash_flow_summary` | SQL | "What's my monthly spend?" |
-| `document_availability` | SQL | "What documents have I uploaded?" |
-| `institution_coverage` | SQL | "Which banks are connected?" |
-| `statement_coverage` | SQL | "How far back do my statements go?" |
-| `text_explanation` | FTS | "What does Morgan Stanley say about my advisory fees?" |
-| `hybrid_financial_question` | SQL + FTS | General fallback |
+1. Create `backend/app/parsers/<name>/parser.py` implementing `InstitutionParser`
+2. Register it in `backend/app/parsers/base.py` → `_register_all_parsers()`
+3. Add a `StatementSource` in `backend/app/statement_sources.py` and add the `institution_type` to `PARSEABLE_INSTITUTION_TYPES`
+4. Add an `AccountCatalogEntry` in `backend/app/config/statement_catalog.py` (for the structured upload flow)
+5. Add a bank-specific detail model in `backend/app/db/models.py` if the institution has fields worth capturing beyond the canonical tables
