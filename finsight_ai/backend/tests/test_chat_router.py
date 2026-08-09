@@ -200,7 +200,7 @@ async def test_rag_route_with_chunks_is_partial():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _fake_build_answer(question, intent, path, confidence, ctx, *, req_id=""):
+async def _fake_build_answer(question, intent, path, confidence, ctx, *, req_id="", **kwargs):
     from app.domain.entities import StructuredAnswer
     return StructuredAnswer(
         answer_type="prose", title="t", summary="generated answer",

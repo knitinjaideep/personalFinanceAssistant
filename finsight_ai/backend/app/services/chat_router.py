@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from app.chat.affordability import analyze as analyze_affordability
+from app.chat.domains.affordability import analyze as analyze_affordability
+from app.chat.answer_style import AnswerStyleDecision, determine_answer_style
 from app.chat.query_planner import QueryPlan, plan as build_query_plan
 from app.chat.services.conversation_context import conversation_context
 from app.config import settings
@@ -73,6 +74,7 @@ class RoutingOutcome:
     rag_chunks: int = 0
     route_decision: RouteDecision | None = None
     query_plan: QueryPlan | None = None
+    answer_style: AnswerStyleDecision | None = None
 
 
 # ── Context construction ──────────────────────────────────────────────────────
@@ -169,6 +171,19 @@ async def route(
         classification, decision, question=question, ctx=ctx
     )
 
+    # ── 1e. Answer-style determination (after planning, before execution) ─────
+    answer_style = determine_answer_style(question, classification, decision, query_plan)
+    logger.info(
+        "chat_router.answer_style",
+        extra={
+            "stage": "answer_style",
+            "request_id": req_id,
+            "answer_mode": answer_style.answer_mode.value,
+            "response_shape": answer_style.response_shape.value,
+            "answer_style_reason": answer_style.reason,
+        },
+    )
+
     # When the planner says clarification is needed and the classifier agrees,
     # honour that immediately (avoids a wasted SQL round-trip).
     if query_plan.requires_clarification() and classification.intent == ChatIntent.UNKNOWN:
@@ -176,7 +191,7 @@ async def route(
         return _finalize(
             _clarification_answer(question, classification, query_intent),
             classification, query_intent, "clarification", CLARIFICATION_NEEDED,
-            steps, 0, 0, req_id, decision, query_plan,
+            steps, 0, 0, req_id, decision, query_plan, answer_style,
         )
 
     # ── Affordability fast path — never needs SQL via the normal pipeline ─────
@@ -205,7 +220,7 @@ async def route(
             await _record_turn(conversation_id, classification, ctx, answer.summary)
         return _finalize(
             answer, classification, query_intent, "affordability", ANSWERED,
-            steps, 0, 0, req_id, decision, query_plan,
+            steps, 0, 0, req_id, decision, query_plan, answer_style,
         )
 
     # Use the planner's resolved context for downstream SQL (preferred path).
@@ -240,7 +255,7 @@ async def route(
         return _finalize(
             _clarification_answer(question, classification, query_intent),
             classification, query_intent, "clarification", CLARIFICATION_NEEDED,
-            steps, 0, 0, req_id, decision, query_plan,
+            steps, 0, 0, req_id, decision, query_plan, answer_style,
         )
 
     # ── 3. Resolve route ─────────────────────────────────────────────────────
@@ -274,6 +289,7 @@ async def route(
         answer = await build_answer(
             question, query_intent, effective_path,
             classification.confidence, ctx, req_id=req_id,
+            answer_style=answer_style,
         )
         # Labeled relaxation — attach a visible caveat so the user knows we broadened.
         if sql_was_relaxed:
@@ -289,13 +305,15 @@ async def route(
             await _record_turn(conversation_id, classification, ctx, answer.summary)
 
         return _finalize(answer, classification, query_intent, effective_path.value,
-                         status, steps, sql_rows, rag_chunks, req_id, decision, query_plan)
+                         status, steps, sql_rows, rag_chunks, req_id, decision, query_plan,
+                         answer_style)
 
     # ── 7. Helpful fallback — never a bare "no data" ─────────────────────────
     steps.append("helpful_fallback")
     answer = await _helpful_answer(question, classification, query_intent, ctx, req_id)
     return _finalize(answer, classification, query_intent, "fallback",
-                     NO_DATA_AFTER_FALLBACK, steps, 0, 0, req_id, decision, query_plan)
+                     NO_DATA_AFTER_FALLBACK, steps, 0, 0, req_id, decision, query_plan,
+                     answer_style)
 
 
 # ── Conversation context recording ────────────────────────────────────────────
@@ -515,7 +533,14 @@ def _finalize(
     req_id: str,
     decision: RouteDecision | None = None,
     query_plan: QueryPlan | None = None,
+    answer_style: AnswerStyleDecision | None = None,
 ) -> RoutingOutcome:
+    # Stamp answer-style metadata onto the answer for downstream consumers.
+    if answer_style is not None:
+        answer.answer_mode = answer_style.answer_mode.value
+        answer.response_shape = answer_style.response_shape.value
+        answer.answer_style_reason = answer_style.reason
+
     logger.info(
         "chat_router.done",
         extra={
@@ -537,6 +562,8 @@ def _finalize(
             "final_answer_status": status,
             "answer_strategy": getattr(answer, "answer_strategy", "unknown"),
             "answer_llm_called": getattr(answer, "llm_called", True),
+            "answer_mode": answer_style.answer_mode.value if answer_style else "unknown",
+            "response_shape": answer_style.response_shape.value if answer_style else "unknown",
         },
     )
     return RoutingOutcome(
@@ -550,4 +577,5 @@ def _finalize(
         rag_chunks=rag_chunks,
         route_decision=decision,
         query_plan=query_plan,
+        answer_style=answer_style,
     )

@@ -141,10 +141,27 @@ export interface AnswerTimings {
   total_ms: number | null;
 }
 
+export interface KeyNumber {
+  label: string;
+  value: string;
+  note?: string;
+}
+
+export interface SupportingDetail {
+  heading?: string;
+  body: string;
+}
+
 export interface StructuredAnswer {
-  answer_type: "prose" | "numeric" | "table" | "comparison" | "no_data" | "partial_data";
+  answer_type: "prose" | "numeric" | "table" | "comparison" | "no_data" | "partial_data" | "advisory";
   title: string;
   summary: string;
+  /** Advisory answers: natural prose for the chat bubble (summary is the legacy alias). */
+  main_answer_text?: string;
+  /** Named numbers shown in the collapsible "View the math" section. */
+  key_numbers?: KeyNumber[];
+  /** Explanatory paragraphs for the collapsible math section. */
+  supporting_details?: SupportingDetail[];
   primary_value: string | null;
   highlights: Array<{ label: string; value: string }>;
   sections: AnswerSection[];

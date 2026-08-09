@@ -69,6 +69,7 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
         "chat_request_received",
         extra={
             "stage": "chat_request_received",
+            "endpoint_type": "query",
             "request_id": req_id,
             "conversation_id": conv_id,
             "selected_model": settings.ollama.model,
@@ -91,12 +92,22 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
             "chat_request_completed",
             extra={
                 "stage": "chat_request_completed",
+                "endpoint_type": "query",
                 "request_id": req_id,
+                "conversation_id": conv_id,
+                "selected_model": settings.ollama.model,
                 "classifier_intent": outcome.classification.intent.value,
                 "query_intent": outcome.query_intent.value,
                 "selected_route": outcome.route,
                 "route_type": outcome.route_decision.route_type.value if outcome.route_decision else "unknown",
                 "route_risk": outcome.route_decision.route_risk.value if outcome.route_decision else "unknown",
+                "answer_mode": answer.answer_mode,
+                "response_shape": answer.response_shape,
+                "query_plan_task": outcome.query_plan.task_type if outcome.query_plan else "unknown",
+                "affordability_scenario": (
+                    getattr(outcome.query_plan.affordability, "semantic_scenario_type", None)
+                    if outcome.query_plan and outcome.query_plan.affordability else None
+                ),
                 "sql_rows": outcome.sql_rows,
                 "rag_chunks": outcome.rag_chunks,
                 "fallback_steps": outcome.fallback_steps,
@@ -111,6 +122,14 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
 
         debug_payload: ChatDebugPayload | None = None
         if settings.debug_chat:
+            # Serialize InsightBundle if present (stashed by answer_builder, not in public API).
+            insight_dict: dict | None = None
+            if answer.insight_bundle is not None:
+                try:
+                    insight_dict = answer.insight_bundle.model_dump()
+                except Exception:
+                    insight_dict = None
+
             debug_payload = ChatDebugPayload(
                 route_type=outcome.route_decision.route_type.value if outcome.route_decision else "",
                 route_risk=outcome.route_decision.route_risk.value if outcome.route_decision else "",
@@ -132,6 +151,10 @@ async def chat_query(request: Request, body: ChatRequest) -> ChatResponse:
                     "llm_ms": timings.llm_ms,
                     "total_ms": timings.total_ms,
                 },
+                answer_mode=answer.answer_mode,
+                response_shape=answer.response_shape,
+                answer_style_reason=answer.answer_style_reason,
+                insight_bundle=insight_dict,
             )
 
         return ChatResponse(answer=answer, raw_text=answer.summary, request_id=req_id, debug=debug_payload)

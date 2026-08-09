@@ -8,7 +8,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend,
 } from "recharts";
-import type { StructuredAnswer, ChartPayload } from "@/types/index";
+import type { StructuredAnswer, ChartPayload, KeyNumber, SupportingDetail } from "@/types/index";
 import { DebugPanel } from "./DebugPanel";
 import { useAppStore } from "@/store/appStore";
 import { formatTime } from "@/lib/utils";
@@ -446,6 +446,98 @@ function NoDataAnswer({ answer, onFollowup }: CardExtraProps) {
   );
 }
 
+function ViewMathDrawer({
+  keyNumbers,
+  supportingDetails,
+}: {
+  keyNumbers: KeyNumber[];
+  supportingDetails: SupportingDetail[];
+}) {
+  const [open, setOpen] = useState(false);
+  if (keyNumbers.length === 0 && supportingDetails.length === 0) return null;
+  return (
+    <div style={{ borderTop: "1px solid var(--answer-divider)" }}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-5 py-2.5 flex items-center justify-between text-xs font-medium transition-colors"
+        style={{ color: "var(--text-dim)" }}
+      >
+        <span className="flex items-center gap-1.5">
+          <Code2 size={10} /> View the math
+        </span>
+        {open ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-4 space-y-3">
+              {keyNumbers.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  {keyNumbers.map((kn, i) => (
+                    <div key={i} className="flex items-baseline justify-between gap-4 text-xs">
+                      <span style={{ color: "var(--text-muted)" }}>
+                        {kn.label}
+                        {kn.note && (
+                          <span className="ml-1 text-[10px]" style={{ color: "var(--text-dim)" }}>
+                            ({kn.note})
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-semibold tabular" style={{ color: "var(--text-primary)" }}>
+                        {kn.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {supportingDetails.length > 0 && (
+                <div className="space-y-2 pt-1" style={{ borderTop: keyNumbers.length > 0 ? "1px solid var(--row-border)" : undefined }}>
+                  {supportingDetails.map((sd, i) => (
+                    <div key={i}>
+                      {sd.heading && (
+                        <p className="text-[10px] font-semibold uppercase tracking-wide mb-0.5" style={{ color: "rgba(34,211,238,0.55)" }}>
+                          {sd.heading}
+                        </p>
+                      )}
+                      <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{sd.body}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function AdvisoryAnswer({ answer, onFollowup }: CardExtraProps) {
+  const text = answer.main_answer_text || answer.summary;
+  const keyNumbers = answer.key_numbers ?? [];
+  const supportingDetails = answer.supporting_details ?? [];
+  return (
+    <CardShell basedOn={answer.based_on}>
+      <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--answer-divider)" }}>
+        <h3 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{answer.title}</h3>
+      </div>
+      <div className="px-5 py-4">
+        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{text}</p>
+      </div>
+      <ViewMathDrawer keyNumbers={keyNumbers} supportingDetails={supportingDetails} />
+      <CaveatBar caveats={answer.caveats} />
+      <SourcesDrawer citations={answer.citations} />
+      <FollowUps questions={answer.suggested_followups} onSelect={onFollowup} />
+    </CardShell>
+  );
+}
+
 export interface AnswerCardProps {
   answer: StructuredAnswer;
   onFollowup: (q: string) => void;
@@ -457,6 +549,8 @@ export function AnswerCard({ answer, onFollowup, timestamp }: AnswerCardProps) {
 
   if (answer.answer_type === "no_data") {
     card = <NoDataAnswer answer={answer} onFollowup={onFollowup} />;
+  } else if (answer.answer_type === "advisory") {
+    card = <AdvisoryAnswer answer={answer} onFollowup={onFollowup} />;
   } else if (answer.answer_type === "numeric") {
     card = <MetricAnswer answer={answer} onFollowup={onFollowup} />;
   } else if (answer.answer_type === "comparison") {

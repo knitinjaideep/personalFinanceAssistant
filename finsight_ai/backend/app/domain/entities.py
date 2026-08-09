@@ -161,11 +161,30 @@ class AnswerTimings(BaseModel):
     total_ms: float | None = None
 
 
+class KeyNumber(BaseModel):
+    """A single named numeric fact for the 'View the math' section."""
+    label: str
+    value: str
+    note: str = ""
+
+
+class SupportingDetail(BaseModel):
+    """A single explanatory item shown in the collapsible math section."""
+    heading: str = ""
+    body: str
+
+
 class StructuredAnswer(BaseModel):
     """The standard answer format returned by the query system."""
     answer_type: str = "prose"  # prose, numeric, table, comparison, no_data
     title: str = ""
     summary: str = ""
+    # Advisory answer fields — natural prose bubble + separated math detail.
+    # main_answer_text: primary conversational answer shown in the chat bubble.
+    # summary is kept as an alias so existing callers continue to work.
+    main_answer_text: str = ""
+    key_numbers: list[KeyNumber] = Field(default_factory=list)
+    supporting_details: list[SupportingDetail] = Field(default_factory=list)
     primary_value: str | None = None
     highlights: list[dict[str, str]] = Field(default_factory=list)
     sections: list[dict[str, Any]] = Field(default_factory=list)
@@ -204,6 +223,14 @@ class StructuredAnswer(BaseModel):
     verifier_repaired: bool = False
     verifier_warnings: list[str] = Field(default_factory=list)
 
+    # InsightBundle carried for debug_payload; not part of the public response.
+    insight_bundle: Any | None = None
+
+    # Answer-style metadata (set by chat_router via answer_style layer)
+    answer_mode: str = ""        # AnswerMode enum value, e.g. "factual", "advisory"
+    response_shape: str = ""     # ResponseShape enum value, e.g. "one_line_answer"
+    answer_style_reason: str = ""  # human-readable reason for the chosen style
+
 
 class ChatDebugPayload(BaseModel):
     """Developer-only pipeline metadata. Returned when DEBUG_CHAT=true."""
@@ -221,6 +248,12 @@ class ChatDebugPayload(BaseModel):
     verifier_warnings: list[str] = Field(default_factory=list)
     fallback_steps: list[str] = Field(default_factory=list)
     timings: dict[str, float | None] = Field(default_factory=dict)
+    # Answer-style fields
+    answer_mode: str = ""
+    response_shape: str = ""
+    answer_style_reason: str = ""
+    # InsightBundle snapshot (serialized for inspection)
+    insight_bundle: dict[str, Any] | None = None
 
 
 class ChatResponse(BaseModel):

@@ -21,6 +21,7 @@ import os
 import time
 from typing import Any
 
+from app.chat.answer_style import AnswerMode, AnswerStyleDecision, ResponseShape
 from app.chat.answer_templates import (
     AnswerStrategy,
     build_llm_context_from_facts,
@@ -29,6 +30,7 @@ from app.chat.answer_templates import (
 )
 from app.chat.answer_verifier import VerifierResult, verify_answer
 from app.chat.fact_builder import FactBundle, build_facts
+from app.chat.insight_builder import InsightBundle, build_insights, build_llm_context_from_insight
 from app.chat.retrieval import RetrievalChunk, chunks_to_citations, retrieve
 from app.core.logger import get_logger, get_request_id
 from app.domain.entities import AnswerTimings, QueryContext, StructuredAnswer
@@ -50,6 +52,7 @@ async def build_answer(
     *,
     req_id: str = "",
     route_risk: str | None = None,
+    answer_style: AnswerStyleDecision | None = None,
 ) -> StructuredAnswer:
     """Build a structured answer for a user question."""
     if not req_id:
@@ -148,6 +151,32 @@ async def build_answer(
         },
     )
 
+    # ── Phase 5b: build InsightBundle (interpretation from facts, no LLM) ─────
+    insight_bundle = build_insights(
+        question=question,
+        intent_result=None,      # intent already resolved; pass directly below
+        route_decision=None,
+        query_plan=None,
+        sql_result=sql_result,
+        retrieval_chunks=retrieval_chunks or [],
+        fact_bundle=fact_bundle,
+        answer_style=answer_style,
+        query_intent=intent,
+    )
+
+    logger.info(
+        "insight_builder_completed",
+        extra={
+            "stage": "insight_builder_completed",
+            "request_id": req_id,
+            "has_direct_answer": insight_bundle.direct_answer is not None,
+            "has_primary_insight": insight_bundle.primary_insight is not None,
+            "supporting_facts_count": len(insight_bundle.supporting_facts),
+            "insight_confidence": insight_bundle.confidence,
+            "caveat_count": len(insight_bundle.caveats),
+        },
+    )
+
     # ── Phase 6: choose answer strategy ───────────────────────────────────────
     strategy = choose_strategy(
         intent,
@@ -156,6 +185,18 @@ async def build_answer(
         has_rag=has_text_data,
         route_risk=route_risk,
     )
+
+    # Answer-style override: advisory/coaching/exploratory modes always want
+    # the LLM narrative path so the prose can be shaped to the user's need.
+    if answer_style is not None:
+        if answer_style.answer_mode in (
+            AnswerMode.ADVISORY, AnswerMode.COACHING, AnswerMode.EXPLORATORY,
+        ) and strategy == AnswerStrategy.TEMPLATE_ONLY:
+            strategy = AnswerStrategy.HYBRID_TEMPLATE_PLUS_LLM
+
+        # Comparison mode → at least hybrid so the LLM can phrase the delta
+        if answer_style.answer_mode == AnswerMode.COMPARISON and strategy == AnswerStrategy.TEMPLATE_ONLY:
+            strategy = AnswerStrategy.HYBRID_TEMPLATE_PLUS_LLM
 
     answer_type = _determine_answer_type(intent, sql_result)
 
@@ -171,14 +212,16 @@ async def build_answer(
 
     if strategy == AnswerStrategy.HYBRID_TEMPLATE_PLUS_LLM:
         template_summary = render_template(intent, fact_bundle, question)
-        llm_context = build_llm_context_from_facts(fact_bundle, template_summary)
-        narrative = await _generate_narrative_from_facts(question, intent, llm_context, ctx, fact_bundle)
+        # Use insight-aware context: LLM receives interpretation, not raw facts
+        llm_context = build_llm_context_from_insight(insight_bundle, fact_bundle, template_summary)
+        narrative = await _generate_narrative_from_facts(
+            question, intent, llm_context, ctx, fact_bundle, answer_style=answer_style
+        )
         llm_called = True
 
     elif strategy == AnswerStrategy.LLM_NARRATIVE:
-        # LLM gets FactBundle context, not raw rows
-        llm_context = build_llm_context_from_facts(fact_bundle)
-        # Include document excerpts for RAG paths (use rich retrieval chunks)
+        # LLM receives InsightBundle interpretation + document excerpts for RAG
+        llm_context = build_llm_context_from_insight(insight_bundle, fact_bundle)
         if retrieval_chunks:
             llm_context += "\n\nDocument excerpts (from statements):\n"
             for chunk in retrieval_chunks[:4]:
@@ -189,7 +232,9 @@ async def build_answer(
             llm_context += "\n\nDocument excerpts:\n"
             for chunk in text_results[:4]:
                 llm_context += f"  - {chunk.get('snippet', chunk.get('content', ''))[:200]}\n"
-        narrative = await _generate_narrative_from_facts(question, intent, llm_context, ctx, fact_bundle)
+        narrative = await _generate_narrative_from_facts(
+            question, intent, llm_context, ctx, fact_bundle, answer_style=answer_style
+        )
         llm_called = True
 
     timings.llm_ms = round((time.perf_counter() - t0) * 1000, 1) if llm_called else None
@@ -262,6 +307,9 @@ async def build_answer(
     # ── Citations from hybrid retrieval ──────────────────────────────────────
     if retrieval_chunks:
         answer.citations.extend(chunks_to_citations(retrieval_chunks[:5]))
+
+    # Carry InsightBundle for debug_payload assembly upstream (not in public API).
+    answer.insight_bundle = insight_bundle
 
     # ── Phase 8: verify the answer before returning ───────────────────────────
     verifier_result = verify_answer(question, fact_bundle, answer)
@@ -545,12 +593,51 @@ def _extract_summary_from_llm_json(raw: str, fallback: str) -> str:
     return summary.strip()
 
 
+def _style_system_prompt_appendix(style: "AnswerStyleDecision") -> str:
+    """Return a short style directive to append to the base system prompt."""
+    mode = style.answer_mode.value
+    shape = style.response_shape.value
+
+    if mode == "advisory":
+        return (
+            "STYLE: This is an advisory question. Give a clear recommendation "
+            "with supporting reasoning. Use plain prose, no bullet lists, no tables. "
+            f"Maximum {style.max_bullets} key points if needed."
+        )
+    if mode == "coaching":
+        return (
+            "STYLE: This is a coaching question. Provide actionable steps the user "
+            "can take. Structure as numbered steps if listing actions, otherwise prose. "
+            f"Maximum {style.max_bullets} steps."
+        )
+    if mode == "exploratory":
+        return (
+            "STYLE: This is a what-if / scenario question. Explain the hypothetical "
+            "scenario and its implications based on the facts. Use conditional language "
+            "(e.g. 'if you...', 'this would mean...'). Keep it 2-4 sentences."
+        )
+    if mode == "comparison":
+        return (
+            "STYLE: This is a comparison question. Summarize the key differences and "
+            "similarities. Be direct about which is higher/lower and by how much."
+        )
+    if mode == "analytical":
+        return (
+            "STYLE: This is an analytical question. Explain patterns, causes, or trends "
+            "in the data. Reference specific numbers from the facts to support your explanation."
+        )
+    # factual / clarification — base prompt is sufficient
+    return ""
+
+
 async def _generate_narrative_from_facts(
     question: str,
     intent: QueryIntent,
     context: str,
     ctx: QueryContext,
     fact_bundle: "FactBundle | None" = None,
+    *,
+    answer_style: "AnswerStyleDecision | None" = None,
 ) -> str:
     """LLM receives pre-computed facts only. Strict grounded JSON prompt (Phase 7).
 
@@ -575,10 +662,17 @@ async def _generate_narrative_from_facts(
         timeframe_label=ctx.timeframe_label or "",
     )
 
+    # Compose the final system prompt — base + optional style appendix
+    system_prompt = _LLM_SYSTEM_PROMPT
+    if answer_style is not None:
+        style_hint = _style_system_prompt_appendix(answer_style)
+        if style_hint:
+            system_prompt = system_prompt + "\n\n" + style_hint
+
     try:
         raw = await llm.generate(
             prompt,
-            system=_LLM_SYSTEM_PROMPT,
+            system=system_prompt,
             format_json=True,
         )
         summary = _extract_summary_from_llm_json(raw, fallback_summary)
