@@ -8,6 +8,7 @@ import SectionHeader from "@/components/coral-ds/SectionHeader";
 import Surface from "@/components/coral-ds/Surface";
 import StatusBadge from "@/components/coral-ds/StatusBadge";
 import VarianceBadge from "@/components/coral-ds/VarianceBadge";
+import TargetProgressBar from "@/components/coral-ds/TargetProgressBar";
 
 export default function DesignSystemPage() {
   const [month, setMonth] = useState("August 2026");
@@ -54,6 +55,16 @@ export default function DesignSystemPage() {
             <VarianceBadge value={-45} />
             <VarianceBadge value={12} format="percent" direction="negative-good" />
           </div>
+        </section>
+
+        <section>
+          <SectionHeader title="Target progress" size="sm" />
+          <Surface className="mt-4 grid gap-5 max-w-xl">
+            <TargetProgressBar label="Needs" actual={48} target={50} bucket="needs" />
+            <TargetProgressBar label="Wants" actual={24} target={20} bucket="wants" />
+            <TargetProgressBar label="Savings" actual={12} target={15} bucket="savings" />
+            <TargetProgressBar label="Investments" actual={16} target={15} bucket="investments" />
+          </Surface>
         </section>
       </div>
     </PageShell>
