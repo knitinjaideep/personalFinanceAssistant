@@ -209,3 +209,78 @@ async def test_repo_delete_allocations_for_version_cascades_suballocations(temp_
     async with get_session() as session:
         assert await repo.get_allocations_for_version(session, version_id) == []
         assert await repo.get_suballocations_for_allocation(session, alloc_id) == []
+
+
+# ── Task 3: validate_plan ──────────────────────────────────────────────────────
+
+from app.domain.entities import AllocationInput, SuballocationInput
+from app.domain.errors import PlanValidationError
+from app.services import financial_plan as plan_service
+
+
+def _default_allocations() -> list[AllocationInput]:
+    return [
+        AllocationInput(bucket_name="needs", percentage="50"),
+        AllocationInput(bucket_name="wants", percentage="20"),
+        AllocationInput(bucket_name="savings", percentage="15", suballocations=[
+            SuballocationInput(name="Emergency Fund", percentage="5"),
+            SuballocationInput(name="House / Goals", percentage="5"),
+            SuballocationInput(name="Child Savings", percentage="5"),
+        ]),
+        AllocationInput(bucket_name="investments", percentage="15", suballocations=[
+            SuballocationInput(name="401(k)", percentage="6"),
+            SuballocationInput(name="Roth IRA", percentage="4"),
+            SuballocationInput(name="ESPP", percentage="3"),
+            SuballocationInput(name="Taxable Brokerage", percentage="2"),
+        ]),
+    ]
+
+
+def test_validate_plan_accepts_the_default_allocation():
+    plan_service.validate_plan(_default_allocations())  # must not raise
+
+
+def test_validate_plan_rejects_total_not_100():
+    allocations = _default_allocations()
+    allocations[0].percentage = Decimal("40")  # total now 90
+    with pytest.raises(PlanValidationError, match="100"):
+        plan_service.validate_plan(allocations)
+
+
+def test_validate_plan_rejects_suballocation_mismatch():
+    allocations = _default_allocations()
+    allocations[2].suballocations[0].percentage = Decimal("10")  # savings subs now sum to 20
+    with pytest.raises(PlanValidationError, match="savings"):
+        plan_service.validate_plan(allocations)
+
+
+def test_validate_plan_rejects_negative_percentage():
+    allocations = _default_allocations()
+    allocations[0].percentage = Decimal("-10")
+    with pytest.raises(PlanValidationError, match="negative"):
+        plan_service.validate_plan(allocations)
+
+
+def test_validate_plan_rejects_duplicate_bucket_names():
+    allocations = _default_allocations()
+    allocations.append(AllocationInput(bucket_name="needs", percentage="0"))
+    with pytest.raises(PlanValidationError, match="Duplicate"):
+        plan_service.validate_plan(allocations)
+
+
+def test_validate_plan_rejects_duplicate_suballocation_names():
+    allocations = _default_allocations()
+    allocations[2].suballocations.append(SuballocationInput(name="Emergency Fund", percentage="0"))
+    with pytest.raises(PlanValidationError, match="Duplicate"):
+        plan_service.validate_plan(allocations)
+
+
+def test_validate_plan_allows_custom_bucket_if_total_still_100():
+    allocations = [
+        AllocationInput(bucket_name="needs", percentage="45"),
+        AllocationInput(bucket_name="wants", percentage="20"),
+        AllocationInput(bucket_name="savings", percentage="15"),
+        AllocationInput(bucket_name="investments", percentage="15"),
+        AllocationInput(bucket_name="giving", percentage="5"),
+    ]
+    plan_service.validate_plan(allocations)  # must not raise
