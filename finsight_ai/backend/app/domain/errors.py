@@ -95,3 +95,15 @@ class SQLQueryError(CoralError):
 
 class SearchError(CoralError):
     """FTS or vector search failed."""
+
+
+# ── Financial Plan ───────────────────────────────────────────────────────────
+
+class PlanValidationError(CoralError):
+    """Plan allocation percentages fail validation (don't sum to 100, duplicates, negatives)."""
+
+class PlanVersionImmutableError(CoralError):
+    """Cannot edit a plan version that is already active or was active in the past."""
+
+class DuplicateEffectiveDateError(CoralError):
+    """A plan version with this effective_from already exists for this plan."""

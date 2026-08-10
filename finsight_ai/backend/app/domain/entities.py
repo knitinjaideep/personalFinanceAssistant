@@ -320,3 +320,67 @@ class BulkUploadSummary(BaseModel):
     failed: int = 0
     partial_parses: int = 0
     results: list[BulkUploadFileResult] = Field(default_factory=list)
+
+
+# ── Financial Plan ───────────────────────────────────────────────────────────
+
+class SuballocationInput(BaseModel):
+    """Input contract for one suballocation row when creating/updating a plan version."""
+    name: str
+    percentage: Decimal
+
+    _normalize_percentage = field_validator("percentage", mode="before")(_to_decimal)
+
+
+class AllocationInput(BaseModel):
+    """Input contract for one top-level bucket when creating/updating a plan version."""
+    bucket_name: str
+    percentage: Decimal
+    suballocations: list[SuballocationInput] = Field(default_factory=list)
+
+    _normalize_percentage = field_validator("percentage", mode="before")(_to_decimal)
+
+
+class SuballocationSnapshot(BaseModel):
+    """Read-side shape of a suballocation, returned by the service/API."""
+    id: str
+    name: str
+    percentage: str
+    sort_order: int
+
+
+class AllocationSnapshot(BaseModel):
+    """Read-side shape of a top-level bucket, returned by the service/API."""
+    id: str
+    bucket_name: str
+    percentage: str
+    sort_order: int
+    suballocations: list[SuballocationSnapshot] = Field(default_factory=list)
+
+
+class PlanVersionSnapshot(BaseModel):
+    """Full read-side shape of a resolved plan version — what GET/POST/PATCH all return."""
+    id: str
+    plan_id: str
+    version_number: int
+    effective_from: date
+    notes: str | None = None
+    allocations: list[AllocationSnapshot] = Field(default_factory=list)
+
+
+class PlanVersionSummary(BaseModel):
+    """Lightweight listing shape for GET .../versions."""
+    id: str
+    version_number: int
+    effective_from: date
+    notes: str | None = None
+
+
+class PlanVersionCreateRequest(BaseModel):
+    effective_from: date
+    allocations: list[AllocationInput]
+    notes: str | None = None
+
+
+class PlanVersionUpdateRequest(BaseModel):
+    allocations: list[AllocationInput]

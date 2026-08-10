@@ -332,3 +332,77 @@ class DiscoverDetailModel(SQLModel, table=True):
     minimum_payment: Optional[str] = None
     promotional_balance: Optional[str] = None
     created_at: datetime = Field(default_factory=_now)
+
+
+# ── Financial Plan ────────────────────────────────────────────────────────────
+#
+# The user's INTENDED allocation of income, kept separate from actual
+# transactions. Versioned and effective-dated: a plan has many versions, each
+# starting on a given date and remaining in effect until the next version's
+# effective_from. There is no effective_until column — the active window is
+# derived at query time (see FinancialPlanService.get_plan_for_date) so it can
+# never drift out of sync with the version list.
+#
+# Fixed 2-level tree: plan_allocations are top-level buckets (Needs, Wants,
+# Savings, Investments, or a custom bucket the user adds later — bucket_name is
+# a free string, not an enum). plan_suballocations are optional children of a
+# bucket; their percentage is a share of the TOTAL plan (e.g. Emergency Fund =
+# 5%), not of the parent bucket's share, so a bucket's suballocations must sum
+# to exactly that bucket's own percentage.
+
+class FinancialPlanModel(SQLModel, table=True):
+    """Container for the user's financial allocation plan, versioned over time.
+
+    Coral is single-user/local-first, so exactly one active FinancialPlanModel
+    row is expected to exist in practice (auto-seeded on first boot).
+    """
+    __tablename__ = "financial_plans"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    name: str = "Master Plan"
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=_now)
+
+    versions: list["FinancialPlanVersionModel"] = Relationship(back_populates="plan")
+
+
+class FinancialPlanVersionModel(SQLModel, table=True):
+    """A single effective-dated version of a plan's allocations."""
+    __tablename__ = "financial_plan_versions"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    plan_id: str = Field(foreign_key="financial_plans.id", index=True)
+    version_number: int
+    effective_from: date = Field(index=True)
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=_now)
+
+    plan: Optional[FinancialPlanModel] = Relationship(back_populates="versions")
+    allocations: list["PlanAllocationModel"] = Relationship(back_populates="plan_version")
+
+
+class PlanAllocationModel(SQLModel, table=True):
+    """Top-level bucket within a plan version (Needs, Wants, Savings, Investments, or custom)."""
+    __tablename__ = "plan_allocations"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    plan_version_id: str = Field(foreign_key="financial_plan_versions.id", index=True)
+    bucket_name: str
+    percentage: str  # Decimal as string, e.g. "50"
+    sort_order: int = 0
+
+    plan_version: Optional[FinancialPlanVersionModel] = Relationship(back_populates="allocations")
+    suballocations: list["PlanSuballocationModel"] = Relationship(back_populates="allocation")
+
+
+class PlanSuballocationModel(SQLModel, table=True):
+    """Child of a plan_allocation. Percentage is of the TOTAL plan, not of the parent's share."""
+    __tablename__ = "plan_suballocations"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    allocation_id: str = Field(foreign_key="plan_allocations.id", index=True)
+    name: str
+    percentage: str  # Decimal as string, e.g. "5"
+    sort_order: int = 0
+
+    allocation: Optional[PlanAllocationModel] = Relationship(back_populates="suballocations")
