@@ -237,7 +237,7 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
 
   return (
     <div className="fixed top-0 inset-x-0 z-40 pointer-events-none">
-      <div className="mx-auto max-w-[1320px] px-4 sm:px-6">
+      <div className="mx-auto max-w-[1440px] px-4 sm:px-6">
         <motion.nav
           initial={{ y: -24, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
