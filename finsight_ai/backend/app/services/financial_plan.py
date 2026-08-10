@@ -12,31 +12,10 @@ caller (e.g. a chat-domain handler), exactly like app.db.repositories.
 
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.logger import get_logger
-from app.db import repositories as repo
-from app.db.engine import get_session
-from app.db.models import FinancialPlanVersionModel
-from app.domain.entities import (
-    AllocationInput,
-    AllocationSnapshot,
-    PlanVersionSnapshot,
-    PlanVersionSummary,
-    SuballocationInput,
-    SuballocationSnapshot,
-)
-from app.domain.errors import (
-    DuplicateEffectiveDateError,
-    EntityNotFoundError,
-    PlanValidationError,
-    PlanVersionImmutableError,
-)
-
-logger = get_logger(__name__)
+from app.domain.entities import AllocationInput
+from app.domain.errors import PlanValidationError
 
 _HUNDRED = Decimal("100")
 
@@ -83,8 +62,8 @@ def validate_plan(allocations: list[AllocationInput]) -> None:
 
             if sub_total != alloc.percentage:
                 raise PlanValidationError(
-                    f"Suballocations under bucket {alloc.bucket_name!r} sum to {sub_total}, "
-                    f"expected {alloc.percentage} to match the {alloc.bucket_name} bucket's own percentage."
+                    f"Suballocations under {alloc.bucket_name!r} sum to {sub_total}, "
+                    f"expected {alloc.percentage}."
                 )
 
     if total != _HUNDRED:
