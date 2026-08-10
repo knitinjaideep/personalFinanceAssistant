@@ -26,9 +26,13 @@ from app.db.models import (
     DocumentModel,
     EtradeDetailModel,
     FeeModel,
+    FinancialPlanModel,
+    FinancialPlanVersionModel,
     HoldingModel,
     InstitutionModel,
     MorganStanleyDetailModel,
+    PlanAllocationModel,
+    PlanSuballocationModel,
     StatementModel,
     TextChunkModel,
     TransactionModel,
@@ -536,3 +540,128 @@ async def get_balance_history(
         }
         for b in result.scalars().all()
     ]
+
+
+# ── Financial Plan ───────────────────────────────────────────────────────────
+
+async def create_financial_plan(session: AsyncSession, **kwargs: Any) -> FinancialPlanModel:
+    plan = FinancialPlanModel(**kwargs)
+    session.add(plan)
+    await session.flush()
+    return plan
+
+
+async def get_active_financial_plan(session: AsyncSession) -> FinancialPlanModel | None:
+    result = await session.execute(
+        select(FinancialPlanModel)
+        .where(FinancialPlanModel.is_active == True)  # noqa: E712
+        .order_by(FinancialPlanModel.created_at.asc())
+    )
+    return result.scalars().first()
+
+
+async def create_plan_version(session: AsyncSession, **kwargs: Any) -> FinancialPlanVersionModel:
+    version = FinancialPlanVersionModel(**kwargs)
+    session.add(version)
+    await session.flush()
+    return version
+
+
+async def get_plan_version(session: AsyncSession, version_id: str) -> FinancialPlanVersionModel:
+    result = await session.execute(
+        select(FinancialPlanVersionModel).where(FinancialPlanVersionModel.id == version_id)
+    )
+    version = result.scalar_one_or_none()
+    if version is None:
+        raise EntityNotFoundError("FinancialPlanVersion", version_id)
+    return version
+
+
+async def get_version_by_effective_date(
+    session: AsyncSession, plan_id: str, effective_from: date,
+) -> FinancialPlanVersionModel | None:
+    result = await session.execute(
+        select(FinancialPlanVersionModel)
+        .where(FinancialPlanVersionModel.plan_id == plan_id)
+        .where(FinancialPlanVersionModel.effective_from == effective_from)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_latest_version_for_date(
+    session: AsyncSession, plan_id: str, target_date: date,
+) -> FinancialPlanVersionModel | None:
+    result = await session.execute(
+        select(FinancialPlanVersionModel)
+        .where(FinancialPlanVersionModel.plan_id == plan_id)
+        .where(FinancialPlanVersionModel.effective_from <= target_date)
+        .order_by(FinancialPlanVersionModel.effective_from.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_max_version_number(session: AsyncSession, plan_id: str) -> int:
+    result = await session.execute(
+        select(func.max(FinancialPlanVersionModel.version_number))
+        .where(FinancialPlanVersionModel.plan_id == plan_id)
+    )
+    return result.scalar() or 0
+
+
+async def list_versions_for_plan(session: AsyncSession, plan_id: str) -> list[FinancialPlanVersionModel]:
+    result = await session.execute(
+        select(FinancialPlanVersionModel)
+        .where(FinancialPlanVersionModel.plan_id == plan_id)
+        .order_by(FinancialPlanVersionModel.effective_from.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def create_allocation(session: AsyncSession, **kwargs: Any) -> PlanAllocationModel:
+    allocation = PlanAllocationModel(**kwargs)
+    session.add(allocation)
+    await session.flush()
+    return allocation
+
+
+async def create_suballocation(session: AsyncSession, **kwargs: Any) -> PlanSuballocationModel:
+    sub = PlanSuballocationModel(**kwargs)
+    session.add(sub)
+    await session.flush()
+    return sub
+
+
+async def get_allocations_for_version(session: AsyncSession, version_id: str) -> list[PlanAllocationModel]:
+    result = await session.execute(
+        select(PlanAllocationModel)
+        .where(PlanAllocationModel.plan_version_id == version_id)
+        .order_by(PlanAllocationModel.sort_order.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_suballocations_for_allocation(
+    session: AsyncSession, allocation_id: str,
+) -> list[PlanSuballocationModel]:
+    result = await session.execute(
+        select(PlanSuballocationModel)
+        .where(PlanSuballocationModel.allocation_id == allocation_id)
+        .order_by(PlanSuballocationModel.sort_order.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def delete_allocations_for_version(session: AsyncSession, version_id: str) -> None:
+    """Delete all allocations (and cascade suballocations) for a version — used when
+    replacing a not-yet-effective version's allocations in place."""
+    allocations = await get_allocations_for_version(session, version_id)
+    for alloc in allocations:
+        await session.execute(
+            text("DELETE FROM plan_suballocations WHERE allocation_id = :aid"),
+            {"aid": alloc.id},
+        )
+    await session.execute(
+        text("DELETE FROM plan_allocations WHERE plan_version_id = :vid"),
+        {"vid": version_id},
+    )
