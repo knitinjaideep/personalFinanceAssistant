@@ -407,3 +407,74 @@ async def test_create_plan_version_rejects_duplicate_effective_date(temp_db):
                 session, effective_from=plan_service.PLAN_EPOCH,  # same as seeded V1
                 allocations=[AllocationInput(bucket_name="needs", percentage="100")],
             )
+
+
+# ── Task 7: update_plan_version ───────────────────────────────────────────────
+
+from app.domain.errors import PlanVersionImmutableError
+
+
+async def test_update_future_version_succeeds_and_history_is_unaffected(temp_db):
+    async with get_session() as session:
+        future = await plan_service.create_plan_version(
+            session, effective_from=date(2027, 1, 1),
+            allocations=[
+                AllocationInput(bucket_name="needs", percentage="50"),
+                AllocationInput(bucket_name="wants", percentage="20"),
+                AllocationInput(bucket_name="savings", percentage="15"),
+                AllocationInput(bucket_name="investments", percentage="15"),
+            ],
+        )
+
+    async with get_session() as session:
+        updated = await plan_service.update_plan_version(
+            session, version_id=future.id,
+            allocations=[
+                AllocationInput(bucket_name="needs", percentage="55"),
+                AllocationInput(bucket_name="wants", percentage="15"),
+                AllocationInput(bucket_name="savings", percentage="15"),
+                AllocationInput(bucket_name="investments", percentage="15"),
+            ],
+        )
+    needs = next(a for a in updated.allocations if a.bucket_name == "needs")
+    assert needs.percentage == "55"
+
+    async with get_session() as session:
+        # A date before the future version's effective_from must still resolve
+        # to the ORIGINAL seeded default (needs=50) — editing V2 must not
+        # rewrite what V1 says about the past/present.
+        historical = await plan_service.get_plan_for_date(session, date(2026, 8, 15))
+        historical_needs = next(a for a in historical.allocations if a.bucket_name == "needs")
+        assert historical_needs.percentage == "50"
+
+
+async def test_update_active_version_raises_immutable_error(temp_db):
+    async with get_session() as session:
+        plan = await repo.get_active_financial_plan(session)
+        active_version = await repo.get_latest_version_for_date(session, plan.id, date.today())
+
+        with pytest.raises(PlanVersionImmutableError):
+            await plan_service.update_plan_version(
+                session, version_id=active_version.id,
+                allocations=[AllocationInput(bucket_name="needs", percentage="100")],
+            )
+
+
+async def test_update_rejects_invalid_percentages(temp_db):
+    async with get_session() as session:
+        future = await plan_service.create_plan_version(
+            session, effective_from=date(2028, 1, 1),
+            allocations=[
+                AllocationInput(bucket_name="needs", percentage="50"),
+                AllocationInput(bucket_name="wants", percentage="20"),
+                AllocationInput(bucket_name="savings", percentage="15"),
+                AllocationInput(bucket_name="investments", percentage="15"),
+            ],
+        )
+
+    async with get_session() as session:
+        with pytest.raises(PlanValidationError):
+            await plan_service.update_plan_version(
+                session, version_id=future.id,
+                allocations=[AllocationInput(bucket_name="needs", percentage="50")],
+            )

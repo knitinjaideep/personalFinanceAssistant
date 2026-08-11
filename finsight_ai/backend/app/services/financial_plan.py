@@ -28,7 +28,12 @@ from app.domain.entities import (
     SuballocationInput,
     SuballocationSnapshot,
 )
-from app.domain.errors import DuplicateEffectiveDateError, EntityNotFoundError, PlanValidationError
+from app.domain.errors import (
+    DuplicateEffectiveDateError,
+    EntityNotFoundError,
+    PlanValidationError,
+    PlanVersionImmutableError,
+)
 
 logger = get_logger(__name__)
 
@@ -220,4 +225,31 @@ async def create_plan_version(
         effective_from=effective_from, notes=notes,
     )
     await _write_allocations(session, version.id, allocations)
+    return await _snapshot_from_version(session, version)
+
+
+# ── Editing existing versions ──────────────────────────────────────────────────
+
+async def update_plan_version(
+    session: AsyncSession,
+    version_id: str,
+    allocations: list[AllocationInput],
+) -> PlanVersionSnapshot:
+    """Replace a version's allocations in place. Only permitted while the
+    version's effective_from is strictly in the future — a version that is
+    already active or was active in the past is immutable, so the only way
+    to change what's in effect today onward is create_plan_version() with a
+    new effective_from. This is what keeps edits from rewriting history."""
+    validate_plan(allocations)
+
+    version = await repo.get_plan_version(session, version_id)
+    if version.effective_from <= date.today():
+        raise PlanVersionImmutableError(
+            f"Plan version {version_id} is active or in the past "
+            f"(effective_from={version.effective_from}) and cannot be edited. "
+            "Create a new version instead."
+        )
+
+    await repo.delete_allocations_for_version(session, version_id)
+    await _write_allocations(session, version_id, allocations)
     return await _snapshot_from_version(session, version)
