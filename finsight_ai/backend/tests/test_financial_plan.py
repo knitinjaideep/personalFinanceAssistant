@@ -460,6 +460,26 @@ async def test_update_active_version_raises_immutable_error(temp_db):
             )
 
 
+async def test_update_version_effective_today_raises_immutable_error(temp_db):
+    async with get_session() as session:
+        today_version = await plan_service.create_plan_version(
+            session, effective_from=date.today(),
+            allocations=[
+                AllocationInput(bucket_name="needs", percentage="50"),
+                AllocationInput(bucket_name="wants", percentage="20"),
+                AllocationInput(bucket_name="savings", percentage="15"),
+                AllocationInput(bucket_name="investments", percentage="15"),
+            ],
+        )
+
+    async with get_session() as session:
+        with pytest.raises(PlanVersionImmutableError):
+            await plan_service.update_plan_version(
+                session, version_id=today_version.id,
+                allocations=[AllocationInput(bucket_name="needs", percentage="100")],
+            )
+
+
 async def test_update_rejects_invalid_percentages(temp_db):
     async with get_session() as session:
         future = await plan_service.create_plan_version(
