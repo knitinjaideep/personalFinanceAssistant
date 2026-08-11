@@ -264,6 +264,10 @@ async def init_db() -> None:
     from app.db.fts import init_fts
     await init_fts()
 
+    # 4. Seed the default Financial Plan if none exists yet.
+    from app.services.financial_plan import seed_default_plan_if_missing
+    await seed_default_plan_if_missing()
+
     logger.info("db.initialized", path=str(db_path))
 
 

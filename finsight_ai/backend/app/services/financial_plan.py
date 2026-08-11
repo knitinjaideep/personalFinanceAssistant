@@ -12,10 +12,18 @@ caller (e.g. a chat-domain handler), exactly like app.db.repositories.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
-from app.domain.entities import AllocationInput
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.logger import get_logger
+from app.db import repositories as repo
+from app.db.engine import get_session
+from app.domain.entities import AllocationInput, SuballocationInput
 from app.domain.errors import PlanValidationError
+
+logger = get_logger(__name__)
 
 _HUNDRED = Decimal("100")
 
@@ -68,3 +76,63 @@ def validate_plan(allocations: list[AllocationInput]) -> None:
 
     if total != _HUNDRED:
         raise PlanValidationError(f"Allocations sum to {total}%, expected 100%.")
+
+
+# ── Default plan seeding ──────────────────────────────────────────────────────
+
+# Far enough in the past that the seeded default plan resolves for all
+# existing historical transaction data until the user creates a real V2.
+PLAN_EPOCH = date(2000, 1, 1)
+
+_DEFAULT_ALLOCATIONS: list[AllocationInput] = [
+    AllocationInput(bucket_name="needs", percentage=Decimal("50")),
+    AllocationInput(bucket_name="wants", percentage=Decimal("20")),
+    AllocationInput(bucket_name="savings", percentage=Decimal("15"), suballocations=[
+        SuballocationInput(name="Emergency Fund", percentage=Decimal("5")),
+        SuballocationInput(name="House / Goals", percentage=Decimal("5")),
+        SuballocationInput(name="Child Savings", percentage=Decimal("5")),
+    ]),
+    AllocationInput(bucket_name="investments", percentage=Decimal("15"), suballocations=[
+        SuballocationInput(name="401(k)", percentage=Decimal("6")),
+        SuballocationInput(name="Roth IRA", percentage=Decimal("4")),
+        SuballocationInput(name="ESPP", percentage=Decimal("3")),
+        SuballocationInput(name="Taxable Brokerage", percentage=Decimal("2")),
+    ]),
+]
+
+
+async def _write_allocations(
+    session: AsyncSession, version_id: str, allocations: list[AllocationInput],
+) -> None:
+    for i, alloc in enumerate(allocations):
+        allocation = await repo.create_allocation(
+            session, plan_version_id=version_id, bucket_name=alloc.bucket_name,
+            percentage=str(alloc.percentage), sort_order=i,
+        )
+        for j, sub in enumerate(alloc.suballocations):
+            await repo.create_suballocation(
+                session, allocation_id=allocation.id, name=sub.name,
+                percentage=str(sub.percentage), sort_order=j,
+            )
+
+
+async def seed_default_plan_if_missing() -> None:
+    """Insert the default Master Plan (see PLAN_EPOCH/_DEFAULT_ALLOCATIONS above)
+    only if no financial plan exists yet. Safe to call on every boot."""
+    async with get_session() as session:
+        existing = await repo.get_active_financial_plan(session)
+        if existing is not None:
+            return
+
+        validate_plan(_DEFAULT_ALLOCATIONS)
+
+        plan = await repo.create_financial_plan(session, name="Master Plan")
+        version = await repo.create_plan_version(
+            session, plan_id=plan.id, version_number=1,
+            effective_from=PLAN_EPOCH, notes="Default seeded plan",
+        )
+        await _write_allocations(session, version.id, _DEFAULT_ALLOCATIONS)
+        logger.info(
+            "financial_plan.seeded",
+            extra={"plan_id": plan.id, "version_id": version.id},
+        )

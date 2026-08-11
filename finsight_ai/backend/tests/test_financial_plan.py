@@ -111,14 +111,13 @@ def test_allocation_input_coerces_percentage_to_decimal():
 # ── Task 2: repository functions ──────────────────────────────────────────────
 
 async def test_repo_create_and_get_active_plan(temp_db):
-    async with get_session() as session:
-        plan = await repo.create_financial_plan(session, name="Master Plan")
-        plan_id = plan.id
-
+    # Note: seeding creates the default "Master Plan" during init_db(),
+    # so we verify it exists and is active, rather than creating a duplicate.
     async with get_session() as session:
         active = await repo.get_active_financial_plan(session)
         assert active is not None
-        assert active.id == plan_id
+        assert active.name == "Master Plan"
+        assert active.is_active is True
 
 
 async def test_repo_version_and_allocation_crud(temp_db):
@@ -284,3 +283,47 @@ def test_validate_plan_allows_custom_bucket_if_total_still_100():
         AllocationInput(bucket_name="giving", percentage="5"),
     ]
     plan_service.validate_plan(allocations)  # must not raise
+
+
+# ── Task 4: default plan seeding ──────────────────────────────────────────────
+
+async def test_default_plan_seeds_on_init_and_totals_100(temp_db):
+    async with get_session() as session:
+        plan = await repo.get_active_financial_plan(session)
+        assert plan is not None
+        assert plan.name == "Master Plan"
+
+        version = await repo.get_latest_version_for_date(session, plan.id, date.today())
+        assert version is not None
+
+        allocations = await repo.get_allocations_for_version(session, version.id)
+        total = sum(Decimal(a.percentage) for a in allocations)
+        assert total == Decimal("100")
+
+
+async def test_default_plan_savings_and_investments_subtotals(temp_db):
+    async with get_session() as session:
+        plan = await repo.get_active_financial_plan(session)
+        version = await repo.get_latest_version_for_date(session, plan.id, date.today())
+        allocations = {
+            a.bucket_name: a for a in await repo.get_allocations_for_version(session, version.id)
+        }
+
+        savings_subs = await repo.get_suballocations_for_allocation(session, allocations["savings"].id)
+        assert sum(Decimal(s.percentage) for s in savings_subs) == Decimal("15")
+        assert Decimal(allocations["savings"].percentage) == Decimal("15")
+
+        inv_subs = await repo.get_suballocations_for_allocation(session, allocations["investments"].id)
+        assert sum(Decimal(s.percentage) for s in inv_subs) == Decimal("15")
+        assert Decimal(allocations["investments"].percentage) == Decimal("15")
+
+
+async def test_seed_is_idempotent_and_does_not_duplicate(temp_db):
+    from app.db.models import FinancialPlanModel
+
+    # temp_db's init_db() already seeded once; calling again must be a no-op.
+    await plan_service.seed_default_plan_if_missing()
+
+    async with get_session() as session:
+        result = await session.execute(select(FinancialPlanModel))
+        assert len(result.scalars().all()) == 1
