@@ -24,9 +24,9 @@ Full pipeline diagrams and module-by-module detail: [README_ARCHITECTURE.md](REA
 - `domain/` — enums (`QueryIntent`/`QueryPath`), `classification.py` (`ChatIntent`/`RouteType`), entities (Pydantic), errors
 - `db/` — models (SQLModel), engine (+ idempotent column migrations), repositories, FTS5 (`fts.py`)
 - `parsers/` — base interface + registry, per-institution parsers (`morgan_stanley`, `chase`, `etrade`, `amex`, `discover`, `bank_of_america`)
-- `services/` — ingestion, llm, `chat_router.py` (primary chat pipeline), `query_router.py` (legacy, not live), `intent_classifier.py`, `intent_mapping.py`, `sql_query.py` (13 handlers), `text_search.py`, `vector_search.py`, `answer_builder.py`, `dashboard/`
+- `services/` — ingestion, llm, `chat_router.py` (primary chat pipeline), `query_router.py` (legacy, not live), `intent_classifier.py`, `intent_mapping.py`, `sql_query.py` (13 handlers), `text_search.py`, `vector_search.py`, `answer_builder.py`, `financial_plan.py` (versioned allocation plan, no HTTP coupling), `dashboard/`
 - `chat/` — `streaming.py` (SSE), `query_planner.py`, `answer_style.py`, `fact_builder.py`, `insight_builder.py`, `answer_verifier.py`, `guardrails.py`, `retrieval.py`, `services/conversation_context.py`, `evals/`, `domains/affordability/` (7-layer pipeline)
-- `api/` — documents, chat, analytics, dashboard, scan, catalog, health routes
+- `api/` — documents, chat, analytics, dashboard, scan, catalog, health, financial-plan routes
 - `statement_sources.py` — scanner's folder→institution map (separate from `config/statement_catalog.py`, used by structured upload)
 
 ### Frontend (`frontend-next/`)
@@ -60,6 +60,7 @@ Marcus and 529 are catalog-only stubs (`parseable=False`) with no parser registe
 
 ## Database
 - Canonical tables: institutions, accounts, documents, statements, transactions, fees, holdings, balance_snapshots, text_chunks, derived_metrics
+- Financial Plan tables: financial_plans, financial_plan_versions, plan_allocations, plan_suballocations — the user's intended allocation, versioned/effective-dated, kept separate from actual transactions. See [FINANCIAL_PLAN_MODEL.md](docs/FINANCIAL_PLAN_MODEL.md).
 - Bank-specific: morgan_stanley_details, chase_details, etrade_details, amex_details, discover_details (Bank of America has no detail table — canonical rows only)
 - FTS5 virtual table: text_chunks_fts
 - SQL reference: [queries.sql](queries.sql)
