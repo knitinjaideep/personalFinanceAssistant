@@ -28,7 +28,7 @@ from app.domain.entities import (
     SuballocationInput,
     SuballocationSnapshot,
 )
-from app.domain.errors import PlanValidationError
+from app.domain.errors import DuplicateEffectiveDateError, EntityNotFoundError, PlanValidationError
 
 logger = get_logger(__name__)
 
@@ -189,3 +189,35 @@ async def get_plan_for_date(session: AsyncSession, target_date: date) -> PlanVer
 
 async def get_current_plan(session: AsyncSession) -> PlanVersionSnapshot | None:
     return await get_plan_for_date(session, date.today())
+
+
+# ── Creating new versions ──────────────────────────────────────────────────────
+
+async def create_plan_version(
+    session: AsyncSession,
+    effective_from: date,
+    allocations: list[AllocationInput],
+    notes: str | None = None,
+) -> PlanVersionSnapshot:
+    """Create a new version on the (single) master plan, effective from the
+    given date. Raises DuplicateEffectiveDateError if a version already
+    starts on that exact date — resolution would otherwise be ambiguous."""
+    validate_plan(allocations)
+
+    plan = await repo.get_active_financial_plan(session)
+    if plan is None:
+        raise EntityNotFoundError("FinancialPlan", "active")
+
+    existing = await repo.get_version_by_effective_date(session, plan.id, effective_from)
+    if existing is not None:
+        raise DuplicateEffectiveDateError(
+            f"A plan version already exists with effective_from={effective_from}."
+        )
+
+    next_number = await repo.get_max_version_number(session, plan.id) + 1
+    version = await repo.create_plan_version(
+        session, plan_id=plan.id, version_number=next_number,
+        effective_from=effective_from, notes=notes,
+    )
+    await _write_allocations(session, version.id, allocations)
+    return await _snapshot_from_version(session, version)

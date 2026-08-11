@@ -367,3 +367,43 @@ async def test_get_plan_for_date_resolves_historical_version_correctly(temp_db):
         jan_2027 = await plan_service.get_plan_for_date(session, date(2027, 3, 1))
         needs_v2 = next(a for a in jan_2027.allocations if a.bucket_name == "needs")
         assert needs_v2.percentage == "60"
+
+
+# ── Task 6: create_plan_version ───────────────────────────────────────────────
+
+from app.domain.errors import DuplicateEffectiveDateError
+
+
+async def test_create_plan_version_success_increments_version_number(temp_db):
+    async with get_session() as session:
+        snapshot = await plan_service.create_plan_version(
+            session, effective_from=date(2027, 1, 1),
+            allocations=[
+                AllocationInput(bucket_name="needs", percentage="50"),
+                AllocationInput(bucket_name="wants", percentage="20"),
+                AllocationInput(bucket_name="savings", percentage="15"),
+                AllocationInput(bucket_name="investments", percentage="15"),
+            ],
+            notes="2027 plan",
+        )
+    assert snapshot.version_number == 2  # seeded default is version 1
+    assert snapshot.effective_from == date(2027, 1, 1)
+    assert len(snapshot.allocations) == 4
+
+
+async def test_create_plan_version_rejects_invalid_percentages(temp_db):
+    async with get_session() as session:
+        with pytest.raises(PlanValidationError):
+            await plan_service.create_plan_version(
+                session, effective_from=date(2027, 1, 1),
+                allocations=[AllocationInput(bucket_name="needs", percentage="50")],
+            )
+
+
+async def test_create_plan_version_rejects_duplicate_effective_date(temp_db):
+    async with get_session() as session:
+        with pytest.raises(DuplicateEffectiveDateError):
+            await plan_service.create_plan_version(
+                session, effective_from=plan_service.PLAN_EPOCH,  # same as seeded V1
+                allocations=[AllocationInput(bucket_name="needs", percentage="100")],
+            )
