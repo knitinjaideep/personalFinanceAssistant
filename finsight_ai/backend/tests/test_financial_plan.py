@@ -498,3 +498,104 @@ async def test_update_rejects_invalid_percentages(temp_db):
                 session, version_id=future.id,
                 allocations=[AllocationInput(bucket_name="needs", percentage="50")],
             )
+
+
+# ── Task 8: API endpoints ──────────────────────────────────────────────────────
+
+from fastapi import HTTPException
+
+from app.api.financial_plan import (
+    create_version,
+    get_current_plan as api_get_current_plan,
+    get_plan_by_date,
+    list_versions,
+    update_version,
+)
+from app.domain.entities import PlanVersionCreateRequest, PlanVersionUpdateRequest
+
+
+async def test_api_get_current_plan_returns_seeded_default(temp_db):
+    snapshot = await api_get_current_plan()
+    assert snapshot.version_number == 1
+    bucket_names = {a.bucket_name for a in snapshot.allocations}
+    assert bucket_names == {"needs", "wants", "savings", "investments"}
+
+
+async def test_api_get_plan_by_date_404_before_epoch(temp_db):
+    with pytest.raises(HTTPException) as exc_info:
+        await get_plan_by_date(target_date=date(1999, 1, 1))
+    assert exc_info.value.status_code == 404
+
+
+async def test_api_list_versions_returns_seeded_version(temp_db):
+    versions = await list_versions()
+    assert len(versions) == 1
+    assert versions[0].version_number == 1
+
+
+async def test_api_create_version_success(temp_db):
+    body = PlanVersionCreateRequest(
+        effective_from=date(2027, 1, 1),
+        allocations=[
+            AllocationInput(bucket_name="needs", percentage="50"),
+            AllocationInput(bucket_name="wants", percentage="20"),
+            AllocationInput(bucket_name="savings", percentage="15"),
+            AllocationInput(bucket_name="investments", percentage="15"),
+        ],
+    )
+    snapshot = await create_version(body)
+    assert snapshot.version_number == 2
+
+
+async def test_api_create_version_duplicate_date_returns_409(temp_db):
+    body = PlanVersionCreateRequest(
+        effective_from=plan_service.PLAN_EPOCH,
+        allocations=[AllocationInput(bucket_name="needs", percentage="100")],
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await create_version(body)
+    assert exc_info.value.status_code == 409
+
+
+async def test_api_create_version_invalid_percentages_returns_422(temp_db):
+    body = PlanVersionCreateRequest(
+        effective_from=date(2027, 1, 1),
+        allocations=[AllocationInput(bucket_name="needs", percentage="50")],
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await create_version(body)
+    assert exc_info.value.status_code == 422
+
+
+async def test_api_update_version_future_succeeds(temp_db):
+    created = await create_version(PlanVersionCreateRequest(
+        effective_from=date(2027, 1, 1),
+        allocations=[
+            AllocationInput(bucket_name="needs", percentage="50"),
+            AllocationInput(bucket_name="wants", percentage="20"),
+            AllocationInput(bucket_name="savings", percentage="15"),
+            AllocationInput(bucket_name="investments", percentage="15"),
+        ],
+    ))
+
+    updated = await update_version(created.id, PlanVersionUpdateRequest(
+        allocations=[
+            AllocationInput(bucket_name="needs", percentage="55"),
+            AllocationInput(bucket_name="wants", percentage="15"),
+            AllocationInput(bucket_name="savings", percentage="15"),
+            AllocationInput(bucket_name="investments", percentage="15"),
+        ],
+    ))
+    needs = next(a for a in updated.allocations if a.bucket_name == "needs")
+    assert needs.percentage == "55"
+
+
+async def test_api_update_active_version_returns_409(temp_db):
+    versions = await list_versions()
+    active_version_id = versions[0].id
+
+    with pytest.raises(HTTPException) as exc_info:
+        await update_version(active_version_id, PlanVersionUpdateRequest(
+            allocations=[AllocationInput(bucket_name="needs", percentage="100")],
+        ))
+    assert exc_info.value.status_code == 409

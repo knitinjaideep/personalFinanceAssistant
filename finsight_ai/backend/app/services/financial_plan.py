@@ -25,6 +25,7 @@ from app.domain.entities import (
     AllocationInput,
     AllocationSnapshot,
     PlanVersionSnapshot,
+    PlanVersionSummary,
     SuballocationInput,
     SuballocationSnapshot,
 )
@@ -253,3 +254,19 @@ async def update_plan_version(
     await repo.delete_allocations_for_version(session, version_id)
     await _write_allocations(session, version_id, allocations)
     return await _snapshot_from_version(session, version)
+
+
+# ── Listing versions ────────────────────────────────────────────────────────────
+
+async def list_plan_versions(session: AsyncSession) -> list[PlanVersionSummary]:
+    plan = await repo.get_active_financial_plan(session)
+    if plan is None:
+        return []
+    versions = await repo.list_versions_for_plan(session, plan.id)
+    return [
+        PlanVersionSummary(
+            id=v.id, version_number=v.version_number,
+            effective_from=v.effective_from, notes=v.notes,
+        )
+        for v in versions
+    ]
