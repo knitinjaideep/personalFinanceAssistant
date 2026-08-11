@@ -327,3 +327,43 @@ async def test_seed_is_idempotent_and_does_not_duplicate(temp_db):
     async with get_session() as session:
         result = await session.execute(select(FinancialPlanModel))
         assert len(result.scalars().all()) == 1
+
+
+# ── Task 5: get_plan_for_date / get_current_plan ──────────────────────────────
+
+async def test_get_current_plan_returns_seeded_default(temp_db):
+    async with get_session() as session:
+        snapshot = await plan_service.get_current_plan(session)
+    assert snapshot is not None
+    bucket_names = {a.bucket_name for a in snapshot.allocations}
+    assert bucket_names == {"needs", "wants", "savings", "investments"}
+
+
+async def test_get_plan_for_date_before_epoch_returns_none(temp_db):
+    async with get_session() as session:
+        snapshot = await plan_service.get_plan_for_date(session, date(1999, 1, 1))
+    assert snapshot is None
+
+
+async def test_get_plan_for_date_resolves_historical_version_correctly(temp_db):
+    # Seed a second version starting 2027-01-01, directly via the repo layer
+    # (create_plan_version the *service* function doesn't exist until Task 6).
+    async with get_session() as session:
+        plan = await repo.get_active_financial_plan(session)
+        v2 = await repo.create_plan_version(
+            session, plan_id=plan.id, version_number=2, effective_from=date(2027, 1, 1),
+        )
+        await repo.create_allocation(
+            session, plan_version_id=v2.id, bucket_name="needs", percentage="60", sort_order=0,
+        )
+
+    async with get_session() as session:
+        # August 2026 must still resolve to the ORIGINAL default plan (V1).
+        aug_2026 = await plan_service.get_plan_for_date(session, date(2026, 8, 15))
+        needs = next(a for a in aug_2026.allocations if a.bucket_name == "needs")
+        assert needs.percentage == "50"
+
+        # Any date on/after 2027-01-01 resolves to V2.
+        jan_2027 = await plan_service.get_plan_for_date(session, date(2027, 3, 1))
+        needs_v2 = next(a for a in jan_2027.allocations if a.bucket_name == "needs")
+        assert needs_v2.percentage == "60"

@@ -20,7 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logger import get_logger
 from app.db import repositories as repo
 from app.db.engine import get_session
-from app.domain.entities import AllocationInput, SuballocationInput
+from app.db.models import FinancialPlanVersionModel
+from app.domain.entities import (
+    AllocationInput,
+    AllocationSnapshot,
+    PlanVersionSnapshot,
+    SuballocationInput,
+    SuballocationSnapshot,
+)
 from app.domain.errors import PlanValidationError
 
 logger = get_logger(__name__)
@@ -136,3 +143,49 @@ async def seed_default_plan_if_missing() -> None:
             "financial_plan.seeded",
             extra={"plan_id": plan.id, "version_id": version.id},
         )
+
+
+# ── Resolution by date ─────────────────────────────────────────────────────────
+
+async def _snapshot_from_version(
+    session: AsyncSession, version: FinancialPlanVersionModel,
+) -> PlanVersionSnapshot:
+    allocations = await repo.get_allocations_for_version(session, version.id)
+    allocation_snapshots: list[AllocationSnapshot] = []
+    for alloc in allocations:
+        subs = await repo.get_suballocations_for_allocation(session, alloc.id)
+        allocation_snapshots.append(AllocationSnapshot(
+            id=alloc.id,
+            bucket_name=alloc.bucket_name,
+            percentage=alloc.percentage,
+            sort_order=alloc.sort_order,
+            suballocations=[
+                SuballocationSnapshot(
+                    id=sub.id, name=sub.name,
+                    percentage=sub.percentage, sort_order=sub.sort_order,
+                )
+                for sub in subs
+            ],
+        ))
+    return PlanVersionSnapshot(
+        id=version.id,
+        plan_id=version.plan_id,
+        version_number=version.version_number,
+        effective_from=version.effective_from,
+        notes=version.notes,
+        allocations=allocation_snapshots,
+    )
+
+
+async def get_plan_for_date(session: AsyncSession, target_date: date) -> PlanVersionSnapshot | None:
+    plan = await repo.get_active_financial_plan(session)
+    if plan is None:
+        return None
+    version = await repo.get_latest_version_for_date(session, plan.id, target_date)
+    if version is None:
+        return None
+    return await _snapshot_from_version(session, version)
+
+
+async def get_current_plan(session: AsyncSession) -> PlanVersionSnapshot | None:
+    return await get_plan_for_date(session, date.today())
