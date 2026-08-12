@@ -24,7 +24,7 @@ financial_plan_versions
     │ 1
     │
     │ N
-plan_allocations                 (top-level buckets: Needs, Wants, Savings, Investments, or custom)
+plan_allocations                 (top-level buckets: needs, wants, savings, investments, or custom)
   id, plan_version_id, bucket_name, percentage, sort_order
     │ 1
     │
@@ -43,7 +43,7 @@ stored elsewhere in the schema — this avoids the binary-float precision loss
 that plain `float` would introduce.
 
 **Suballocation percentages are a share of the total plan, not of the parent
-bucket's share.** Emergency Fund = 5% (of the whole plan), not 5% of Savings'
+bucket's share.** Emergency Fund = 5% (of the whole plan), not 5% of savings'
 15%. This means a bucket's suballocations must sum to exactly that bucket's
 own percentage, and validating the whole plan is a single flat-sum check
 rather than a percentage-of-percentage calculation.
@@ -90,12 +90,12 @@ Seeded once, automatically, the first time the app boots with no existing
 
 | Bucket | % | Suballocation | % |
 |---|---|---|---|
-| Needs | 50 | | |
-| Wants | 20 | | |
-| Savings | 15 | Emergency Fund | 5 |
+| needs | 50 | | |
+| wants | 20 | | |
+| savings | 15 | Emergency Fund | 5 |
 | | | House / Goals | 5 |
 | | | Child Savings | 5 |
-| Investments | 15 | 401(k) | 6 |
+| investments | 15 | 401(k) | 6 |
 | | | Roth IRA | 4 |
 | | | ESPP | 3 |
 | | | Taxable Brokerage | 2 |
