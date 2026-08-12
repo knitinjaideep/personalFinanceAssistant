@@ -13,7 +13,7 @@ Covers (see docs/FINANCIAL_PLAN_MODEL.md for the full model description):
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -106,6 +106,44 @@ def test_allocation_input_coerces_percentage_to_decimal():
     )
     assert alloc.percentage == Decimal("15")
     assert alloc.suballocations[0].percentage == Decimal("5")
+
+
+# ── Malformed percentage inputs (final review Finding 2) ───────────────────────
+
+def test_allocation_input_rejects_non_numeric_percentage():
+    from pydantic import ValidationError
+
+    from app.domain.entities import AllocationInput
+
+    with pytest.raises(ValidationError):
+        AllocationInput(bucket_name="needs", percentage="abc")
+
+
+def test_allocation_input_rejects_none_percentage():
+    from pydantic import ValidationError
+
+    from app.domain.entities import AllocationInput
+
+    with pytest.raises(ValidationError):
+        AllocationInput(bucket_name="needs", percentage=None)
+
+
+def test_allocation_input_rejects_nan_percentage():
+    from pydantic import ValidationError
+
+    from app.domain.entities import AllocationInput
+
+    with pytest.raises(ValidationError):
+        AllocationInput(bucket_name="needs", percentage="NaN")
+
+
+def test_allocation_input_rejects_infinity_percentage():
+    from pydantic import ValidationError
+
+    from app.domain.entities import AllocationInput
+
+    with pytest.raises(ValidationError):
+        AllocationInput(bucket_name="needs", percentage="Infinity")
 
 
 # ── Task 2: repository functions ──────────────────────────────────────────────
@@ -208,6 +246,30 @@ async def test_repo_delete_allocations_for_version_cascades_suballocations(temp_
     async with get_session() as session:
         assert await repo.get_allocations_for_version(session, version_id) == []
         assert await repo.get_suballocations_for_allocation(session, alloc_id) == []
+
+
+async def test_repo_duplicate_effective_from_rejected_by_db_constraint(temp_db):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.models import FinancialPlanVersionModel
+
+    async with get_session() as session:
+        plan = await repo.create_financial_plan(session, name="P")
+        plan_id = plan.id
+        session.add(FinancialPlanVersionModel(
+            plan_id=plan_id, version_number=1, effective_from=date(2026, 1, 1),
+        ))
+        await session.flush()
+
+    async with get_session() as session:
+        session.add(FinancialPlanVersionModel(
+            plan_id=plan_id, version_number=2, effective_from=date(2026, 1, 1),
+        ))
+        with pytest.raises(IntegrityError):
+            await session.flush()
+        # get_session() commits on clean exit; reset the failed transaction
+        # so that commit (a no-op here) doesn't itself raise.
+        await session.rollback()
 
 
 # ── Task 3: validate_plan ──────────────────────────────────────────────────────
@@ -401,12 +463,50 @@ async def test_create_plan_version_rejects_invalid_percentages(temp_db):
 
 
 async def test_create_plan_version_rejects_duplicate_effective_date(temp_db):
+    # PLAN_EPOCH (2000-01-01) is always in the past, so it can no longer be
+    # reused to exercise the duplicate-date check after Finding 1's backdate
+    # guard (it would trip that guard first) — use a future date that
+    # already has a version instead.
+    async with get_session() as session:
+        await plan_service.create_plan_version(
+            session, effective_from=date(2027, 1, 1),
+            allocations=[AllocationInput(bucket_name="needs", percentage="100")],
+        )
+
     async with get_session() as session:
         with pytest.raises(DuplicateEffectiveDateError):
             await plan_service.create_plan_version(
-                session, effective_from=plan_service.PLAN_EPOCH,  # same as seeded V1
+                session, effective_from=date(2027, 1, 1),  # same as just-created version
                 allocations=[AllocationInput(bucket_name="needs", percentage="100")],
             )
+
+
+async def test_create_plan_version_rejects_backdated_effective_from(temp_db):
+    async with get_session() as session:
+        with pytest.raises(PlanValidationError):
+            await plan_service.create_plan_version(
+                session, effective_from=date.today() - timedelta(days=1),
+                allocations=[
+                    AllocationInput(bucket_name="needs", percentage="50"),
+                    AllocationInput(bucket_name="wants", percentage="20"),
+                    AllocationInput(bucket_name="savings", percentage="15"),
+                    AllocationInput(bucket_name="investments", percentage="15"),
+                ],
+            )
+
+
+async def test_create_plan_version_allows_effective_from_today(temp_db):
+    async with get_session() as session:
+        snapshot = await plan_service.create_plan_version(
+            session, effective_from=date.today(),
+            allocations=[
+                AllocationInput(bucket_name="needs", percentage="50"),
+                AllocationInput(bucket_name="wants", percentage="20"),
+                AllocationInput(bucket_name="savings", percentage="15"),
+                AllocationInput(bucket_name="investments", percentage="15"),
+            ],
+        )
+    assert snapshot.effective_from == date.today()
 
 
 # ── Task 7: update_plan_version ───────────────────────────────────────────────
@@ -548,8 +648,17 @@ async def test_api_create_version_success(temp_db):
 
 
 async def test_api_create_version_duplicate_date_returns_409(temp_db):
+    # PLAN_EPOCH (2000-01-01) is always in the past, so it can no longer be
+    # reused to exercise the duplicate-date check after Finding 1's backdate
+    # guard (it would trip that guard first, returning 422) — create a
+    # future-dated version first, then duplicate that date instead.
+    await create_version(PlanVersionCreateRequest(
+        effective_from=date(2027, 1, 1),
+        allocations=[AllocationInput(bucket_name="needs", percentage="100")],
+    ))
+
     body = PlanVersionCreateRequest(
-        effective_from=plan_service.PLAN_EPOCH,
+        effective_from=date(2027, 1, 1),
         allocations=[AllocationInput(bucket_name="needs", percentage="100")],
     )
     with pytest.raises(HTTPException) as exc_info:

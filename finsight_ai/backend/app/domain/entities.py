@@ -7,7 +7,7 @@ These are the contracts between parsers, services, and API layer.
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -17,6 +17,18 @@ def _to_decimal(v: Any) -> Decimal:
     if v is None:
         return Decimal("0")
     return Decimal(str(v))
+
+
+def _to_plan_percentage(v: Any) -> Decimal:
+    if v is None:
+        raise ValueError("percentage is required")
+    try:
+        d = Decimal(str(v))
+    except InvalidOperation as exc:
+        raise ValueError(f"invalid percentage: {v!r}") from exc
+    if not d.is_finite():
+        raise ValueError(f"percentage must be a finite number, got {v!r}")
+    return d
 
 
 class ParsedStatement(BaseModel):
@@ -329,7 +341,7 @@ class SuballocationInput(BaseModel):
     name: str
     percentage: Decimal
 
-    _normalize_percentage = field_validator("percentage", mode="before")(_to_decimal)
+    _normalize_percentage = field_validator("percentage", mode="before")(_to_plan_percentage)
 
 
 class AllocationInput(BaseModel):
@@ -338,7 +350,7 @@ class AllocationInput(BaseModel):
     percentage: Decimal
     suballocations: list[SuballocationInput] = Field(default_factory=list)
 
-    _normalize_percentage = field_validator("percentage", mode="before")(_to_decimal)
+    _normalize_percentage = field_validator("percentage", mode="before")(_to_plan_percentage)
 
 
 class SuballocationSnapshot(BaseModel):

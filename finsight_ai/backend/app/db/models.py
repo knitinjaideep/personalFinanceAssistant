@@ -13,6 +13,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -369,6 +370,9 @@ class FinancialPlanModel(SQLModel, table=True):
 class FinancialPlanVersionModel(SQLModel, table=True):
     """A single effective-dated version of a plan's allocations."""
     __tablename__ = "financial_plan_versions"
+    __table_args__ = (
+        UniqueConstraint("plan_id", "effective_from", name="uq_plan_version_effective_from"),
+    )
 
     id: str = Field(default_factory=_uuid, primary_key=True)
     plan_id: str = Field(foreign_key="financial_plans.id", index=True)

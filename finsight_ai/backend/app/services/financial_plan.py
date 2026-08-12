@@ -207,8 +207,18 @@ async def create_plan_version(
 ) -> PlanVersionSnapshot:
     """Create a new version on the (single) master plan, effective from the
     given date. Raises DuplicateEffectiveDateError if a version already
-    starts on that exact date — resolution would otherwise be ambiguous."""
+    starts on that exact date — resolution would otherwise be ambiguous.
+    Raises PlanValidationError if effective_from is strictly before today —
+    backdated versions would rewrite how historical months resolve, which
+    defeats the guarantee that history is never rewritten. A version
+    effective today is allowed."""
     validate_plan(allocations)
+
+    if effective_from < date.today():
+        raise PlanValidationError(
+            f"effective_from={effective_from} is in the past; "
+            "a new plan version cannot start before today."
+        )
 
     plan = await repo.get_active_financial_plan(session)
     if plan is None:
