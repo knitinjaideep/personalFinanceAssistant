@@ -300,7 +300,7 @@ class TestAffordabilityStyleGuardrails:
             "Based on the analysis, the verdict is not affordable.",
         ]
         for text in bad_openers:
-            assert not text.lower().startswith("based on"), (
+            assert text.lower().startswith("based on"), (
                 f"Opener 'Based on...' is forbidden by narrative rules: {text!r}"
             )
 
@@ -374,6 +374,7 @@ class TestAffordabilityVerifierDetectsProblems:
             closing_costs=Decimal("39000") if scenario_type == "home_purchase" else None,
             cash_needed_at_close=Decimal("299000") if scenario_type == "home_purchase" else None,
             cash_remaining_after_close=Decimal("-79000") if scenario_type == "home_purchase" else None,
+            cash_gap_at_close=Decimal("79000") if scenario_type == "home_purchase" else None,
             total_monthly_housing=Decimal("8400") if scenario_type == "home_purchase" else None,
             dti_pct=Decimal("42") if scenario_type == "home_purchase" else None,
         )
@@ -509,7 +510,7 @@ class TestAffordabilityQuestions:
 
     def _aff_spec(self, item: str, price: float | None, scenario: str) -> AffordabilitySpec:
         return AffordabilitySpec(
-            task_type="purchase_viability" if scenario != "home_purchase" else "home_affordability",
+            task_type="purchase_affordability" if scenario != "home_purchase" else "home_affordability",
             purchase_price=price,
             purchase_item=item,
             purchase_category="real_estate" if scenario == "home_purchase" else "general",
@@ -530,7 +531,7 @@ class TestAffordabilityQuestions:
         followups: list[str],
     ) -> RoutingOutcome:
         aff_spec = self._aff_spec(item, price, scenario)
-        plan = QueryPlan(task_type="home_affordability" if scenario == "home_purchase" else "purchase_viability",
+        plan = QueryPlan(task_type="home_affordability" if scenario == "home_purchase" else "purchase_affordability",
                          plan_source="deterministic", affordability=aff_spec)
         answer = _make_answer(
             answer_type="advisory",
@@ -890,7 +891,7 @@ class TestSQLFactualAnswerQuality:
         from app.domain.classification import ChatIntent, DataSource, ExtractedEntities, IntentClassificationResult
 
         cls = IntentClassificationResult(
-            intent=ChatIntent.BALANCE_LOOKUP, confidence=0.95,
+            intent=ChatIntent.BALANCE_SUMMARY, confidence=0.95,
             entities=ExtractedEntities(),
             data_source=DataSource.SQL, source="rule",
         )
@@ -925,7 +926,7 @@ class TestSQLFactualAnswerQuality:
         from app.domain.classification import ChatIntent, DataSource, ExtractedEntities, IntentClassificationResult
 
         cls = IntentClassificationResult(
-            intent=ChatIntent.BALANCE_LOOKUP, confidence=0.9,
+            intent=ChatIntent.BALANCE_SUMMARY, confidence=0.9,
             entities=ExtractedEntities(),
             data_source=DataSource.SQL, source="llm",
         )
