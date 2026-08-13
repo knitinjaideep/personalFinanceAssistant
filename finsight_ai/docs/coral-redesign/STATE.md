@@ -16,7 +16,7 @@ Status: IN_PROGRESS
 - [x] PR03 Transaction Classification
 - [x] PR04 Plan vs Actual Engine (blocked mid-review on transfer-leg double-counting policy; resolved via user decision — Option C, coverage-aware hybrid — documented in BLOCKED.md; repaired and re-verified)
 
-Commit: PENDING
+Commit: 5476236
 
 ### M2 — Period Model
 
