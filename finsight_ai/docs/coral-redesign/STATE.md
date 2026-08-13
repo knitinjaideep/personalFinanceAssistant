@@ -20,9 +20,9 @@ Commit: 5476236
 
 ### M2 — Period Model
 
-- [ ] PR05 Global Period Filter
+- [x] PR05 Global Period Filter
 
-Commit:
+Commit: b894266
 
 ### M3 — Overview
 
