@@ -10,9 +10,11 @@ import { motion } from "framer-motion";
 import MetricCard from "@/components/coral/MetricCard";
 import GlassCard from "@/components/coral/GlassCard";
 import SectionHeader from "@/components/coral/SectionHeader";
+import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
 import { HomeHeroMascot } from "@/components/home/HomeHeroMascot";
 import { documentsApi } from "@/features/documents/api";
 import { useAppStore } from "@/store/appStore";
+import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
 import type { DocumentStats, DocumentSummary } from "@/types/index";
 
 const NEXT_TASKS = [
@@ -109,6 +111,11 @@ export default function HomePageClient() {
   const [recent, setRecent]     = useState<DocumentSummary[]>([]);
   const [loading, setLoading]   = useState(true);
   const openUploadModal         = useAppStore((s) => s.openUploadModal);
+  // Overview doesn't fetch period-scoped data yet (that's PR 06 — Overview
+  // Redesign, M3), but it shares the same Global Period Filter model/URL
+  // state as Banking/Investments so the selection is consistent and
+  // ready to drive PR 06's Income vs Spent vs Saved + Plan vs Actual data.
+  const { selection, resolved, setSelection, goToPreviousMonth, goToNextMonth } = useFinancialPeriod();
 
   useEffect(() => {
     Promise.all([
@@ -187,6 +194,15 @@ export default function HomePageClient() {
           title="Your Data at a Glance"
           description="A quick snapshot of what Coral has processed from your uploaded statements."
           className="mb-8"
+          action={
+            <FinancialPeriodSelector
+              selection={selection}
+              resolved={resolved}
+              onChange={setSelection}
+              onPrevMonth={goToPreviousMonth}
+              onNextMonth={goToNextMonth}
+            />
+          }
         />
 
         <motion.div

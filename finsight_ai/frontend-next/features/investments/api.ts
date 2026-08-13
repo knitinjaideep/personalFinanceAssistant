@@ -58,9 +58,26 @@ export interface InvestmentsDashboard {
     earliest_statement: string | null;
     latest_statement: string | null;
   }>;
+  /** The resolved {start_date, end_date} the backend actually applied, or
+   * null when no range was requested (PR 05 unified period contract). */
+  period: { start_date: string; end_date: string } | null;
+}
+
+export interface DashboardPeriodParams {
+  startDate?: string; // "YYYY-MM-DD"
+  endDate?: string;   // "YYYY-MM-DD"
 }
 
 export const investmentsApi = {
-  investments: (): Promise<InvestmentsDashboard> =>
-    api.get<InvestmentsDashboard>("/dashboard/investments"),
+  /**
+   * `startDate`/`endDate` (PR 05 unified period contract, see
+   * lib/period.ts) narrow `fees`/`balance_history` to that range. Current
+   * portfolio/holdings state is always the latest snapshot regardless of
+   * period — see GET /dashboard/investments docstring.
+   */
+  investments: (period?: DashboardPeriodParams): Promise<InvestmentsDashboard> =>
+    api.get<InvestmentsDashboard>("/dashboard/investments", {
+      start_date: period?.startDate,
+      end_date: period?.endDate,
+    }),
 };

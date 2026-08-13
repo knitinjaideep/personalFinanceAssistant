@@ -9,6 +9,7 @@ import {
 import { motion } from "framer-motion";
 import { investmentsApi, type InvestmentsDashboard } from "@/features/investments/api";
 import { useAppStore } from "@/store/appStore";
+import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
 import { formatCompactCurrency } from "@/lib/utils";
 import MetricCard from "@/components/coral/MetricCard";
 import GlassCard from "@/components/coral/GlassCard";
@@ -16,6 +17,7 @@ import SectionHeader from "@/components/coral/SectionHeader";
 import EmptyState from "@/components/coral/EmptyState";
 import LoadingState from "@/components/coral/LoadingState";
 import ErrorState from "@/components/coral/ErrorState";
+import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
 
 const INSIGHT_PROMPTS = [
   "How did my investments change this year?",
@@ -101,22 +103,29 @@ function AccountCard({
 export default function InvestmentsPageClient() {
   const [data, setData]     = useState<InvestmentsDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  // Separate from `loading`: true only while refetching for a period change,
+  // so the page keeps showing the previous data (dimmed) instead of
+  // flashing back to a full-page skeleton every time the filter changes.
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError]   = useState<string | null>(null);
   const openUploadModal     = useAppStore((s) => s.openUploadModal);
+  const { selection, resolved, setSelection, goToPreviousMonth, goToNextMonth } = useFinancialPeriod();
 
-  const load = () => {
-    setLoading(true);
+  const load = (isPeriodChange: boolean) => {
+    if (isPeriodChange) setRefreshing(true); else setLoading(true);
     setError(null);
-    investmentsApi.investments()
+    investmentsApi.investments({ startDate: resolved.startDate, endDate: resolved.endDate })
       .then(setData)
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setRefreshing(false); });
   };
 
-  useEffect(() => { load(); }, []);
+  // Initial load, then refetch (server-side, not client-side filtering)
+  // whenever the resolved date range changes.
+  useEffect(() => { load(data !== null); }, [resolved.startDate, resolved.endDate]);
 
   if (loading) return <LoadingState columns={4} rows={3} message="Loading your portfolio data…" />;
-  if (error)   return <ErrorState message={error} onRetry={load} />;
+  if (error)   return <ErrorState message={error} onRetry={() => load(false)} />;
 
   const { portfolio_summary, top_holdings, top_gainers, top_losers } = data!;
   const gainLossPositive = portfolio_summary.total_unrealized_gain_loss >= 0;
@@ -143,6 +152,16 @@ export default function InvestmentsPageClient() {
         title="Investments"
         description="Review your long-term portfolio, retirement accounts, and down-payment savings from your statements."
         size="lg"
+        action={
+          <FinancialPeriodSelector
+            selection={selection}
+            resolved={resolved}
+            onChange={setSelection}
+            onPrevMonth={goToPreviousMonth}
+            onNextMonth={goToNextMonth}
+            loading={refreshing}
+          />
+        }
       />
 
       {/* ── Summary metrics ─────────────────────────────────────────── */}
@@ -234,8 +253,12 @@ export default function InvestmentsPageClient() {
       ) : (
         <EmptyState
           icon={<TrendingUp size={28} />}
-          title="No investment data yet"
-          description="Upload statements from Morgan Stanley, E*TRADE, or other investment accounts to see your portfolio."
+          title={data!.period ? "No investment data in this period" : "No investment data yet"}
+          description={
+            data!.period
+              ? `No statement or balance snapshot had been recorded on or before ${data!.period.end_date}. Try a later period, or upload the statements covering it.`
+              : "Upload statements from Morgan Stanley, E*TRADE, or other investment accounts to see your portfolio."
+          }
           action={
             <button type="button" onClick={openUploadModal} className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-white font-semibold btn-coral">
               <Upload size={15} /> Upload statements

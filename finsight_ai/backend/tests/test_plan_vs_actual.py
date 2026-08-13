@@ -273,3 +273,129 @@ async def test_api_get_plan_vs_actual_returns_default_plan_targets(temp_db):
     assert needs.target_percentage == "50"
     assert needs.actual_amount == "60.00"
     assert result.completeness.income_observed is False
+
+
+# ── Custom date-range periods (PR 05 — Global Period Filter) ───────────────
+#
+# `Period.for_range` is additive alongside `for_month` (see
+# app.domain.plan_vs_actual.Period.for_range docstring) — these tests prove
+# the full service + API path works identically for an arbitrary
+# [start, end] range, not just a whole calendar month.
+
+async def test_custom_range_scopes_transactions_correctly_via_db(temp_db):
+    async with get_session() as session:
+        acct, stmt = await _make_account(session)
+        # In range [Aug 10, Aug 20]
+        await _add_txn(
+            session, acct.id, stmt.id, day=15, description="WHOLE FOODS MARKET", amount="-60.00",
+        )
+        # Before range (Aug 9) — excluded
+        await _add_txn(
+            session, acct.id, stmt.id, day=9, description="TRADER JOE GROCERY", amount="-40.00",
+        )
+        # After range (Aug 21) — excluded
+        await _add_txn(
+            session, acct.id, stmt.id, day=21, description="SAFEWAY GROCERY", amount="-25.00",
+        )
+
+    async with get_session() as session:
+        result = await service.get_plan_vs_actual(
+            session, Period.for_range(date(2026, 8, 10), date(2026, 8, 20)),
+        )
+    needs = next(b for b in result.buckets if b.bucket == MasterBucket.NEEDS)
+    assert needs.actual_amount == "60.00"
+    assert needs.transaction_count == 1
+
+
+async def test_custom_range_spanning_month_boundary_via_db(temp_db):
+    """A custom range that straddles two calendar months (e.g. a "last 30
+    days" selection) must include transactions from both months and use the
+    plan version in effect at the START of the range (same rule as PR 04's
+    month-boundary handling — see `_resolve_plan`)."""
+    async with get_session() as session:
+        acct, stmt = await _make_account(session)
+        await _add_txn(
+            session, acct.id, stmt.id, day=28, description="LATE AUGUST GROCERY", amount="-30.00",
+        )
+        await repo.bulk_create_transactions(session, [{
+            "account_id": acct.id, "statement_id": stmt.id,
+            "transaction_date": date(2026, 9, 3), "description": "EARLY SEPTEMBER GROCERY",
+            "amount": "-20.00", "transaction_type": "purchase",
+        }])
+
+    async with get_session() as session:
+        result = await service.get_plan_vs_actual(
+            session, Period.for_range(date(2026, 8, 25), date(2026, 9, 5)),
+        )
+    needs = next(b for b in result.buckets if b.bucket == MasterBucket.NEEDS)
+    assert needs.actual_amount == "50.00"
+    assert needs.transaction_count == 2
+
+
+async def test_api_start_date_end_date_takes_precedence_over_year_month(temp_db):
+    from app.api.plan_vs_actual import get_plan_vs_actual as api_get_plan_vs_actual
+
+    async with get_session() as session:
+        acct, stmt = await _make_account(session)
+        await _add_txn(
+            session, acct.id, stmt.id, day=15, description="WHOLE FOODS MARKET", amount="-60.00",
+        )
+
+    # Deliberately pass a year/month that would resolve to a DIFFERENT
+    # period, proving start_date/end_date wins per _resolve_period.
+    result = await api_get_plan_vs_actual(
+        year=1999, month=1, start_date=date(2026, 8, 10), end_date=date(2026, 8, 20),
+    )
+    assert result.period.start == date(2026, 8, 10)
+    assert result.period.end == date(2026, 8, 20)
+    needs = next(b for b in result.buckets if b.bucket == MasterBucket.NEEDS)
+    assert needs.actual_amount == "60.00"
+
+
+async def test_multi_month_range_with_mid_range_plan_change_is_honest(temp_db):
+    """Pins the documented behavior for a multi-month range (6M/1Y/Custom)
+    that straddles a financial-plan version change.
+
+    The engine uses the plan in effect at the START of the range (never a
+    blend of two plans, never "just the latest"), and the result says so
+    unambiguously: `plan_version_id`/`plan_version_number`/
+    `plan_effective_from` identify exactly which plan produced the targets,
+    `completeness.plan_version_changed_mid_period` is True, `is_complete` is
+    False, and an explicit note is attached. A consumer therefore can never
+    mistake this for a target that reflects both plans.
+    """
+    from datetime import timedelta
+
+    async with get_session() as session:
+        acct, stmt = await _make_account(session)
+        await _add_txn(
+            session, acct.id, stmt.id, day=15, description="WHOLE FOODS MARKET", amount="-100.00",
+        )
+        # A version may only become effective today or later (see
+        # financial_plan.create_plan_version), so "the plan changed partway
+        # through a trailing window" is modelled as: V2 starts today, and the
+        # user asks for a trailing 6-month window ending today.
+        await plan_service.create_plan_version(
+            session, effective_from=date.today(),
+            allocations=[
+                AllocationInput(bucket_name="needs", percentage="40"),
+                AllocationInput(bucket_name="wants", percentage="30"),
+                AllocationInput(bucket_name="savings", percentage="15"),
+                AllocationInput(bucket_name="investments", percentage="15"),
+            ],
+            notes="mid-window replan",
+        )
+
+    trailing_6m = Period.for_range(date.today() - timedelta(days=180), date.today())
+    async with get_session() as session:
+        result = await service.get_plan_vs_actual(session, trailing_6m)
+
+    needs = next(b for b in result.buckets if b.bucket == MasterBucket.NEEDS)
+    # Plan at the START of the range wins — the seeded default (V1, 50/20/15/15).
+    assert needs.target_percentage == "50"
+    assert result.plan_version_number == 1
+    assert result.plan_effective_from == plan_service.PLAN_EPOCH
+    # ...and the change is surfaced, not swallowed.
+    assert result.completeness.plan_version_changed_mid_period is True
+    assert result.completeness.is_complete is False
+    assert any("plan changed during this period" in n for n in result.completeness.notes)

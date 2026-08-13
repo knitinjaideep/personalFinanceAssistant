@@ -5,6 +5,7 @@
 
 import { create } from "zustand";
 import type { ChatMessage } from "@/types/index";
+import { DEFAULT_PERIOD_SELECTION, type PeriodSelection } from "@/lib/period";
 
 export type Theme = "dark" | "light";
 
@@ -51,6 +52,14 @@ interface AppState {
   uploadModalOpen: boolean;
   openUploadModal: () => void;
   closeUploadModal: () => void;
+
+  // Global Period Filter (PR 05) — the single source of truth shared by
+  // Overview/Banking/Investments so the selected period survives
+  // client-side navigation between pages, not just within one page's URL.
+  // Each page also mirrors this into its own URL query string (see
+  // hooks/useFinancialPeriod.ts) for shareable/bookmarkable links.
+  periodSelection: PeriodSelection;
+  setPeriodSelection: (selection: PeriodSelection) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -80,6 +89,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   uploadModalOpen: false,
   openUploadModal: () => set({ uploadModalOpen: true }),
   closeUploadModal: () => set({ uploadModalOpen: false }),
+
+  periodSelection: DEFAULT_PERIOD_SELECTION,
+  setPeriodSelection: (selection) => set({ periodSelection: selection }),
 
   chatHistory: [],
   addChatMessage: (message) =>

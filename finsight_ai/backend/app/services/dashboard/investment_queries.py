@@ -35,24 +35,35 @@ _INVESTMENT_TYPES = ["morgan_stanley", "etrade"]
 
 # ── Portfolio summary ─────────────────────────────────────────────────────────
 
-async def investment_portfolio_summary(session: AsyncSession) -> dict:
+async def investment_portfolio_summary(
+    session: AsyncSession, as_of: date | None = None,
+) -> dict:
     """
-    Returns the latest total portfolio value per account plus an overall total.
+    Returns the total portfolio value per account plus an overall total, as of
+    a point in time.
 
     Uses the most recent balance_snapshot per account to avoid double-counting
     when multiple statements exist for the same account.
+
+    `as_of` (PR 05 — Global Period Filter) selects the most recent snapshot
+    with `snapshot_date <= as_of` instead of the most recent snapshot overall,
+    i.e. the standard "balance as of <date>" reading of a point-in-time figure
+    under a period filter. Accounts with no snapshot at or before `as_of` are
+    honestly omitted rather than back-filled with a later value. Omitting
+    `as_of` (the default) preserves the original latest-ever behavior.
     """
-    # Subquery: latest snapshot_date per account
-    latest_sub = (
+    # Subquery: latest snapshot_date per account (bounded by `as_of` when given)
+    latest_sub_q = (
         select(
             BalanceSnapshotModel.account_id,
             func.max(BalanceSnapshotModel.snapshot_date).label("max_date"),
         )
         .join(AccountModel, BalanceSnapshotModel.account_id == AccountModel.id)
         .where(AccountModel.institution_type.in_(_INVESTMENT_TYPES))
-        .group_by(BalanceSnapshotModel.account_id)
-        .subquery()
     )
+    if as_of is not None:
+        latest_sub_q = latest_sub_q.where(BalanceSnapshotModel.snapshot_date <= as_of)
+    latest_sub = latest_sub_q.group_by(BalanceSnapshotModel.account_id).subquery()
 
     rows = await session.execute(
         select(
@@ -75,15 +86,17 @@ async def investment_portfolio_summary(session: AsyncSession) -> dict:
     )
 
     # Latest statement date per account (for account card display)
-    stmt_rows = await session.execute(
+    stmt_q = (
         select(
             StatementModel.account_id,
             func.max(StatementModel.period_end).label("latest_stmt"),
         )
         .join(AccountModel, StatementModel.account_id == AccountModel.id)
         .where(AccountModel.institution_type.in_(_INVESTMENT_TYPES))
-        .group_by(StatementModel.account_id)
     )
+    if as_of is not None:
+        stmt_q = stmt_q.where(StatementModel.period_end <= as_of)
+    stmt_rows = await session.execute(stmt_q.group_by(StatementModel.account_id))
     latest_stmt_by_account: dict[str, str] = {
         str(r.account_id): str(r.latest_stmt) for r in stmt_rows.fetchall() if r.latest_stmt
     }
@@ -137,23 +150,38 @@ async def investment_portfolio_summary(session: AsyncSession) -> dict:
 
 # ── Holdings ──────────────────────────────────────────────────────────────────
 
-async def top_holdings_by_value(session: AsyncSession, limit: int = 10) -> list[dict]:
-    """
-    Top N holdings by market value from the most recent statement per account.
-
-    Returns a flat list sorted by market_value descending.
-    """
-    # Most recent statement per account for investment institutions
-    latest_stmt = (
+def _latest_statement_subquery(as_of: date | None):
+    """Most recent statement `period_end` per investment account, optionally
+    bounded to statements that had already closed on/before `as_of` (PR 05 —
+    "holdings as of <date>"). Shared by both holdings queries so they can
+    never drift apart."""
+    q = (
         select(
             StatementModel.account_id,
             func.max(StatementModel.period_end).label("max_end"),
         )
         .join(AccountModel, StatementModel.account_id == AccountModel.id)
         .where(AccountModel.institution_type.in_(_INVESTMENT_TYPES))
-        .group_by(StatementModel.account_id)
-        .subquery()
     )
+    if as_of is not None:
+        q = q.where(StatementModel.period_end <= as_of)
+    return q.group_by(StatementModel.account_id).subquery()
+
+
+async def top_holdings_by_value(
+    session: AsyncSession, limit: int = 10, as_of: date | None = None,
+) -> list[dict]:
+    """
+    Top N holdings by market value from the most recent statement per account.
+
+    Returns a flat list sorted by market_value descending.
+
+    `as_of` (PR 05) reads holdings from the most recent statement whose
+    `period_end <= as_of` — the "holdings as of <date>" reading of this
+    point-in-time figure under a period filter. Omitting it preserves the
+    original latest-ever behavior.
+    """
+    latest_stmt = _latest_statement_subquery(as_of)
 
     rows = await session.execute(
         select(
@@ -205,21 +233,16 @@ async def top_holdings_by_value(session: AsyncSession, limit: int = 10) -> list[
 
 
 async def top_holdings_by_gain_loss(
-    session: AsyncSession, limit: int = 10, direction: str = "gain"
+    session: AsyncSession, limit: int = 10, direction: str = "gain",
+    as_of: date | None = None,
 ) -> list[dict]:
     """
     Top N holdings by unrealized gain (direction='gain') or loss (direction='loss').
+
+    `as_of` (PR 05) — same "holdings as of <date>" semantics as
+    `top_holdings_by_value`.
     """
-    latest_stmt = (
-        select(
-            StatementModel.account_id,
-            func.max(StatementModel.period_end).label("max_end"),
-        )
-        .join(AccountModel, StatementModel.account_id == AccountModel.id)
-        .where(AccountModel.institution_type.in_(_INVESTMENT_TYPES))
-        .group_by(StatementModel.account_id)
-        .subquery()
-    )
+    latest_stmt = _latest_statement_subquery(as_of)
 
     gl_cast = cast(HoldingModel.unrealized_gain_loss, Float)
     order = gl_cast.desc() if direction == "gain" else gl_cast.asc()
@@ -261,12 +284,18 @@ async def top_holdings_by_gain_loss(
     ]
 
 
-async def allocation_by_account(session: AsyncSession) -> list[dict]:
+async def allocation_by_account(
+    session: AsyncSession, as_of: date | None = None,
+) -> list[dict]:
     """
     Portfolio allocation (% of total) broken down by account.
     Uses latest market_value per account from balance_snapshots.
+
+    `as_of` (PR 05) is forwarded to `investment_portfolio_summary` so the
+    denominator and the per-account numerators always come from the same
+    point in time — never a mix of as-of and latest-ever values.
     """
-    summary = await investment_portfolio_summary(session)
+    summary = await investment_portfolio_summary(session, as_of=as_of)
     total = Decimal(str(summary["total_portfolio_value"]))
     if total == 0:
         return []
@@ -281,12 +310,18 @@ async def allocation_by_account(session: AsyncSession) -> list[dict]:
 
 # ── Balance history ───────────────────────────────────────────────────────────
 
-async def balance_history_by_account(session: AsyncSession) -> list[dict]:
+async def balance_history_by_account(
+    session: AsyncSession, date_from: date | None = None, date_to: date | None = None,
+) -> list[dict]:
     """
-    Monthly balance snapshots per account for timeline chart.
+    Balance snapshots per account for the timeline chart.
     Returns one row per (account, snapshot_date) sorted chronologically.
+
+    `date_from`/`date_to` (PR 05 unified period contract) narrow to an
+    inclusive `snapshot_date` range; omitted (the default) preserves the
+    original full-history behavior.
     """
-    rows = await session.execute(
+    query = (
         select(
             BalanceSnapshotModel.snapshot_date,
             BalanceSnapshotModel.total_value,
@@ -296,8 +331,14 @@ async def balance_history_by_account(session: AsyncSession) -> list[dict]:
         )
         .join(AccountModel, BalanceSnapshotModel.account_id == AccountModel.id)
         .where(AccountModel.institution_type.in_(_INVESTMENT_TYPES))
-        .order_by(BalanceSnapshotModel.snapshot_date)
     )
+    if date_from is not None:
+        query = query.where(BalanceSnapshotModel.snapshot_date >= date_from)
+    if date_to is not None:
+        query = query.where(BalanceSnapshotModel.snapshot_date <= date_to)
+    query = query.order_by(BalanceSnapshotModel.snapshot_date)
+
+    rows = await session.execute(query)
     return [
         {
             "date": str(r.snapshot_date),
@@ -311,11 +352,20 @@ async def balance_history_by_account(session: AsyncSession) -> list[dict]:
 
 # ── Fees ──────────────────────────────────────────────────────────────────────
 
-async def investment_fees_summary(session: AsyncSession) -> dict:
+async def investment_fees_summary(
+    session: AsyncSession, date_from: date | None = None, date_to: date | None = None,
+) -> dict:
     """
     Total investment fees by category (advisory, management, etc.).
+
+    `date_from`/`date_to` (PR 05) narrow the totals/by_category breakdown to
+    an inclusive `fee_date` range; omitted (the default) preserves the
+    original all-time behavior. `recent_trend` intentionally stays a fixed
+    rolling 6-month window regardless of the selected period — it's a
+    trend-shape indicator ("recent 3mo vs prior 3mo"), not a total, and a
+    short selected range would make the trend comparison meaningless.
     """
-    rows = await session.execute(
+    query = (
         select(
             FeeModel.fee_category,
             func.count(FeeModel.id).label("count"),
@@ -325,8 +375,14 @@ async def investment_fees_summary(session: AsyncSession) -> dict:
         )
         .join(AccountModel, FeeModel.account_id == AccountModel.id)
         .where(AccountModel.institution_type.in_(["morgan_stanley", "etrade"]))
-        .group_by(FeeModel.fee_category)
     )
+    if date_from is not None:
+        query = query.where(FeeModel.fee_date >= date_from)
+    if date_to is not None:
+        query = query.where(FeeModel.fee_date <= date_to)
+    query = query.group_by(FeeModel.fee_category)
+
+    rows = await session.execute(query)
 
     categories = []
     grand_total = Decimal("0")

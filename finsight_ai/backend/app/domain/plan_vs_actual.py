@@ -85,6 +85,24 @@ class Period(BaseModel):
         end = date(year, month, last_day)
         return cls(start=start, end=end, label=f"{year:04d}-{month:02d}")
 
+    @classmethod
+    def for_range(cls, start: date, end: date, label: str | None = None) -> Period:
+        """An arbitrary inclusive `[start, end]` date range — PR 05 (Global
+        Period Filter). Additive alongside `for_month`: every downstream
+        consumer of `Period` (this module's aggregation functions,
+        `app.services.plan_vs_actual`'s plan-version resolution, completeness
+        metadata) only ever reads `period.start`/`period.end`, so an
+        arbitrary range is a drop-in substitute for a whole-calendar-month
+        range and does not change PR 04's semantics or tests
+        (`Period.for_month` is unchanged and still used by all of PR 04's
+        existing call sites/tests).
+
+        `label` defaults to an ISO `start..end` string when the caller
+        (e.g. the frontend's 1M/3M/6M/YTD/1Y/Custom resolution) doesn't
+        supply a more specific display label.
+        """
+        return cls(start=start, end=end, label=label or f"{start.isoformat()}..{end.isoformat()}")
+
 
 # ── Status ───────────────────────────────────────────────────────────────────
 

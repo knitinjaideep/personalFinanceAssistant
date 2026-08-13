@@ -8,6 +8,7 @@ No LLM calls. No inference. Pure SQL + simple Python aggregation.
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date
 import math
 from decimal import Decimal
 
@@ -23,7 +24,13 @@ from app.db.models import (
     StatementModel,
     TransactionModel,
 )
-from app.services.dashboard.utils import dec as _dec, fmt as _fmt, normalize_merchant as _normalize_merchant
+from app.services.dashboard.utils import (
+    date_range_clause as _date_range_clause,
+    date_range_or_rolling_months_clause as _date_range_or_rolling_months_clause,
+    dec as _dec,
+    fmt as _fmt,
+    normalize_merchant as _normalize_merchant,
+)
 
 # Banking institution types
 _BANKING_TYPES = ["chase", "amex", "discover", "bofa", "marcus"]
@@ -39,14 +46,24 @@ SPEND_CATEGORIES = [
 # ── Monthly spend ─────────────────────────────────────────────────────────────
 
 async def banking_spend_by_month(
-    session: AsyncSession, months: int = 12
+    session: AsyncSession,
+    months: int = 12,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[dict]:
     """
     Monthly total spend (purchases only, not payments/transfers) for banking accounts.
-    Returns one row per (YYYY-MM) for the last N months, sorted chronologically.
+
+    When `date_from`/`date_to` are given (PR 05 unified period contract),
+    filters to that inclusive range. Otherwise falls back to the legacy
+    rolling `months`-back-from-today window. Returns one row per (YYYY-MM),
+    sorted chronologically.
     """
+    date_clause, date_params = _date_range_or_rolling_months_clause(
+        "t.transaction_date", date_from=date_from, date_to=date_to, months=months,
+    )
     rows = await session.execute(
-        text("""
+        text(f"""
             SELECT
                 strftime('%Y-%m', t.transaction_date)  AS month,
                 SUM(ABS(CAST(t.amount AS REAL)))        AS total_spend,
@@ -56,11 +73,11 @@ async def banking_spend_by_month(
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
               AND a.account_type = 'credit_card'
               AND t.transaction_type = 'purchase'
-              AND t.transaction_date >= date('now', :offset)
+              AND {date_clause}
             GROUP BY month
             ORDER BY month
         """),
-        {"offset": f"-{months} months"},
+        date_params,
     )
     return [
         {
@@ -75,13 +92,22 @@ async def banking_spend_by_month(
 
 # ── Spend by category ─────────────────────────────────────────────────────────
 
-async def banking_spend_by_category(session: AsyncSession) -> list[dict]:
+async def banking_spend_by_category(
+    session: AsyncSession, date_from: date | None = None, date_to: date | None = None,
+) -> list[dict]:
     """
     Total spend grouped by transaction category across all banking accounts.
     Returns rows for all categories (0 for missing categories for consistent charting).
+
+    `date_from`/`date_to` (PR 05) narrow to an inclusive range; omitted
+    (the default) preserves the original all-time behavior.
     """
+    date_clause, date_params = _date_range_clause(
+        "t.transaction_date", date_from=date_from, date_to=date_to,
+    )
+    where_extra = f"AND {date_clause}" if date_clause else ""
     rows = await session.execute(
-        text("""
+        text(f"""
             SELECT
                 COALESCE(t.category, 'other') AS category,
                 SUM(ABS(CAST(t.amount AS REAL))) AS total,
@@ -91,8 +117,10 @@ async def banking_spend_by_category(session: AsyncSession) -> list[dict]:
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
               AND a.account_type = 'credit_card'
               AND t.transaction_type = 'purchase'
+              {where_extra}
             GROUP BY category
         """),
+        date_params,
     )
 
     totals: dict[str, dict] = {
@@ -119,13 +147,23 @@ async def banking_spend_by_category(session: AsyncSession) -> list[dict]:
 # ── Top merchants ─────────────────────────────────────────────────────────────
 
 async def banking_top_merchants(
-    session: AsyncSession, limit: int = 10
+    session: AsyncSession,
+    limit: int = 10,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[dict]:
     """
     Top N merchants by total spend across all banking accounts.
+
+    `date_from`/`date_to` (PR 05) narrow to an inclusive range; omitted
+    (the default) preserves the original all-time behavior.
     """
+    date_clause, date_params = _date_range_clause(
+        "t.transaction_date", date_from=date_from, date_to=date_to,
+    )
+    where_extra = f"AND {date_clause}" if date_clause else ""
     rows = await session.execute(
-        text("""
+        text(f"""
             SELECT
                 COALESCE(t.merchant_name, t.description)  AS merchant,
                 SUM(ABS(CAST(t.amount AS REAL)))           AS total,
@@ -136,11 +174,12 @@ async def banking_top_merchants(
               AND a.account_type = 'credit_card'
               AND t.transaction_type = 'purchase'
               AND merchant IS NOT NULL
+              {where_extra}
             GROUP BY merchant
             ORDER BY total DESC
             LIMIT :limit
         """),
-        {"limit": limit},
+        {"limit": limit, **date_params},
     )
     return [
         {
@@ -155,13 +194,22 @@ async def banking_top_merchants(
 
 # ── Per-card spend summary ────────────────────────────────────────────────────
 
-async def banking_card_spend_summary(session: AsyncSession) -> list[dict]:
+async def banking_card_spend_summary(
+    session: AsyncSession, date_from: date | None = None, date_to: date | None = None,
+) -> list[dict]:
     """
     Total spend broken down by account (card) — useful for per-card dashboards.
     Joins DocumentModel.account_product for product labels.
+
+    `date_from`/`date_to` (PR 05) narrow to an inclusive range; omitted
+    (the default) preserves the original all-time behavior.
     """
+    date_clause, date_params = _date_range_clause(
+        "t.transaction_date", date_from=date_from, date_to=date_to,
+    )
+    where_extra = f"AND {date_clause}" if date_clause else ""
     rows = await session.execute(
-        text("""
+        text(f"""
             SELECT
                 a.account_name,
                 a.account_type,
@@ -177,9 +225,11 @@ async def banking_card_spend_summary(session: AsyncSession) -> list[dict]:
             WHERE a.institution_type IN ('chase','amex','discover','bofa','marcus')
               AND a.account_type = 'credit_card'
               AND t.transaction_type = 'purchase'
+              {where_extra}
             GROUP BY a.id
             ORDER BY total_spend DESC
         """),
+        date_params,
     )
     return [
         {
@@ -199,14 +249,24 @@ async def banking_card_spend_summary(session: AsyncSession) -> list[dict]:
 # ── Cash flow (inflow vs outflow) ─────────────────────────────────────────────
 
 async def banking_cash_flow(
-    session: AsyncSession, months: int = 12
+    session: AsyncSession,
+    months: int = 12,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[dict]:
     """
     Monthly inflow (deposits, credits) vs outflow (purchases, withdrawals).
     Useful for checking accounts.
+
+    When `date_from`/`date_to` are given (PR 05 unified period contract),
+    filters to that inclusive range. Otherwise falls back to the legacy
+    rolling `months`-back-from-today window.
     """
+    date_clause, date_params = _date_range_or_rolling_months_clause(
+        "t.transaction_date", date_from=date_from, date_to=date_to, months=months,
+    )
     rows = await session.execute(
-        text("""
+        text(f"""
             SELECT
                 strftime('%Y-%m', t.transaction_date) AS month,
                 SUM(CASE WHEN CAST(t.amount AS REAL) > 0
@@ -217,11 +277,11 @@ async def banking_cash_flow(
             JOIN accounts a ON a.id = t.account_id
             WHERE a.institution_type IN ('chase','bofa','marcus')
               AND a.account_type IN ('checking','savings')
-              AND t.transaction_date >= date('now', :offset)
+              AND {date_clause}
             GROUP BY month
             ORDER BY month
         """),
-        {"offset": f"-{months} months"},
+        date_params,
     )
     return [
         {
@@ -250,6 +310,13 @@ async def banking_subscriptions(session: AsyncSession) -> list[dict]:
     Returns list ordered by average monthly amount descending.
     Each entry includes a confidence field: 'high' (≥3 months, stable) or
     'medium' (2 months, stable) or omitted if below threshold.
+
+    Deliberately NOT wired to the PR 05 period selector (`date_from`/
+    `date_to`): recurrence detection needs a multi-month signal (≥2 distinct
+    months) to be meaningful at all, so narrowing it to a short selected
+    range (e.g. Current Month) would make every subscription vanish rather
+    than reflect the filter. It always looks back a fixed 18 months from
+    today, independent of whatever period is selected elsewhere on the page.
     """
     rows = await session.execute(
         text("""

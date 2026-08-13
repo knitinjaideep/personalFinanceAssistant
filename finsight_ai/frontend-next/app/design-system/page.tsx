@@ -3,7 +3,8 @@
 import { useState } from "react";
 import PageShell from "@/components/coral-ds/PageShell";
 import PageHeader from "@/components/coral-ds/PageHeader";
-import GlobalPeriodFilter, { type PeriodRange } from "@/components/coral-ds/GlobalPeriodFilter";
+import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
+import { goToNextMonth, goToPreviousMonth, resolvePeriod, type PeriodSelection } from "@/lib/period";
 import SectionHeader from "@/components/coral-ds/SectionHeader";
 import Surface from "@/components/coral-ds/Surface";
 import StatusBadge from "@/components/coral-ds/StatusBadge";
@@ -18,8 +19,8 @@ import ErrorState from "@/components/coral-ds/ErrorState";
 import SkeletonState from "@/components/coral-ds/SkeletonState";
 
 export default function DesignSystemPage() {
-  const [month, setMonth] = useState("August 2026");
-  const [range, setRange] = useState<PeriodRange>("1M");
+  const [periodSelection, setPeriodSelection] = useState<PeriodSelection>({ mode: "current_month" });
+  const resolvedPeriod = resolvePeriod(periodSelection);
 
   return (
     <PageShell width="wide">
@@ -28,11 +29,12 @@ export default function DesignSystemPage() {
         title="Coral Design System"
         subtitle="Reusable primitives for the redesigned dashboard — tokens, layout, and content components."
         action={
-          <GlobalPeriodFilter
-            month={month}
-            onMonthClick={() => setMonth("August 2026")}
-            range={range}
-            onRangeChange={setRange}
+          <FinancialPeriodSelector
+            selection={periodSelection}
+            resolved={resolvedPeriod}
+            onChange={setPeriodSelection}
+            onPrevMonth={() => setPeriodSelection((s) => goToPreviousMonth(s))}
+            onNextMonth={() => setPeriodSelection((s) => goToNextMonth(s))}
           />
         }
       />

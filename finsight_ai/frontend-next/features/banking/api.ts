@@ -66,9 +66,27 @@ export interface BankingDashboard {
   cash_flow: CashFlowMonth[];
   subscriptions: Subscription[];
   coverage: InstitutionCoverage[];
+  /** The resolved {start_date, end_date} the backend actually applied, or
+   * null when no range was requested (PR 05 unified period contract). */
+  period: { start_date: string; end_date: string } | null;
+}
+
+export interface DashboardPeriodParams {
+  startDate?: string; // "YYYY-MM-DD"
+  endDate?: string;   // "YYYY-MM-DD"
 }
 
 export const bankingApi = {
-  banking: (months = 12): Promise<BankingDashboard> =>
-    api.get<BankingDashboard>("/dashboard/banking", { months }),
+  /**
+   * `startDate`/`endDate` (PR 05 unified period contract, see
+   * lib/period.ts) take precedence over the legacy `months` rolling window
+   * when provided — the backend always queries by the resolved range, never
+   * fetches everything and filters client-side.
+   */
+  banking: (months = 12, period?: DashboardPeriodParams): Promise<BankingDashboard> =>
+    api.get<BankingDashboard>("/dashboard/banking", {
+      months,
+      start_date: period?.startDate,
+      end_date: period?.endDate,
+    }),
 };

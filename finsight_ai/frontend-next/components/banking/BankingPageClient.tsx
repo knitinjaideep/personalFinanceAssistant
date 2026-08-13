@@ -9,6 +9,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { bankingApi, type BankingDashboard } from "@/features/banking/api";
 import { useAppStore } from "@/store/appStore";
+import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
 import { formatCompactCurrency, formatCurrency } from "@/lib/utils";
 import MetricCard from "@/components/coral/MetricCard";
 import GlassCard from "@/components/coral/GlassCard";
@@ -16,6 +17,7 @@ import SectionHeader from "@/components/coral/SectionHeader";
 import EmptyState from "@/components/coral/EmptyState";
 import LoadingState from "@/components/coral/LoadingState";
 import ErrorState from "@/components/coral/ErrorState";
+import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
 
 const INSIGHT_PROMPTS = [
   "What were my largest expenses in the last 6 months?",
@@ -179,25 +181,37 @@ function AccountRow({
 export default function BankingPageClient() {
   const [data, setData]     = useState<BankingDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  // Separate from `loading`: true only while refetching for a period change,
+  // so the page keeps showing the previous data (dimmed) instead of
+  // flashing back to a full-page skeleton every time the filter changes.
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError]   = useState<string | null>(null);
   const openUploadModal     = useAppStore((s) => s.openUploadModal);
+  const { selection, resolved, setSelection, goToPreviousMonth, goToNextMonth } = useFinancialPeriod();
 
-  const load = () => {
-    setLoading(true);
+  const load = (isPeriodChange: boolean) => {
+    if (isPeriodChange) setRefreshing(true); else setLoading(true);
     setError(null);
-    bankingApi.banking()
+    bankingApi.banking(12, { startDate: resolved.startDate, endDate: resolved.endDate })
       .then(setData)
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setRefreshing(false); });
   };
 
-  useEffect(() => { load(); }, []);
+  // Initial load, then refetch (server-side, not client-side filtering)
+  // whenever the resolved date range changes.
+  useEffect(() => { load(data !== null); }, [resolved.startDate, resolved.endDate]);
 
   if (loading) return <LoadingState columns={4} rows={3} message="Loading your banking data…" />;
-  if (error)   return <ErrorState message={error} onRetry={load} />;
+  if (error)   return <ErrorState message={error} onRetry={() => load(false)} />;
 
   const totalSpend  = data?.spend_by_month.reduce((s, m) => s + m.total_spend, 0) ?? 0;
-  const avgMonthly  = data && data.spend_by_month.length > 0 ? totalSpend / data.spend_by_month.length : null;
+  // Only a real average once the selected period actually covers 2+ months.
+  // With a single (often partial) month selected, `totalSpend / 1` is just the
+  // period total wearing an "Avg Monthly" label — a misleading restatement of
+  // the tile next to it rather than an average.
+  const monthsCovered = data?.spend_by_month.length ?? 0;
+  const avgMonthly  = monthsCovered >= 2 ? totalSpend / monthsCovered : null;
   const totalInflow = data?.cash_flow.reduce((s, m) => s + m.inflow, 0) ?? 0;
   const totalOutflow= data?.cash_flow.reduce((s, m) => s + m.outflow, 0) ?? 0;
   const netFlow     = totalInflow - totalOutflow;
@@ -217,6 +231,16 @@ export default function BankingPageClient() {
         title="Banking"
         description="Track cash flow, card spend, recurring charges, and account movement across your statements."
         size="lg"
+        action={
+          <FinancialPeriodSelector
+            selection={selection}
+            resolved={resolved}
+            onChange={setSelection}
+            onPrevMonth={goToPreviousMonth}
+            onNextMonth={goToNextMonth}
+            loading={refreshing}
+          />
+        }
       />
 
       {/* ── Summary metrics ─────────────────────────────────────────── */}
@@ -242,7 +266,7 @@ export default function BankingPageClient() {
             fullValue: avgMonthly !== null ? fullFmt(avgMonthly) : undefined,
             icon: <TrendingDown size={16} style={{ color: "rgba(255,209,102,0.80)" }} />,
             accent: "rgba(255,209,102,0.14)",
-            emptyText: "Upload card statements",
+            emptyText: monthsCovered === 1 ? "Select a longer period" : "Upload card statements",
           },
           {
             title: "Cash In",
