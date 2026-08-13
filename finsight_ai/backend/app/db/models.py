@@ -134,6 +134,24 @@ class TransactionModel(SQLModel, table=True):
     confidence: float = 1.0
     source_page: Optional[int] = None
 
+    # ── Derived classification (Plan→Actual model) ──────────────────────────
+    # These are ADDITIVE, derived fields — `category` above is the raw,
+    # parser-assigned value and is NEVER overwritten by classification (see
+    # docs/TRANSACTION_CLASSIFICATION.md and accounting-invariants #9).
+    # master_bucket: MasterBucket value (needs/wants/savings/investments/unclassified)
+    master_bucket: Optional[str] = None
+    # classification_category: specific category from the pr-03 taxonomy,
+    # e.g. "Groceries", "Dining", "Emergency Fund", "401(k)".
+    classification_category: Optional[str] = None
+    # cash_flow_type: CashFlowType value (income/expense/transfer/
+    # savings_contribution/investment_contribution/investment_activity/refund/other)
+    cash_flow_type: Optional[str] = None
+    # classification_source: ClassificationSource value (deterministic_rule/
+    # existing_category/user/llm/heuristic/unknown)
+    classification_source: Optional[str] = None
+    classification_confidence: Optional[float] = None
+    needs_review: bool = False
+
     account: Optional[AccountModel] = Relationship(back_populates="transactions")
     statement: Optional[StatementModel] = Relationship(back_populates="transactions")
 
@@ -410,3 +428,56 @@ class PlanSuballocationModel(SQLModel, table=True):
     sort_order: int = 0
 
     allocation: Optional[PlanAllocationModel] = Relationship(back_populates="suballocations")
+
+
+# ── Transaction Classification ────────────────────────────────────────────────
+#
+# User-authored classification overrides, kept separate from the derived
+# `master_bucket`/`classification_category`/`cash_flow_type` fields on
+# TransactionModel. See docs/TRANSACTION_CLASSIFICATION.md.
+#
+# Precedence: an explicit per-transaction override (below) always wins over a
+# merchant rule, which always wins over any automated classification.
+
+class TransactionClassificationOverrideModel(SQLModel, table=True):
+    """Tier-1 override: the user explicitly reclassified ONE transaction.
+
+    Never destructively overwrites transactions.category — this is a
+    separate row keyed by transaction_id (1:1) that TransactionClassification
+    Service consults before any automated tier runs.
+    """
+    __tablename__ = "transaction_classification_overrides"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    transaction_id: str = Field(foreign_key="transactions.id", index=True, unique=True)
+    master_bucket: str
+    category: Optional[str] = None
+    cash_flow_type: str
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+class MerchantClassificationRuleModel(SQLModel, table=True):
+    """Tier-2 rule: the user taught Coral how to classify a merchant (or a raw
+    imported category) going forward.
+
+    scope="merchant"          → merchant_key matches on any account
+    scope="merchant_account"  → merchant_key matches only on account_id
+    scope="category"          → source_category (raw transactions.category)
+                                 always maps to this bucket/category
+    """
+    __tablename__ = "merchant_classification_rules"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    scope: str = "merchant"
+    # Normalized (lowercased) merchant/description substring to match — used
+    # for scope in {merchant, merchant_account}.
+    merchant_key: Optional[str] = Field(default=None, index=True)
+    # Raw parser-assigned category to match — used for scope="category".
+    source_category: Optional[str] = Field(default=None, index=True)
+    account_id: Optional[str] = Field(default=None, foreign_key="accounts.id", index=True)
+    master_bucket: str
+    category: Optional[str] = None
+    cash_flow_type: str
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)

@@ -78,6 +78,14 @@ _COLUMN_MIGRATIONS: list[tuple[str, str, str]] = [
     ("transactions", "merchant_name",  "TEXT"),
     ("transactions", "category",       "TEXT"),
     ("transactions", "is_recurring",   "INTEGER NOT NULL DEFAULT 0"),
+    # transactions — derived classification fields added for the Plan→Actual
+    # redesign (PR 03). Additive only — never touch `category` above.
+    ("transactions", "master_bucket",              "TEXT"),
+    ("transactions", "classification_category",    "TEXT"),
+    ("transactions", "cash_flow_type",              "TEXT"),
+    ("transactions", "classification_source",       "TEXT"),
+    ("transactions", "classification_confidence",   "REAL"),
+    ("transactions", "needs_review",                "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

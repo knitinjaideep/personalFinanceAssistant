@@ -1,0 +1,796 @@
+"""
+Transaction classification taxonomy + deterministic classification engine.
+
+This module is the single source of truth for how a `TransactionModel` row maps
+onto the Coral Plan→Actual model (see docs/coral-redesign and
+docs/TRANSACTION_CLASSIFICATION.md):
+
+  Cash Flow Type  — what kind of money movement this is (income/expense/
+                    transfer/savings_contribution/investment_contribution/
+                    investment_activity/refund/other).
+  Master Bucket   — which of the four financial-plan buckets this belongs to
+                    (needs/wants/savings/investments/unclassified).
+  Category        — the specific sub-category within a bucket (e.g.
+                    "Groceries" under needs, "401(k)" under investments).
+
+Everything here is pure Python — no DB access, no LLM calls, no network I/O.
+`app.services.transaction_classification.TransactionClassificationService`
+wires this engine to the database (user overrides, merchant rules, persistence).
+
+Precedence (highest wins), per docs/coral-redesign/pr-03-classification.md and
+.claude/rules/backend.md:
+
+  1. explicit user transaction override
+  2. explicit user merchant rule
+  3. deterministic known transfer/investment/savings/refund/income rule
+  4. trusted existing (parser-assigned) category mapping
+  5. heuristic/merchant keyword classifier
+  6. LLM fallback (caller-supplied; this module never calls an LLM itself)
+  7. unclassified
+
+The LLM is never the source of amounts/totals — it only ever supplies a label
+suggestion at tier 6, and only when nothing deterministic matched.
+"""
+
+from __future__ import annotations
+
+import re
+from decimal import Decimal
+from enum import Enum
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# ── Enums ────────────────────────────────────────────────────────────────────
+
+class CashFlowType(str, Enum):
+    INCOME = "income"
+    EXPENSE = "expense"
+    TRANSFER = "transfer"
+    SAVINGS_CONTRIBUTION = "savings_contribution"
+    INVESTMENT_CONTRIBUTION = "investment_contribution"
+    INVESTMENT_ACTIVITY = "investment_activity"
+    REFUND = "refund"
+    OTHER = "other"
+
+
+class MasterBucket(str, Enum):
+    NEEDS = "needs"
+    WANTS = "wants"
+    SAVINGS = "savings"
+    INVESTMENTS = "investments"
+    UNCLASSIFIED = "unclassified"
+
+
+class ClassificationSource(str, Enum):
+    DETERMINISTIC_RULE = "deterministic_rule"
+    EXISTING_CATEGORY = "existing_category"
+    USER = "user"
+    LLM = "llm"
+    HEURISTIC = "heuristic"
+    UNKNOWN = "unknown"
+
+
+class RuleScope(str, Enum):
+    """Scope of a user-authored merchant classification rule."""
+    MERCHANT = "merchant"                  # applies to this merchant on any account
+    MERCHANT_ACCOUNT = "merchant_account"  # applies to this merchant only on one account
+    CATEGORY = "category"                  # applies to a raw imported category value
+
+
+# Categories exactly as specified in docs/coral-redesign/pr-03-classification.md.
+NEEDS_CATEGORIES: list[str] = [
+    "Housing", "Utilities", "Connectivity", "Groceries",
+    "Transportation", "Insurance", "Healthcare", "Minimum Debt",
+]
+
+WANTS_CATEGORIES: list[str] = [
+    "Dining", "Entertainment", "Travel", "Shopping",
+    "Personal Care", "Fitness/Hobbies", "Home Decor", "Gifts/Celebrations",
+]
+
+# Matches the Savings suballocation names seeded in financial_plan.py.
+SAVINGS_CATEGORIES: list[str] = ["Emergency Fund", "House / Goals", "Child Savings"]
+
+# Matches the Investments suballocation names seeded in financial_plan.py.
+INVESTMENTS_CATEGORIES: list[str] = ["401(k)", "Roth IRA", "ESPP", "Taxable Brokerage"]
+
+CATEGORIES_BY_BUCKET: dict[MasterBucket, list[str]] = {
+    MasterBucket.NEEDS: NEEDS_CATEGORIES,
+    MasterBucket.WANTS: WANTS_CATEGORIES,
+    MasterBucket.SAVINGS: SAVINGS_CATEGORIES,
+    MasterBucket.INVESTMENTS: INVESTMENTS_CATEGORIES,
+    MasterBucket.UNCLASSIFIED: [],
+}
+
+# Merchants that cannot be reliably classified from statement data alone —
+# they sell across Needs/Wants categories (groceries AND electronics AND home
+# goods, etc). Never force a confident guess for these; always flag for review
+# unless a user override/merchant rule says otherwise.
+KNOWN_AMBIGUOUS_MERCHANTS: frozenset[str] = frozenset({
+    "amazon", "target", "walmart", "costco", "cvs",
+})
+
+
+# ── Results / inputs ─────────────────────────────────────────────────────────
+
+class ClassificationResult(BaseModel):
+    """Output of the classification engine for a single transaction."""
+
+    master_bucket: MasterBucket = MasterBucket.UNCLASSIFIED
+    category: str | None = None
+    cash_flow_type: CashFlowType = CashFlowType.OTHER
+    source: ClassificationSource = ClassificationSource.UNKNOWN
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    needs_review: bool = False
+    # Short, human-readable explanation for audit/debugging. Deterministic —
+    # never generated by an LLM.
+    reason: str = ""
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp(cls, v: object) -> float:
+        try:
+            f = float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, min(1.0, f))
+
+
+class TransactionClassificationInput(BaseModel):
+    """Everything the engine needs about a transaction. Duck-typed from
+    TransactionModel by the service layer so this module stays DB-free."""
+
+    transaction_id: str
+    description: str = ""
+    merchant_name: str | None = None
+    transaction_type: str = "other"
+    amount: Decimal = Decimal("0")
+    raw_category: str | None = None       # transactions.category (parser-assigned, preserved as-is)
+    account_type: str | None = None        # AccountType value, e.g. "checking", "credit_card"
+    account_name: str | None = None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _to_decimal(cls, v: object) -> Decimal:
+        if isinstance(v, Decimal):
+            return v
+        if v is None:
+            return Decimal("0")
+        return Decimal(str(v))
+
+    def text(self) -> str:
+        return f"{self.description or ''} {self.merchant_name or ''}".strip().lower()
+
+
+class UserOverride(BaseModel):
+    """Tier-1 explicit per-transaction override, as stored in
+    transaction_classification_overrides."""
+
+    master_bucket: MasterBucket
+    category: str | None = None
+    cash_flow_type: CashFlowType
+
+
+class MerchantRule(BaseModel):
+    """Tier-2 explicit user-authored merchant/category rule, as stored in
+    merchant_classification_rules."""
+
+    scope: RuleScope
+    master_bucket: MasterBucket
+    category: str | None = None
+    cash_flow_type: CashFlowType
+
+
+# ── Tier 4: trusted existing-category mapping ───────────────────────────────
+#
+# transactions.category is populated at ingestion time by
+# app.parsers.categorize.categorize() (shared across all parsers). We only
+# trust the subset of values that map unambiguously onto a single Needs/Wants
+# category — "shopping" (Amazon/Target/Walmart/Costco/etc), "subscriptions",
+# "education", "transfers", "fees", "atm_cash", and "other" are deliberately
+# excluded and fall through to the heuristic tier (or stay unclassified).
+_TRUSTED_CATEGORY_MAP: dict[str, tuple[MasterBucket, str]] = {
+    "groceries":    (MasterBucket.NEEDS, "Groceries"),
+    "gas":          (MasterBucket.NEEDS, "Transportation"),
+    "utilities":    (MasterBucket.NEEDS, "Utilities"),
+    "healthcare":   (MasterBucket.NEEDS, "Healthcare"),
+    "insurance":    (MasterBucket.NEEDS, "Insurance"),
+    "restaurants":  (MasterBucket.WANTS, "Dining"),
+    "travel":       (MasterBucket.WANTS, "Travel"),
+    "entertainment": (MasterBucket.WANTS, "Entertainment"),
+}
+
+# ── Tier 5: heuristic merchant/description keyword classifier ──────────────
+# Independent of the legacy `categorize()` taxonomy — covers all 16 Needs/Wants
+# categories directly from merchant/description text.
+_NEEDS_KEYWORDS: dict[str, list[str]] = {
+    "Housing": [
+        "rent", "mortgage", "landlord", "property management", "apartment",
+        "lease payment", "hoa fee", "hoa dues", "rent payment",
+    ],
+    "Utilities": [
+        "electric", "electricity", "water bill", "power company",
+        "con edison", "pseg", "utility", "utilities", "sewer",
+        "trash service", "waste management", "gas company", "gas utility",
+    ],
+    "Connectivity": [
+        "internet", "comcast", "xfinity", "verizon", "t-mobile", "at&t",
+        "spectrum", "wifi", "broadband", "cell phone", "phone bill", "wireless",
+    ],
+    "Groceries": [
+        "grocery", "groceries", "supermarket", "whole foods", "trader joe",
+        "safeway", "kroger", "wegmans", "shoprite", "stop & shop", "aldi",
+        "publix", "sprouts", "market basket", "fairway", "food bazaar",
+    ],
+    "Transportation": [
+        "gas station", "fuel", "gasoline", "shell", "chevron", "exxon",
+        "sunoco", "speedway", "valero", "citgo", "uber", "lyft", "parking",
+        "toll", "tolls", "dmv", "metro card", "metrocard", "transit fare",
+        "train ticket", "subway fare",
+    ],
+    "Insurance": [
+        "insurance", "geico", "progressive", "allstate", "state farm",
+    ],
+    "Healthcare": [
+        "pharmacy", "hospital", "medical", "dental", "walgreens", "rite aid",
+        "clinic", "doctor", "copay", "urgent care",
+    ],
+    # NOTE: deliberately excludes "credit card payment"/"minimum payment" —
+    # paying a credit-card balance is a transfer (the purchases are already
+    # expensed individually), see _CARD_PAYMENT_HINTS and
+    # accounting-invariants.md #2. Only genuine loan servicing belongs here.
+    "Minimum Debt": [
+        "loan payment", "student loan", "debt payment",
+        "auto loan", "car payment", "personal loan",
+    ],
+}
+
+_WANTS_KEYWORDS: dict[str, list[str]] = {
+    "Dining": [
+        "restaurant", "cafe", "coffee", "pizza", "burger", "grill",
+        "starbucks", "mcdonald", "chipotle", "dunkin", "doordash",
+        "uber eats", "ubereats", "grubhub", "seamless", "diner", "bakery",
+        "panera", "wendys", "subway sandwich", "chick-fil",
+    ],
+    "Entertainment": [
+        "netflix", "spotify", "hulu", "disney plus", "disneyplus", "disney+",
+        "hbo", "cinema", "movie", "amc ", "regal", "theater", "theatre",
+        "concert", "ticketmaster", "stubhub", "steam", "playstation", "xbox",
+        "nintendo", "apple music", "youtube premium", "prime video", "audible",
+        "patreon",
+    ],
+    "Travel": [
+        "airline", "airlines", "hotel", "motel", "airbnb", "delta air",
+        "united airlines", "american airlines", "jetblue", "southwest air",
+        "amtrak", "expedia", "booking.com", "marriott", "hilton", "hertz",
+        "avis", "flight",
+    ],
+    "Shopping": [
+        "ebay", "etsy", "best buy", "nike", "macy", "nordstrom", "apple store",
+    ],
+    "Personal Care": [
+        "salon", "spa", "haircut", "barber", "nail salon", "cosmetic",
+        "sephora", "ulta",
+    ],
+    "Fitness/Hobbies": [
+        "gym", "fitness", "yoga", "peloton", "hobby lobby", "craft store",
+        "climbing gym", "pilates",
+    ],
+    "Home Decor": [
+        "ikea", "pottery barn", "home goods", "homegoods", "crate & barrel",
+        "furniture",
+    ],
+    "Gifts/Celebrations": [
+        "gift", "florist", "flowers", "party city", "hallmark", "celebration",
+        "wedding registry",
+    ],
+}
+
+_SAVINGS_SUBCATEGORY_KEYWORDS: dict[str, list[str]] = {
+    "Emergency Fund": ["emergency fund", "emergency savings"],
+    "House / Goals": ["house fund", "down payment", "house savings", "home fund", "goal savings"],
+    "Child Savings": ["child savings", "529", "college savings", "kids savings"],
+}
+# Generic "this is a savings account/institution" signal with no identifiable
+# sub-goal — category is left None (honest > guessed) when only these match.
+_SAVINGS_GENERIC_KEYWORDS = [
+    "hysa", "high yield savings", "high-yield savings", "marcus", "goldman sachs",
+    "savings account", "transfer to savings", "savings transfer", "online savings",
+]
+
+_INVESTMENT_SUBCATEGORY_KEYWORDS: dict[str, list[str]] = {
+    "401(k)": ["401k", "401(k)"],
+    "Roth IRA": ["roth ira", "roth 401", "roth"],
+    "ESPP": ["espp", "employee stock purchase"],
+    "Taxable Brokerage": [
+        "brokerage", "etrade", "e*trade", "e-trade", "morgan stanley",
+        "schwab", "fidelity", "vanguard", "robinhood",
+    ],
+}
+# Generic "money moved to/within an investment institution" signal.
+_INVESTMENT_GENERIC_KEYWORDS = ["ira contribution", "ira transfer", " ira ", "brokerage transfer"]
+
+# Card-payment language that is *unambiguously* a credit-card balance payment
+# (accounting-invariants.md #2 — must never be counted as spending again).
+_CARD_PAYMENT_HINTS = (
+    "payment thank you", "payment - thank you", "statement credit",
+    "pay your card", "credit card payment", "card payment", "cardmember payment",
+    "crd epay", "card epay", "cc payment", "minimum payment",
+)
+
+# Generic payment/autopay language (and `transaction_type == "payment"`).
+# These are NOT proof of a card payment: the checking-side parsers
+# (chase/parser.py::_classify_type, bank_of_america/parser.py::_classify_type)
+# label *any* description containing "payment" as transaction_type="payment",
+# which would otherwise neutralize real Needs spending such as
+# "RENT PAYMENT", "PSEG ELECTRIC PAYMENT" or "VERIZON AUTOPAY". They are only
+# treated as a neutral transfer when no spending evidence (tier 4/5) exists.
+_GENERIC_PAYMENT_HINTS = (
+    "thank you", "autopay", "online payment", "mobile payment",
+    "electronic payment", "bill payment",
+)
+
+_REFUND_HINTS = ("refund", "return", "reversal", "credit adjustment", "chargeback")
+_ROLLOVER_HINTS = ("rollover",)
+_GENERIC_TRANSFER_HINTS = ("transfer", "zelle", "venmo", "paypal transfer")
+_INCOME_HINTS = ("payroll", "direct dep", "direct deposit", "salary", "paycheck")
+
+# Transaction types that only ever occur inside an investment account.
+# NOTE: "interest" is deliberately NOT here — the Amex/Chase/Discover
+# extractors stamp TransactionType.INTEREST on credit-card *interest charges*,
+# which are a cost of credit, not investment activity (see rule 3b2).
+_INVESTMENT_ACTIVITY_TYPES = {
+    "dividend", "trade_buy", "trade_sell", "tax_withholding", "advisory_fee",
+}
+
+# AccountType values (app.domain.enums.AccountType) that *are* the savings /
+# investment side of a movement. Used to resolve direction: money moving toward
+# these accounts is a contribution, money moving out of them is a withdrawal.
+#
+# Public (no leading underscore) because app.domain.plan_vs_actual (PR 04)
+# reuses this exact set to decide which leg of a checking<->savings/brokerage
+# transfer is the "canonical" contribution leg for Plan vs Actual aggregation —
+# single source of truth, see plan_vs_actual.is_canonical_contribution_leg().
+SAVINGS_ACCOUNT_TYPES: frozenset[str] = frozenset({"savings"})
+INVESTMENT_ACCOUNT_TYPES: frozenset[str] = frozenset({
+    "ira", "roth_ira", "advisory", "individual_brokerage", "401k",
+})
+_SAVINGS_ACCOUNT_TYPES = SAVINGS_ACCOUNT_TYPES
+_INVESTMENT_ACCOUNT_TYPES = INVESTMENT_ACCOUNT_TYPES
+
+
+def _match_any(text: str, keywords: list[str] | tuple[str, ...]) -> bool:
+    return any(kw in text for kw in keywords)
+
+
+def _first_subcategory_match(text: str, table: dict[str, list[str]]) -> str | None:
+    for category, keywords in table.items():
+        if _match_any(text, keywords):
+            return category
+    return None
+
+
+def _spend_flow(explicit_refund: bool, amount: Decimal) -> CashFlowType:
+    """Resolve the cash-flow type for a row that resolved to a spending
+    (Needs/Wants) label.
+
+    Explicit refund language always wins; otherwise a positive amount landing
+    in a spending category is money coming back, not new spending.
+    """
+    if explicit_refund or amount > 0:
+        return CashFlowType.REFUND
+    return CashFlowType.EXPENSE
+
+
+def _unresolved_flow(explicit_refund: bool, amount: Decimal) -> CashFlowType:
+    """Cash-flow type for a row we could NOT resolve to a spending label.
+
+    A positive amount here (an unexplained deposit — paycheck without payroll
+    wording, check deposit, tax refund…) must not be labelled `refund`: PR 04
+    nets refunds against spending, and doing so would silently erase real
+    expenses. Honest fallback is `other` (accounting-invariants.md #10).
+    """
+    if explicit_refund:
+        return CashFlowType.REFUND
+    return CashFlowType.EXPENSE if amount < 0 else CashFlowType.OTHER
+
+
+def _is_contribution_direction(
+    amount: Decimal, account_type: str | None, target_types: frozenset[str],
+) -> bool:
+    """True when the money is moving *toward* the savings/investment side.
+
+    Viewed from the savings/investment account itself, an inflow (amount > 0)
+    is the contribution. Viewed from a cash/credit account (or when the account
+    is unknown — the common checking-statement case), the outflow (amount < 0)
+    is the contribution. The opposite direction is a withdrawal, which must
+    never be recorded as a contribution (it would inflate savings/investment
+    actuals in PR 04).
+    """
+    on_target_account = (account_type or "").strip().lower() in target_types
+    return amount > 0 if on_target_account else amount < 0
+
+
+class _SpendingLabel(BaseModel):
+    """Tier 4/5 resolution of a spending-shaped row to (bucket, category)."""
+
+    bucket: MasterBucket
+    category: str | None
+    source: ClassificationSource
+    confidence: float
+    reason: str
+
+
+def _resolve_spending_label(
+    txn: TransactionClassificationInput, text: str,
+) -> _SpendingLabel | None:
+    """Tier 4 (trusted imported category) then tier 5 (keyword heuristic).
+
+    Single place where Needs/Wants evidence is derived — the deterministic
+    generic-payment rule also consults it so the two can never diverge.
+    """
+    raw_category = (txn.raw_category or "").strip().lower()
+    if raw_category in _TRUSTED_CATEGORY_MAP:
+        bucket, category = _TRUSTED_CATEGORY_MAP[raw_category]
+        return _SpendingLabel(
+            bucket=bucket, category=category,
+            source=ClassificationSource.EXISTING_CATEGORY, confidence=0.8,
+            reason=f"trusted existing category '{raw_category}'",
+        )
+
+    needs_hit = _first_subcategory_match(text, _NEEDS_KEYWORDS)
+    if needs_hit:
+        return _SpendingLabel(
+            bucket=MasterBucket.NEEDS, category=needs_hit,
+            source=ClassificationSource.HEURISTIC, confidence=0.65,
+            reason=f"merchant/description keyword match ({needs_hit})",
+        )
+
+    wants_hit = _first_subcategory_match(text, _WANTS_KEYWORDS)
+    if wants_hit:
+        return _SpendingLabel(
+            bucket=MasterBucket.WANTS, category=wants_hit,
+            source=ClassificationSource.HEURISTIC, confidence=0.65,
+            reason=f"merchant/description keyword match ({wants_hit})",
+        )
+    return None
+
+
+def is_ambiguous_merchant(text: str) -> bool:
+    """True when the merchant/description text matches a KNOWN_AMBIGUOUS_MERCHANTS
+    entry as a whole word (avoids accidental substring hits)."""
+    return any(re.search(rf"\b{re.escape(m)}\b", text) for m in KNOWN_AMBIGUOUS_MERCHANTS)
+
+
+# ── The engine ───────────────────────────────────────────────────────────────
+
+def classify_transaction(
+    txn: TransactionClassificationInput,
+    *,
+    user_override: UserOverride | None = None,
+    merchant_rule: MerchantRule | None = None,
+    llm_result: ClassificationResult | None = None,
+) -> ClassificationResult:
+    """Resolve the final classification for one transaction.
+
+    Precedence: user override > merchant rule > deterministic rule >
+    trusted existing category > heuristic > LLM fallback > unclassified.
+
+    `llm_result`, when supplied, is a fully-formed suggestion the caller (the
+    service layer) obtained from an LLM classifier — this function never calls
+    an LLM itself. It is only used when tiers 1-5 produced nothing.
+    """
+
+    # ── Tier 1: explicit user transaction override ─────────────────────────
+    if user_override is not None:
+        return ClassificationResult(
+            master_bucket=user_override.master_bucket,
+            category=user_override.category,
+            cash_flow_type=user_override.cash_flow_type,
+            source=ClassificationSource.USER,
+            confidence=1.0,
+            needs_review=False,
+            reason="explicit user override for this transaction",
+        )
+
+    # ── Tier 2: explicit user merchant rule ─────────────────────────────────
+    if merchant_rule is not None:
+        return ClassificationResult(
+            master_bucket=merchant_rule.master_bucket,
+            category=merchant_rule.category,
+            cash_flow_type=merchant_rule.cash_flow_type,
+            source=ClassificationSource.USER,
+            confidence=1.0,
+            needs_review=False,
+            reason=f"user merchant rule ({merchant_rule.scope.value})",
+        )
+
+    text = txn.text()
+    amount = txn.amount
+    txn_type = (txn.transaction_type or "other").lower()
+
+    # ── Tier 3: deterministic known transfer/investment/savings/refund/income rules ──
+
+    # 3a. Investment rollovers are not new contributions (invariant #7).
+    if _match_any(text, _ROLLOVER_HINTS):
+        return ClassificationResult(
+            master_bucket=MasterBucket.INVESTMENTS,
+            category=_first_subcategory_match(text, _INVESTMENT_SUBCATEGORY_KEYWORDS),
+            cash_flow_type=CashFlowType.INVESTMENT_ACTIVITY,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.9,
+            needs_review=False,
+            reason="rollover keyword — activity, not a new contribution",
+        )
+
+    # 3b. Dividends/interest/trades/tax-withholding/advisory fees are activity
+    #     within an investment account, not new cash contributions.
+    if txn_type in _INVESTMENT_ACTIVITY_TYPES:
+        return ClassificationResult(
+            master_bucket=MasterBucket.INVESTMENTS,
+            category=_first_subcategory_match(text, _INVESTMENT_SUBCATEGORY_KEYWORDS),
+            cash_flow_type=CashFlowType.INVESTMENT_ACTIVITY,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.9,
+            needs_review=False,
+            reason=f"transaction_type={txn_type} is in-account investment activity",
+        )
+
+    # 3b2. Interest. Inside an investment account it is investment activity;
+    #      on a credit card / bank account it is a finance charge or interest
+    #      earned, which belongs to no master bucket (same treatment as fees).
+    if txn_type == "interest":
+        on_investment_account = (
+            (txn.account_type or "").strip().lower() in _INVESTMENT_ACCOUNT_TYPES
+        )
+        if on_investment_account:
+            return ClassificationResult(
+                master_bucket=MasterBucket.INVESTMENTS,
+                category=_first_subcategory_match(text, _INVESTMENT_SUBCATEGORY_KEYWORDS),
+                cash_flow_type=CashFlowType.INVESTMENT_ACTIVITY,
+                source=ClassificationSource.DETERMINISTIC_RULE,
+                confidence=0.9,
+                needs_review=False,
+                reason="interest inside an investment account — in-account activity",
+            )
+        return ClassificationResult(
+            master_bucket=MasterBucket.UNCLASSIFIED,
+            category=None,
+            cash_flow_type=CashFlowType.OTHER,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.8,
+            needs_review=False,
+            reason="interest charge/earned outside an investment account — not a master bucket",
+        )
+
+    # 3c. Credit-card payment neutrality (invariant #2) — purchases are already
+    #     represented as their own expense line items, so the payment itself
+    #     must not be double-counted as spending. Only unambiguous card-payment
+    #     language short-circuits here; generic "payment"/"autopay" wording is
+    #     handled in 3g2 below, after spending evidence has been considered.
+    if _match_any(text, _CARD_PAYMENT_HINTS):
+        return ClassificationResult(
+            master_bucket=MasterBucket.UNCLASSIFIED,
+            category=None,
+            cash_flow_type=CashFlowType.TRANSFER,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.9,
+            needs_review=False,
+            reason="credit-card payment — neutral, not new spending",
+        )
+
+    # 3d. Explicit refund/return/reversal language (invariant #6) — resolved
+    #     to a bucket/category below (via tiers 4/5) so it can net against the
+    #     original spend category, but the cash_flow_type is fixed here.
+    explicit_refund = txn_type == "refund" or _match_any(text, _REFUND_HINTS)
+
+    # 3e. Investment contribution — money moving toward a brokerage/retirement
+    #     account (invariant #4: not Needs/Wants spending).
+    has_investment_keyword = (
+        _first_subcategory_match(text, _INVESTMENT_SUBCATEGORY_KEYWORDS) is not None
+        or _match_any(text, _INVESTMENT_GENERIC_KEYWORDS)
+    )
+    if has_investment_keyword:
+        category = _first_subcategory_match(text, _INVESTMENT_SUBCATEGORY_KEYWORDS)
+        if not _is_contribution_direction(amount, txn.account_type, _INVESTMENT_ACCOUNT_TYPES):
+            # Money coming back out of the investment side — a withdrawal, not
+            # a contribution. Neutral so it can never inflate investing actuals.
+            return ClassificationResult(
+                master_bucket=MasterBucket.UNCLASSIFIED,
+                category=None,
+                cash_flow_type=CashFlowType.TRANSFER,
+                source=ClassificationSource.DETERMINISTIC_RULE,
+                confidence=0.8,
+                needs_review=False,
+                reason="movement out of an investment account — withdrawal, not a contribution",
+            )
+        return ClassificationResult(
+            master_bucket=MasterBucket.INVESTMENTS,
+            category=category,
+            cash_flow_type=CashFlowType.INVESTMENT_CONTRIBUTION,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.85 if category else 0.7,
+            needs_review=category is None,
+            reason="investment institution/contribution keyword",
+        )
+
+    # 3f. Savings contribution (invariant #3: not Needs/Wants spending).
+    has_savings_keyword = (
+        _first_subcategory_match(text, _SAVINGS_SUBCATEGORY_KEYWORDS) is not None
+        or _match_any(text, _SAVINGS_GENERIC_KEYWORDS)
+    )
+    if has_savings_keyword:
+        category = _first_subcategory_match(text, _SAVINGS_SUBCATEGORY_KEYWORDS)
+        if not _is_contribution_direction(amount, txn.account_type, _SAVINGS_ACCOUNT_TYPES):
+            # Money coming back out of savings — a withdrawal, not a
+            # contribution (must never inflate savings actuals).
+            return ClassificationResult(
+                master_bucket=MasterBucket.UNCLASSIFIED,
+                category=None,
+                cash_flow_type=CashFlowType.TRANSFER,
+                source=ClassificationSource.DETERMINISTIC_RULE,
+                confidence=0.8,
+                needs_review=False,
+                reason="movement out of a savings account — withdrawal, not a contribution",
+            )
+        return ClassificationResult(
+            master_bucket=MasterBucket.SAVINGS,
+            category=category,
+            cash_flow_type=CashFlowType.SAVINGS_CONTRIBUTION,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.85 if category else 0.7,
+            needs_review=category is None,
+            reason="savings institution/goal keyword",
+        )
+
+    # 3f2. Inflow landing directly on a savings/investment account, with no
+    #      keyword evidence (tiers 3e/3f above already tried and found
+    #      nothing). Being ON the destination account is itself contribution
+    #      evidence, independent of description wording — see
+    #      docs/coral-redesign/BLOCKED.md: PR 03 originally required a
+    #      savings/investment keyword in the text before assigning
+    #      `savings_contribution`/`investment_contribution`, which meant
+    #      realistic destination-side statement lines ("CONTRIBUTION",
+    #      "FUNDS RECEIVED", "ACH DEPOSIT", "TRANSFER IN",
+    #      "DEPOSIT FROM CHASE CHECKING", "ONLINE TRANSFER FROM CHK") landed as
+    #      `other`/`transfer`/`unclassified` even while sitting on an
+    #      unambiguous savings/investment account. Only applies to genuine
+    #      inflows (`amount > 0`) — a matching outflow on these account types
+    #      is a withdrawal, never a contribution, and is left to fall through
+    #      to tier 3g/tier 7 as before. `explicit_refund` and every tier above
+    #      (user override/merchant rule are handled before tier 3; rollover/
+    #      investment-activity/interest/card-payment/keyword-based savings and
+    #      investment rules are tiers 3a-3f, all checked earlier) always take
+    #      precedence over this one.
+    account_type_lower = (txn.account_type or "").strip().lower()
+    if not explicit_refund and amount > 0:
+        if account_type_lower in _SAVINGS_ACCOUNT_TYPES:
+            return ClassificationResult(
+                master_bucket=MasterBucket.SAVINGS,
+                category=_first_subcategory_match(text, _SAVINGS_SUBCATEGORY_KEYWORDS),
+                cash_flow_type=CashFlowType.SAVINGS_CONTRIBUTION,
+                source=ClassificationSource.DETERMINISTIC_RULE,
+                confidence=0.75,
+                needs_review=False,
+                reason="inflow landing on a savings account — contribution by account type",
+            )
+        if account_type_lower in _INVESTMENT_ACCOUNT_TYPES:
+            return ClassificationResult(
+                master_bucket=MasterBucket.INVESTMENTS,
+                category=_first_subcategory_match(text, _INVESTMENT_SUBCATEGORY_KEYWORDS),
+                cash_flow_type=CashFlowType.INVESTMENT_CONTRIBUTION,
+                source=ClassificationSource.DETERMINISTIC_RULE,
+                confidence=0.75,
+                needs_review=False,
+                reason="inflow landing on an investment account — contribution by account type",
+            )
+
+    # 3g. Generic internal transfer (invariant #1: not spending).
+    is_generic_transfer = txn_type == "transfer" or _match_any(text, _GENERIC_TRANSFER_HINTS)
+    if not explicit_refund and is_generic_transfer:
+        return ClassificationResult(
+            master_bucket=MasterBucket.UNCLASSIFIED,
+            category=None,
+            cash_flow_type=CashFlowType.TRANSFER,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.85,
+            needs_review=False,
+            reason="internal transfer — not spending",
+        )
+
+    # ── Spending evidence (tiers 4/5), resolved once and reused ────────────
+    # Computed here (before the generic-payment rule) so the deterministic
+    # "this looks like a bill payment" rule and the tier-4/5 resolution can
+    # never diverge. Ambiguous merchants are deliberately NOT evidence.
+    ambiguous = is_ambiguous_merchant(text)
+    spending_label = None if ambiguous else _resolve_spending_label(txn, text)
+
+    # 3g2. Generic payment/autopay wording with no spending evidence — treat as
+    #      a neutral card/bill payment (invariant #2). With evidence (e.g.
+    #      "RENT PAYMENT", "VERIZON AUTOPAY") the real Needs/Wants expense wins,
+    #      because checking-side parsers stamp transaction_type="payment" on any
+    #      description containing the word "payment".
+    is_generic_payment = txn_type == "payment" or _match_any(text, _GENERIC_PAYMENT_HINTS)
+    if not explicit_refund and is_generic_payment and spending_label is None:
+        return ClassificationResult(
+            master_bucket=MasterBucket.UNCLASSIFIED,
+            category=None,
+            cash_flow_type=CashFlowType.TRANSFER,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.8,
+            needs_review=False,
+            reason="payment/autopay with no spending evidence — neutral, not new spending",
+        )
+
+    # 3h. Income (payroll/direct deposit).
+    if not explicit_refund and txn_type == "deposit" and _match_any(text, _INCOME_HINTS):
+        return ClassificationResult(
+            master_bucket=MasterBucket.UNCLASSIFIED,
+            category=None,
+            cash_flow_type=CashFlowType.INCOME,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.85,
+            needs_review=False,
+            reason="payroll/direct-deposit keyword",
+        )
+
+    # 3i. Bank/account fees are not part of the four master buckets.
+    if not explicit_refund and txn_type == "fee":
+        return ClassificationResult(
+            master_bucket=MasterBucket.UNCLASSIFIED,
+            category=None,
+            cash_flow_type=CashFlowType.OTHER,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.7,
+            needs_review=False,
+            reason="account/bank fee",
+        )
+
+    # ── Spending-shaped transaction: resolve (bucket, category) ────────────
+    # Ambiguous merchants (tier gate before 4/5) — never force-classify.
+    if ambiguous:
+        return ClassificationResult(
+            master_bucket=MasterBucket.UNCLASSIFIED,
+            category=None,
+            cash_flow_type=_spend_flow(explicit_refund, amount),
+            source=ClassificationSource.HEURISTIC,
+            confidence=0.35,
+            needs_review=True,
+            reason="known-ambiguous merchant — cannot determine Needs vs Wants from statement data",
+        )
+
+    # Tier 4 (trusted imported category) then tier 5 (keyword heuristic),
+    # resolved above by _resolve_spending_label().
+    if spending_label is not None:
+        return ClassificationResult(
+            master_bucket=spending_label.bucket,
+            category=spending_label.category,
+            cash_flow_type=_spend_flow(explicit_refund, amount),
+            source=spending_label.source,
+            confidence=spending_label.confidence,
+            needs_review=False,
+            reason=spending_label.reason,
+        )
+
+    # Tier 6: LLM fallback (caller-supplied — this module never calls an LLM).
+    if llm_result is not None:
+        result = llm_result.model_copy()
+        result.source = ClassificationSource.LLM
+        # LLM never gets to claim more confidence than it's given; ambiguous
+        # low-confidence LLM guesses still surface for review.
+        if result.confidence < 0.6:
+            result.needs_review = True
+        return result
+
+    # Tier 7: unclassified — honest "we don't know" rather than a fabricated guess.
+    return ClassificationResult(
+        master_bucket=MasterBucket.UNCLASSIFIED,
+        category=None,
+        cash_flow_type=_unresolved_flow(explicit_refund, amount),
+        source=ClassificationSource.UNKNOWN,
+        confidence=0.0,
+        needs_review=True,
+        reason="no deterministic, trusted, heuristic, or LLM classification available",
+    )

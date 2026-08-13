@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import structlog
@@ -30,11 +30,13 @@ from app.db.models import (
     FinancialPlanVersionModel,
     HoldingModel,
     InstitutionModel,
+    MerchantClassificationRuleModel,
     MorganStanleyDetailModel,
     PlanAllocationModel,
     PlanSuballocationModel,
     StatementModel,
     TextChunkModel,
+    TransactionClassificationOverrideModel,
     TransactionModel,
 )
 from app.domain.errors import EntityNotFoundError
@@ -650,6 +652,184 @@ async def get_suballocations_for_allocation(
         .order_by(PlanSuballocationModel.sort_order.asc())
     )
     return list(result.scalars().all())
+
+
+async def get_transaction(session: AsyncSession, transaction_id: str) -> TransactionModel:
+    result = await session.execute(
+        select(TransactionModel).where(TransactionModel.id == transaction_id)
+    )
+    txn = result.scalar_one_or_none()
+    if txn is None:
+        raise EntityNotFoundError("Transaction", transaction_id)
+    return txn
+
+
+async def list_transactions(
+    session: AsyncSession,
+    *,
+    account_id: str | None = None,
+    unclassified_only: bool = False,
+    needs_review_only: bool = False,
+    limit: int | None = None,
+) -> list[TransactionModel]:
+    q = select(TransactionModel)
+    if account_id:
+        q = q.where(TransactionModel.account_id == account_id)
+    if unclassified_only:
+        q = q.where(TransactionModel.classification_source.is_(None))
+    if needs_review_only:
+        q = q.where(TransactionModel.needs_review == True)  # noqa: E712
+    q = q.order_by(TransactionModel.transaction_date.desc())
+    if limit:
+        q = q.limit(limit)
+    result = await session.execute(q)
+    return list(result.scalars().all())
+
+
+async def list_transactions_for_period(
+    session: AsyncSession,
+    *,
+    date_from: date,
+    date_to: date,
+    account_id: str | None = None,
+) -> list[TransactionModel]:
+    """All transactions with transaction_date in [date_from, date_to]
+    (inclusive both ends), used by app.services.plan_vs_actual. Callers are
+    responsible for auto-classifying (classify_batch) before relying on the
+    derived classification columns — this is a plain, unfiltered date-range
+    read."""
+    q = select(TransactionModel).where(
+        TransactionModel.transaction_date >= date_from,
+        TransactionModel.transaction_date <= date_to,
+    )
+    if account_id:
+        q = q.where(TransactionModel.account_id == account_id)
+    q = q.order_by(TransactionModel.transaction_date.asc())
+    result = await session.execute(q)
+    return list(result.scalars().all())
+
+
+async def get_accounts_by_ids(
+    session: AsyncSession, account_ids: list[str],
+) -> dict[str, AccountModel]:
+    """Bulk account lookup keyed by id — avoids N+1 lazy-loads of
+    TransactionModel.account under async SQLAlchemy."""
+    if not account_ids:
+        return {}
+    result = await session.execute(
+        select(AccountModel).where(AccountModel.id.in_(set(account_ids)))
+    )
+    return {a.id: a for a in result.scalars().all()}
+
+
+# ── Transaction classification overrides (tier 1) ───────────────────────────
+
+async def get_transaction_override(
+    session: AsyncSession, transaction_id: str
+) -> TransactionClassificationOverrideModel | None:
+    result = await session.execute(
+        select(TransactionClassificationOverrideModel)
+        .where(TransactionClassificationOverrideModel.transaction_id == transaction_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_transaction_override(
+    session: AsyncSession,
+    transaction_id: str,
+    *,
+    master_bucket: str,
+    category: str | None,
+    cash_flow_type: str,
+) -> TransactionClassificationOverrideModel:
+    existing = await get_transaction_override(session, transaction_id)
+    if existing is not None:
+        existing.master_bucket = master_bucket
+        existing.category = category
+        existing.cash_flow_type = cash_flow_type
+        existing.updated_at = datetime.utcnow()
+        session.add(existing)
+        await session.flush()
+        return existing
+    override = TransactionClassificationOverrideModel(
+        transaction_id=transaction_id,
+        master_bucket=master_bucket,
+        category=category,
+        cash_flow_type=cash_flow_type,
+    )
+    session.add(override)
+    await session.flush()
+    return override
+
+
+# ── Merchant classification rules (tier 2) ──────────────────────────────────
+
+async def create_merchant_rule(
+    session: AsyncSession,
+    *,
+    scope: str,
+    master_bucket: str,
+    cash_flow_type: str,
+    category: str | None = None,
+    merchant_key: str | None = None,
+    source_category: str | None = None,
+    account_id: str | None = None,
+) -> MerchantClassificationRuleModel:
+    rule = MerchantClassificationRuleModel(
+        scope=scope,
+        merchant_key=merchant_key,
+        source_category=source_category,
+        account_id=account_id,
+        master_bucket=master_bucket,
+        category=category,
+        cash_flow_type=cash_flow_type,
+    )
+    session.add(rule)
+    await session.flush()
+    return rule
+
+
+async def list_merchant_rules(session: AsyncSession) -> list[MerchantClassificationRuleModel]:
+    result = await session.execute(
+        select(MerchantClassificationRuleModel)
+        .order_by(MerchantClassificationRuleModel.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def find_merchant_rule(
+    session: AsyncSession,
+    *,
+    text: str,
+    raw_category: str | None,
+    account_id: str | None,
+) -> MerchantClassificationRuleModel | None:
+    """Find the best-matching user merchant rule for a transaction.
+
+    Preference order when multiple rules could match: merchant_account (most
+    specific) > merchant > category. `text` is the lowercased merchant/
+    description text already produced by TransactionClassificationInput.text().
+    """
+    rules = await list_merchant_rules(session)
+
+    merchant_account_match = None
+    merchant_match = None
+    category_match = None
+
+    for rule in rules:
+        # merchant_key is normalized to lowercase on write, but lowercase again
+        # here so a rule created directly via the repository still matches.
+        if rule.scope == "merchant_account" and rule.merchant_key and rule.account_id:
+            if rule.account_id == account_id and rule.merchant_key.lower() in text:
+                merchant_account_match = merchant_account_match or rule
+        elif rule.scope == "merchant" and rule.merchant_key:
+            if rule.merchant_key.lower() in text:
+                merchant_match = merchant_match or rule
+        elif rule.scope == "category" and rule.source_category:
+            if raw_category and rule.source_category.lower() == raw_category.lower():
+                category_match = category_match or rule
+
+    return merchant_account_match or merchant_match or category_match
 
 
 async def delete_allocations_for_version(session: AsyncSession, version_id: str) -> None:
