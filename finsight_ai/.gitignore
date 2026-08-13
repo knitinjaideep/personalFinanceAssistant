@@ -93,6 +93,13 @@ frontend-next/.turbo/
 
 ############################
 
+# Claude Code local settings (personal, not team-shared)
+
+############################
+.claude/settings.local.json
+
+############################
+
 # Local data (VERY IMPORTANT)
 
 # Financial data must never be committed
