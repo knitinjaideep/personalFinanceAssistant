@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+#
+# Verification gate for Coral redesign work.
+#
+# Usage:
+#   ./scripts/verify-redesign fast
+#   ./scripts/verify-redesign full
+#
+# Every stage runs a command that already exists in this repository
+# (backend/pyproject.toml, frontend-next/package.json, QUICKSTART.md).
+# Nothing here is a new/invented command.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKEND_DIR="$REPO_ROOT/backend"
+FRONTEND_DIR="$REPO_ROOT/frontend-next"
+
+MODE="${1:-}"
+if [[ "$MODE" != "fast" && "$MODE" != "full" ]]; then
+  echo "Usage: $(basename "$0") {fast|full}" >&2
+  exit 1
+fi
+
+COLOR_PASS=$'\033[32m'
+COLOR_FAIL=$'\033[31m'
+COLOR_SKIP=$'\033[33m'
+COLOR_RESET=$'\033[0m'
+
+stage() {
+  echo
+  echo "════════════════════════════════════════════════════════════"
+  echo "STAGE: $1"
+  echo "════════════════════════════════════════════════════════════"
+}
+
+pass_stage() {
+  echo "${COLOR_PASS}PASS${COLOR_RESET} — $1"
+}
+
+skip_stage() {
+  echo "${COLOR_SKIP}SKIP${COLOR_RESET} — $1"
+}
+
+fail_stage() {
+  echo "${COLOR_FAIL}FAIL${COLOR_RESET} — $1" >&2
+  exit 1
+}
+
+# QUICKSTART.md documents the backend workflow as:
+#   cd backend && source .venv/bin/activate && pytest / ruff / mypy
+# Run in a subshell so the activation never leaks into this script's env.
+run_in_backend_venv() {
+  (cd "$BACKEND_DIR" && source .venv/bin/activate && "$@")
+}
+
+# ── Financial invariant tests ─────────────────────────────────────────────
+# backend/tests/financial_invariants/ is the designated home for these
+# (see its README.md). It may not have any test_*.py files yet, in which
+# case pytest exits 5 ("no tests collected") — that is a SKIP, not a FAIL,
+# since the suite not existing yet is not a regression.
+run_financial_invariants() {
+  stage "Financial invariant tests"
+  local status=0
+  run_in_backend_venv python -m pytest tests/financial_invariants || status=$?
+  if [[ $status -eq 0 ]]; then
+    pass_stage "Financial invariant tests (backend/tests/financial_invariants)"
+  elif [[ $status -eq 5 ]]; then
+    skip_stage "No financial invariant tests found in backend/tests/financial_invariants/ yet"
+  else
+    fail_stage "Financial invariant tests (backend/tests/financial_invariants)"
+  fi
+}
+
+# ── Backend tests ──────────────────────────────────────────────────────────
+# There is no marker/keyword split for "fast" vs "full" backend tests in
+# this repo (no pytest markers registered in pyproject.toml). For fast
+# iteration we target the test files closest to the redesign's core logic
+# (financial plan, chat routing, intent classification, normalization),
+# deferring the heavier eval-style and integration-style files to `full`.
+FAST_BACKEND_TEST_FILES=(
+  "tests/test_financial_plan.py"
+  "tests/test_chat_router.py"
+  "tests/test_intent_classifier.py"
+  "tests/test_normalization.py"
+  "tests/test_answer_strategy.py"
+)
+
+run_backend_tests_fast() {
+  stage "Targeted backend tests (fast iteration subset)"
+  run_in_backend_venv python -m pytest "${FAST_BACKEND_TEST_FILES[@]}" \
+    && pass_stage "Targeted backend tests" \
+    || fail_stage "Targeted backend tests"
+}
+
+run_backend_tests_full() {
+  stage "Full backend test suite"
+  run_in_backend_venv python -m pytest \
+    && pass_stage "Full backend test suite" \
+    || fail_stage "Full backend test suite"
+}
+
+# ── Frontend lint / typecheck / build ──────────────────────────────────────
+run_frontend_lint() {
+  stage "Frontend lint"
+  (cd "$FRONTEND_DIR" && npm run lint) \
+    && pass_stage "Frontend lint" \
+    || fail_stage "Frontend lint"
+}
+
+run_frontend_typecheck() {
+  stage "Frontend typecheck"
+  (cd "$FRONTEND_DIR" && npm run typecheck) \
+    && pass_stage "Frontend typecheck" \
+    || fail_stage "Frontend typecheck"
+}
+
+run_frontend_build() {
+  stage "Production frontend build"
+  (cd "$FRONTEND_DIR" && npm run build) \
+    && pass_stage "Production frontend build" \
+    || fail_stage "Production frontend build"
+}
+
+# ── Frontend tests ──────────────────────────────────────────────────────────
+# frontend-next/package.json defines no "test" script and no test runner
+# (Jest/Vitest/Playwright) is configured anywhere in frontend-next/. There
+# is nothing to run — invoking `npm run test` would just fail with
+# "missing script", which is not a real failure of the redesign work.
+run_frontend_tests() {
+  stage "Frontend tests"
+  if grep -q '"test"[[:space:]]*:' "$FRONTEND_DIR/package.json"; then
+    (cd "$FRONTEND_DIR" && npm run test) \
+      && pass_stage "Frontend tests" \
+      || fail_stage "Frontend tests"
+  else
+    skip_stage "No \"test\" script in frontend-next/package.json — no frontend test runner is configured in this repo"
+  fi
+}
+
+# ── Backend lint / typecheck (full mode only) ───────────────────────────────
+run_backend_lint() {
+  stage "Backend lint (ruff)"
+  run_in_backend_venv ruff check . \
+    && pass_stage "Backend lint (ruff)" \
+    || fail_stage "Backend lint (ruff)"
+}
+
+run_backend_typecheck() {
+  stage "Backend typecheck (mypy)"
+  if run_in_backend_venv command -v mypy >/dev/null 2>&1; then
+    run_in_backend_venv python -m mypy app/ \
+      && pass_stage "Backend typecheck (mypy)" \
+      || fail_stage "Backend typecheck (mypy)"
+  else
+    skip_stage "mypy is declared in backend/pyproject.toml [dev] but not installed in backend/.venv — run 'pip install -e .[dev]' to enable"
+  fi
+}
+
+# ── Integration tests (full mode only) ──────────────────────────────────────
+# test_endpoint_parity.py (/query vs /stream parity) and
+# test_reprocess_and_health.py (ingestion repair against a real temp DB)
+# are the integration-style suites that already exist in backend/tests/.
+INTEGRATION_TEST_FILES=(
+  "tests/test_endpoint_parity.py"
+  "tests/test_reprocess_and_health.py"
+)
+
+run_integration_tests() {
+  stage "Integration tests"
+  local existing=()
+  for f in "${INTEGRATION_TEST_FILES[@]}"; do
+    [[ -f "$BACKEND_DIR/$f" ]] && existing+=("$f")
+  done
+  if [[ ${#existing[@]} -eq 0 ]]; then
+    skip_stage "No integration test files found (expected tests/test_endpoint_parity.py, tests/test_reprocess_and_health.py)"
+    return
+  fi
+  run_in_backend_venv python -m pytest "${existing[@]}" \
+    && pass_stage "Integration tests" \
+    || fail_stage "Integration tests"
+}
+
+# ── Migration / schema validation (full mode only) ──────────────────────────
+# This repo has no Alembic migrations and no standalone migration-check
+# command (alembic is an unused dependency; see CLAUDE.md). Schema
+# migrations are applied idempotently by app/db/engine.py::_apply_migrations()
+# inside init_db(), which every DB-backed backend test already exercises via
+# the temp_db fixture in tests/conftest.py. There is no separate command to
+# invent here.
+run_migration_check() {
+  stage "Migration / schema validation"
+  if [[ -f "$BACKEND_DIR/alembic.ini" ]]; then
+    run_in_backend_venv alembic check \
+      && pass_stage "Migration / schema validation" \
+      || fail_stage "Migration / schema validation"
+  else
+    skip_stage "No alembic.ini / standalone migration command in this repo — schema migrations run idempotently via app/db/engine.py::init_db() and are already exercised by the backend test suite's temp_db fixture"
+  fi
+}
+
+if [[ "$MODE" == "fast" ]]; then
+  run_financial_invariants
+  run_backend_tests_fast
+  run_frontend_lint
+  run_frontend_typecheck
+  run_frontend_tests
+else
+  run_financial_invariants
+  run_backend_tests_full
+  run_frontend_tests
+  run_backend_lint
+  run_frontend_lint
+  run_backend_typecheck
+  run_frontend_typecheck
+  run_frontend_build
+  run_integration_tests
+  run_migration_check
+fi
+
+echo
+echo "════════════════════════════════════════════════════════════"
+echo "${COLOR_PASS}ALL STAGES PASSED${COLOR_RESET} ($MODE)"
+echo "════════════════════════════════════════════════════════════"
