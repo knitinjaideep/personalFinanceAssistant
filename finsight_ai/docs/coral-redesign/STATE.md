@@ -26,9 +26,9 @@ Commit: b894266
 
 ### M3 — Overview
 
-- [ ] PR06 Overview Redesign
+- [x] PR06 Overview Redesign
 
-Commit:
+Commit: b2e019a
 
 ### M4 — Banking
 
