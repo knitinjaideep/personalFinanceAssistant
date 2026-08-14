@@ -103,6 +103,40 @@ class Period(BaseModel):
         """
         return cls(start=start, end=end, label=label or f"{start.isoformat()}..{end.isoformat()}")
 
+    def split_by_calendar_month(self) -> list[Period]:
+        """Split this period into one sub-`Period` per overlapping calendar
+        month, each clipped to this period's own start/end (so the first and
+        last segments may be partial months). A period that lies entirely
+        within one calendar month returns a single-element list.
+
+        Used by the Overview "Income vs Spent vs Saved/Invested" chart
+        (app.services.overview) to render one grouped-bar cluster per
+        calendar month for multi-month period selections, while a
+        single-month selection (Current Month, or any range that happens to
+        fall within one calendar month) naturally yields exactly one group —
+        no separate branching needed by the caller.
+
+        Segments are contiguous and non-overlapping and exactly cover
+        `[self.start, self.end]` — see the invariant test in
+        backend/tests/financial_invariants for coverage/no-gap verification.
+        """
+        segments: list[Period] = []
+        cursor_year, cursor_month = self.start.year, self.start.month
+        while date(cursor_year, cursor_month, 1) <= self.end:
+            month_start = date(cursor_year, cursor_month, 1)
+            month_last_day = calendar.monthrange(cursor_year, cursor_month)[1]
+            month_end = date(cursor_year, cursor_month, month_last_day)
+            seg_start = max(self.start, month_start)
+            seg_end = min(self.end, month_end)
+            segments.append(
+                Period(start=seg_start, end=seg_end, label=f"{cursor_year:04d}-{cursor_month:02d}")
+            )
+            if cursor_month == 12:
+                cursor_year, cursor_month = cursor_year + 1, 1
+            else:
+                cursor_month += 1
+        return segments
+
 
 # ── Status ───────────────────────────────────────────────────────────────────
 

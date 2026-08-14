@@ -1126,16 +1126,6 @@
   }
 }
 
-/* ── HomeHeroMascot soft float ───────────────────────────────────────────── */
-@keyframes coral-soft-float {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-7px); }
-}
-.coral-soft-float {
-  animation: coral-soft-float 7s ease-in-out infinite;
-  will-change: transform;
-}
-
 /* ── CoralDropletImage — bubble animations (ported from frontend/src/index.css) ── */
 
 .coral-droplet-float {

@@ -150,6 +150,7 @@ def create_app() -> FastAPI:
     from app.api.catalog import router as catalog_router
     from app.api.financial_plan import router as financial_plan_router
     from app.api.plan_vs_actual import router as plan_vs_actual_router
+    from app.api.overview import router as overview_router
 
     app.include_router(documents_router)
     app.include_router(chat_router)
@@ -160,6 +161,7 @@ def create_app() -> FastAPI:
     app.include_router(catalog_router)
     app.include_router(financial_plan_router)
     app.include_router(plan_vs_actual_router)
+    app.include_router(overview_router)
 
     return app
 

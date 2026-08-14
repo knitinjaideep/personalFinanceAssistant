@@ -1,394 +1,262 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import {
-  MessageSquare, Upload, FileText, Landmark, TrendingUp,
-  ArrowRight, Shield, RefreshCw, ChevronRight,
-} from "lucide-react";
-import { motion } from "framer-motion";
-import MetricCard from "@/components/coral/MetricCard";
-import GlassCard from "@/components/coral/GlassCard";
-import SectionHeader from "@/components/coral/SectionHeader";
+/**
+ * Overview page (PR 06 — docs/coral-redesign/pr-06-overview.md). Answers
+ * "How am I doing financially?" in ~10 seconds:
+ *
+ *   1. Financial status header (CoralAdvisorCard, restrained mascot)
+ *   2. Shared FinancialPeriodSelector (PR 05, reused as-is)
+ *   3. Income vs Spent vs Saved/Invested grouped bar chart
+ *   4. Plan vs Actual (Needs/Wants/Savings/Investments)
+ *   5. Coral Insights (<=3, ranked, deterministic)
+ *   6. Next Month Plan (small, deterministic preview)
+ *
+ * Document processing/upload status is intentionally demoted to a single
+ * low-key strip at the bottom (DocumentsStrip) rather than the dominant
+ * content it used to be — see pr-06-overview.md's "Demote/remove from Home
+ * as dominant content" list. Upload functionality itself is preserved.
+ *
+ * All financial values are already-computed backend output
+ * (GET /api/v1/plan-vs-actual, GET /api/v1/overview/insights,
+ * GET /api/v1/overview/monthly-flow) — no financial math happens in this
+ * component tree (.claude/rules/frontend.md).
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import { Sparkles, Upload } from "lucide-react";
+import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
+import EmptyState from "@/components/coral-ds/EmptyState";
+import ErrorState from "@/components/coral-ds/ErrorState";
 import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
-import { HomeHeroMascot } from "@/components/home/HomeHeroMascot";
+import PageHeader from "@/components/coral-ds/PageHeader";
+import SectionHeader from "@/components/coral-ds/SectionHeader";
+import SkeletonState from "@/components/coral-ds/SkeletonState";
+import Surface from "@/components/coral-ds/Surface";
+import CoralInsightsSection from "@/components/overview/CoralInsightsSection";
+import DocumentsStrip from "@/components/overview/DocumentsStrip";
+import IncomeSpentSavedChart from "@/components/overview/IncomeSpentSavedChart";
+import NextMonthPlanSection from "@/components/overview/NextMonthPlanSection";
+import PlanVsActualSection from "@/components/overview/PlanVsActualSection";
 import { documentsApi } from "@/features/documents/api";
+import {
+  overviewApi,
+  type MonthlyFlowSummary,
+  type OverviewInsightsResult,
+  type PlanVsActualResult,
+} from "@/features/overview/api";
 import { useAppStore } from "@/store/appStore";
 import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
-import type { DocumentStats, DocumentSummary } from "@/types/index";
+import type { DocumentStats } from "@/types/index";
 
-const NEXT_TASKS = [
-  {
-    title: "Ask about last 6 months",
-    description: "Get a summary of your spending patterns and biggest changes.",
-    href: "/chat",
-    icon: <MessageSquare size={18} />,
-    accent: "rgba(255,122,90,0.25)",
-  },
-  {
-    title: "Review unprocessed documents",
-    description: "Check documents that failed parsing or need attention.",
-    href: "/documents",
-    icon: <FileText size={18} />,
-    accent: "rgba(34,211,238,0.20)",
-  },
-  {
-    title: "Check recurring transactions",
-    description: "See your subscriptions and recurring charges across cards.",
-    href: "/banking",
-    icon: <Landmark size={18} />,
-    accent: "rgba(95,168,211,0.22)",
-  },
-  {
-    title: "Review investment changes",
-    description: "Track portfolio movement from your latest statements.",
-    href: "/investments",
-    icon: <TrendingUp size={18} />,
-    accent: "rgba(255,209,102,0.20)",
-  },
-  {
-    title: "Upload missing statements",
-    description: "Add statements from any institution to keep your data current.",
-    href: null,
-    icon: <Upload size={18} />,
-    accent: "rgba(76,175,147,0.20)",
-  },
-];
-
-const CONTAINER_ANIM = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.08 } },
-};
-const ITEM_ANIM = {
-  hidden: { opacity: 0, y: 14 },
-  show:   { opacity: 1, y: 0, transition: { duration: 0.38, ease: "easeOut" as const } },
-};
-
-function RecentActivityRow({ doc }: { doc: DocumentSummary }) {
-  const statusColor =
-    doc.status === "parsed"      ? "#4CAF93"
-    : doc.status === "processing" ? "rgba(34,211,238,0.85)"
-    : doc.status === "failed"     ? "#E45757"
-    : "var(--text-muted)";
-
-  const statusLabel =
-    doc.status === "parsed"      ? "Parsed"
-    : doc.status === "processing" ? "Processing…"
-    : doc.status === "failed"     ? "Failed"
-    : "Uploaded";
-
-  return (
-    <div
-      className="flex items-center gap-4 px-5 py-4 rounded-2xl transition-colors"
-      style={{ background: "var(--panel-bg)", border: "1px solid var(--border-subtle)" }}
-    >
-      <div
-        className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0"
-        style={{ background: "var(--glass-light-bg)", border: "1px solid var(--border-subtle)" }}
-      >
-        <FileText size={15} style={{ color: "var(--text-muted)" }} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="small-text font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-          {doc.filename}
-        </p>
-        <p className="micro-text mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>
-          {doc.institution} {doc.upload_time ? `· ${new Date(doc.upload_time).toLocaleDateString()}` : ""}
-        </p>
-      </div>
-      <span
-        className="status-badge shrink-0"
-        style={{ color: statusColor, background: `${statusColor}18`, border: `1px solid ${statusColor}40` }}
-      >
-        {statusLabel}
-      </span>
-    </div>
-  );
+interface LoadState<T> {
+  data: T | null;
+  loading: boolean;
+  error: boolean;
 }
 
+const INITIAL_LOAD_STATE = { data: null, loading: true, error: false };
+
 export default function HomePageClient() {
-  const [stats, setStats]       = useState<DocumentStats | null>(null);
-  const [recent, setRecent]     = useState<DocumentSummary[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const openUploadModal         = useAppStore((s) => s.openUploadModal);
-  // Overview doesn't fetch period-scoped data yet (that's PR 06 — Overview
-  // Redesign, M3), but it shares the same Global Period Filter model/URL
-  // state as Banking/Investments so the selection is consistent and
-  // ready to drive PR 06's Income vs Spent vs Saved + Plan vs Actual data.
+  const openUploadModal = useAppStore((s) => s.openUploadModal);
   const { selection, resolved, setSelection, goToPreviousMonth, goToNextMonth } = useFinancialPeriod();
 
+  const [planVsActual, setPlanVsActual] = useState<LoadState<PlanVsActualResult>>(INITIAL_LOAD_STATE);
+  const [insights, setInsights] = useState<LoadState<OverviewInsightsResult>>(INITIAL_LOAD_STATE);
+  const [monthlyFlow, setMonthlyFlow] = useState<LoadState<MonthlyFlowSummary[]>>(INITIAL_LOAD_STATE);
+
+  const [docStats, setDocStats] = useState<DocumentStats | null>(null);
+  const [docsLoading, setDocsLoading] = useState(true);
+  const [docsError, setDocsError] = useState(false);
+
+  const { startDate, endDate } = resolved;
+
+  const load = useCallback(() => {
+    const periodParams = { startDate, endDate };
+
+    setPlanVsActual((s) => ({ ...s, loading: true, error: false }));
+    overviewApi
+      .planVsActual(periodParams)
+      .then((data) => setPlanVsActual({ data, loading: false, error: false }))
+      .catch(() => setPlanVsActual({ data: null, loading: false, error: true }));
+
+    setInsights((s) => ({ ...s, loading: true, error: false }));
+    overviewApi
+      .insights(periodParams)
+      .then((data) => setInsights({ data, loading: false, error: false }))
+      .catch(() => setInsights({ data: null, loading: false, error: true }));
+
+    setMonthlyFlow((s) => ({ ...s, loading: true, error: false }));
+    overviewApi
+      .monthlyFlow(periodParams)
+      .then((data) => setMonthlyFlow({ data, loading: false, error: false }))
+      .catch(() => setMonthlyFlow({ data: null, loading: false, error: true }));
+  }, [startDate, endDate]);
+
   useEffect(() => {
-    Promise.all([
-      documentsApi.stats().catch(() => null),
-      documentsApi.list(5).catch(() => [] as DocumentSummary[]),
-    ]).then(([s, docs]) => {
-      setStats(s);
-      const sorted = [...docs].sort(
-        (a, b) => new Date(b.upload_time ?? 0).getTime() - new Date(a.upload_time ?? 0).getTime()
-      );
-      setRecent(sorted.slice(0, 5));
-    }).finally(() => setLoading(false));
+    load();
+  }, [load]);
+
+  const loadDocStats = useCallback(() => {
+    setDocsLoading(true);
+    setDocsError(false);
+    documentsApi
+      .stats()
+      .then((data) => {
+        setDocStats(data);
+        setDocsError(false);
+      })
+      .catch(() => {
+        setDocStats(null);
+        setDocsError(true);
+      })
+      .finally(() => setDocsLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadDocStats();
+  }, [loadDocStats]);
+
+  const anyLoading = planVsActual.loading || insights.loading || monthlyFlow.loading;
+
+  // A total backend outage (every request failed) gets one clear full-page
+  // error rather than a dashboard shell full of individually-broken
+  // sections — .claude/rules/frontend.md requires a real error state, and
+  // stacking four small inline ones would bury the actual problem.
+  const isTotalOutage =
+    !anyLoading && !docsLoading && planVsActual.error && insights.error && monthlyFlow.error && docsError;
+
+  if (isTotalOutage) {
+    return (
+      <div className="space-y-8">
+        <PageHeader eyebrow="Overview" title="How am I doing?" />
+        <ErrorState
+          message="Coral couldn't reach the backend to load your financial overview. Make sure the Coral backend is running, then try again."
+          onRetry={() => {
+            load();
+            loadDocStats();
+          }}
+        />
+      </div>
+    );
+  }
+
+  // First-time state: zero documents ever uploaded, CONFIRMED by a
+  // successful fetch (distinct from "the documents request failed" above,
+  // and distinct from "zero activity in the selected period" — see this
+  // PR's final report for the product ambiguity noted around that second
+  // distinction). A brand-new install gets one focused welcome message
+  // instead of four separate empty sections all saying "no data". Never
+  // triggered by a failed request — `docsError` must be false and
+  // `docStats` must be a real, successfully-fetched zero.
+  const isFirstTime = !docsLoading && !docsError && docStats !== null && docStats.total === 0;
+
+  if (isFirstTime) {
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          eyebrow="Overview"
+          title="Welcome to Coral"
+          subtitle="Upload your first statement and Coral will show you exactly how this period is going against your plan — income vs. spending, plan vs. actual, and a few ranked insights."
+        />
+        <EmptyState
+          icon={<Sparkles size={28} />}
+          title="No statements yet"
+          description="Once you upload a bank or investment statement, Coral will show Income vs Spent vs Saved, Plan vs Actual, and personalized insights right here."
+          action={
+            <button
+              type="button"
+              onClick={openUploadModal}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-white font-semibold btn-coral transition-all"
+            >
+              <Upload size={16} /> Upload your first statement
+            </button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-10">
+      <PageHeader
+        eyebrow="Overview"
+        title="How am I doing?"
+        subtitle="A quick, honest read on this period's income, spending, and progress toward your plan."
+        action={
+          <FinancialPeriodSelector
+            selection={selection}
+            resolved={resolved}
+            onChange={setSelection}
+            onPrevMonth={goToPreviousMonth}
+            onNextMonth={goToNextMonth}
+            loading={anyLoading}
+          />
+        }
+      />
 
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="pt-2"
-      >
-        <section className="grid items-center gap-0 lg:gap-4 lg:grid-cols-[1fr_1fr] max-w-[1200px]">
-          {/* Left: text + CTA */}
-          <div className="min-w-0">
-            <p className="eyebrow-text mb-5" style={{ color: "var(--accent-strong)" }}>
-              Your finance command center
-            </p>
-            <h1 className="page-hero-title mb-4 hero-shimmer-heading">
-              Welcome back<br />to Coral
-            </h1>
-            <p className="body-text max-w-xl mb-8" style={{ color: "var(--text-secondary)" }}>
-              Your financial documents, spending, investments, and insights are organized in one calm workspace.
-              Everything stays on your device.
-            </p>
-
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/chat"
-                className="inline-flex items-center gap-2.5 px-7 py-3.5 rounded-2xl text-white font-semibold btn-coral transition-all"
-                style={{ fontSize: "var(--font-body)" }}
-              >
-                <MessageSquare size={18} />
-                Ask Coral
-              </Link>
-              <button
-                type="button"
-                onClick={openUploadModal}
-                className="inline-flex items-center gap-2.5 px-7 py-3.5 rounded-2xl font-semibold btn-glass transition-all"
-                style={{ fontSize: "var(--font-body)" }}
-              >
-                <Upload size={18} />
-                Upload documents
-              </button>
-            </div>
-          </div>
-
-          {/* Right: hero mascot — hover reveals speech bubble, no card background */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.2, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-            className="hidden md:flex justify-center lg:justify-start"
-          >
-            <HomeHeroMascot />
-          </motion.div>
-        </section>
-      </motion.div>
-
-      {/* ── Data at a Glance ─────────────────────────────────────────────── */}
-      <section>
-        <SectionHeader
-          eyebrow="Overview"
-          title="Your Data at a Glance"
-          description="A quick snapshot of what Coral has processed from your uploaded statements."
-          className="mb-8"
-          action={
-            <FinancialPeriodSelector
-              selection={selection}
-              resolved={resolved}
-              onChange={setSelection}
-              onPrevMonth={goToPreviousMonth}
-              onNextMonth={goToNextMonth}
-            />
-          }
+      {/* 1. Financial status header */}
+      {insights.loading ? (
+        <SkeletonState variant="card" height="112px" />
+      ) : insights.error ? (
+        <ErrorState compact message="Couldn't load your financial status for this period." onRetry={load} />
+      ) : insights.data ? (
+        <CoralAdvisorCard
+          headline={insights.data.status.headline}
+          body={insights.data.status.body}
+          tone={insights.data.status.tone}
         />
+      ) : null}
 
-        <motion.div
-          variants={CONTAINER_ANIM}
-          initial="hidden"
-          animate="show"
-          className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4"
-        >
-          {[
-            {
-              title: "Total Documents",
-              value: loading ? null : stats?.total ?? null,
-              icon: <FileText size={16} style={{ color: "rgba(34,211,238,0.75)" }} />,
-              accent: "rgba(34,211,238,0.14)",
-            },
-            {
-              title: "Processed",
-              value: loading ? null : stats?.parsed ?? null,
-              icon: <FileText size={16} style={{ color: "#4CAF93" }} />,
-              accent: "rgba(76,175,147,0.14)",
-              status: "positive" as const,
-            },
-            {
-              title: "Processing",
-              value: loading ? null : stats?.processing ?? null,
-              icon: <RefreshCw size={16} style={{ color: "rgba(255,209,102,0.85)" }} />,
-              accent: "rgba(255,209,102,0.14)",
-              status: "warning" as const,
-            },
-            {
-              title: "Failed",
-              value: loading ? null : stats?.failed ?? null,
-              icon: <FileText size={16} style={{ color: "#E45757" }} />,
-              accent: "rgba(228,87,87,0.14)",
-              status: "negative" as const,
-            },
-            {
-              title: "Banking Docs",
-              value: loading ? null : null,
-              icon: <Landmark size={16} style={{ color: "rgba(95,168,211,0.80)" }} />,
-              accent: "rgba(95,168,211,0.14)",
-              emptyText: "Upload to populate",
-            },
-            {
-              title: "Investment Docs",
-              value: loading ? null : null,
-              icon: <TrendingUp size={16} style={{ color: "rgba(255,209,102,0.85)" }} />,
-              accent: "rgba(255,209,102,0.14)",
-              emptyText: "Upload to populate",
-            },
-          ].map((m, i) => (
-            <motion.div key={m.title} variants={ITEM_ANIM}>
-              <MetricCard
-                title={m.title}
-                value={m.value !== undefined ? (m.value !== null ? String(m.value) : null) : undefined}
-                icon={m.icon}
-                loading={loading && m.value === null}
-                empty={!loading && m.value === null}
-                emptyText={m.emptyText}
-                status={m.status}
-                accentColor={m.accent}
-                size="sm"
-              />
-            </motion.div>
-          ))}
-        </motion.div>
+      {/* 3. Income vs Spent vs Saved/Invested */}
+      <section>
+        <SectionHeader eyebrow="This period" title="Income vs Spent vs Saved/Invested" size="sm" className="mb-5" />
+        <Surface padding="md">
+          <IncomeSpentSavedChart
+            rows={monthlyFlow.data}
+            loading={monthlyFlow.loading}
+            error={monthlyFlow.error}
+            onRetry={load}
+          />
+        </Surface>
       </section>
 
-      {/* ── Next Best Tasks + Recent Activity ───────────────────────────── */}
+      {/* 4. Plan vs Actual */}
+      <section>
+        <SectionHeader eyebrow="Drift" title="Plan vs Actual" size="sm" className="mb-5" />
+        <Surface padding="md">
+          <PlanVsActualSection
+            result={planVsActual.data}
+            loading={planVsActual.loading}
+            error={planVsActual.error}
+            onRetry={load}
+          />
+        </Surface>
+      </section>
+
+      {/* 5 + 6: Coral Insights and Next Month Plan */}
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-8">
-
-        {/* Next Best Tasks — 3 cols */}
         <section className="xl:col-span-3">
-          <SectionHeader
-            eyebrow="Recommended"
-            title="Next Best Tasks"
-            description="Smart suggestions based on your current data."
-            className="mb-6"
+          <SectionHeader eyebrow="Ranked by impact" title="Coral Insights" size="sm" className="mb-5" />
+          <CoralInsightsSection
+            insights={insights.data?.insights ?? null}
+            loading={insights.loading}
+            error={insights.error}
+            onRetry={load}
           />
-
-          <motion.div
-            variants={CONTAINER_ANIM}
-            initial="hidden"
-            animate="show"
-            className="space-y-3"
-          >
-            {NEXT_TASKS.map((task) => {
-              const inner = (
-                <>
-                  <div
-                    className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-colors"
-                    style={{
-                      background: task.accent,
-                      border: "1px solid var(--border-subtle)",
-                      color: "var(--text-primary)",
-                    }}
-                  >
-                    {task.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="small-text font-semibold" style={{ color: "var(--text-primary)" }}>{task.title}</p>
-                    <p className="micro-text mt-0.5" style={{ color: "var(--text-muted)" }}>{task.description}</p>
-                  </div>
-                  <ChevronRight
-                    size={16}
-                    className="shrink-0 transition-transform group-hover:translate-x-1"
-                    style={{ color: "var(--text-dim)" }}
-                  />
-                </>
-              );
-              const sharedClass = "flex items-center gap-4 px-5 py-4 rounded-2xl group transition-all duration-200 hover:-translate-y-0.5 w-full text-left";
-              const sharedStyle = { background: "var(--panel-bg)", border: "1px solid var(--border-subtle)" };
-
-              return (
-                <motion.div key={task.title} variants={ITEM_ANIM}>
-                  {task.href === null ? (
-                    <button type="button" onClick={openUploadModal} className={sharedClass} style={sharedStyle}>
-                      {inner}
-                    </button>
-                  ) : (
-                    <Link href={task.href} className={sharedClass} style={sharedStyle}>
-                      {inner}
-                    </Link>
-                  )}
-                </motion.div>
-              );
-            })}
-          </motion.div>
         </section>
-
-        {/* Recent Activity — 2 cols */}
         <section className="xl:col-span-2">
-          <SectionHeader
-            eyebrow="Activity"
-            title="Recent Uploads"
-            action={
-              <Link href="/documents" className="flex items-center gap-1 text-sm font-semibold transition-opacity hover:opacity-70" style={{ color: "var(--accent-strong)" }}>
-                View all <ArrowRight size={13} />
-              </Link>
-            }
-            className="mb-6"
+          <SectionHeader eyebrow="Preview" title="Next Month Plan" size="sm" className="mb-5" />
+          <NextMonthPlanSection
+            items={insights.data?.next_month_plan ?? null}
+            loading={insights.loading}
+            error={insights.error}
+            onRetry={load}
           />
-
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="skeleton h-16 rounded-2xl" />
-              ))}
-            </div>
-          ) : recent.length === 0 ? (
-            <GlassCard variant="subtle" className="text-center py-10">
-              <FileText size={28} className="mx-auto mb-3" style={{ color: "var(--empty-icon)" }} />
-              <p className="small-text font-medium" style={{ color: "var(--text-secondary)" }}>No documents yet</p>
-              <p className="micro-text mt-1" style={{ color: "var(--text-muted)" }}>Upload a statement to get started</p>
-              <button type="button" onClick={openUploadModal} className="inline-flex items-center gap-1.5 mt-4 text-sm font-semibold" style={{ color: "rgba(255,122,90,0.85)" }}>
-                Upload now <ArrowRight size={13} />
-              </button>
-            </GlassCard>
-          ) : (
-            <motion.div
-              variants={CONTAINER_ANIM}
-              initial="hidden"
-              animate="show"
-              className="space-y-3"
-            >
-              {recent.map((doc) => (
-                <motion.div key={doc.id} variants={ITEM_ANIM}>
-                  <RecentActivityRow doc={doc} />
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
         </section>
       </div>
 
-      {/* ── Privacy note ────────────────────────────────────────────────── */}
-      <GlassCard variant="subtle" className="flex items-center gap-4 !py-4 !px-6">
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(34,211,238,0.10)", border: "1px solid rgba(34,211,238,0.20)" }}>
-          <Shield size={15} style={{ color: "rgba(34,211,238,0.75)" }} />
-        </div>
-        <p className="small-text" style={{ color: "var(--text-secondary)" }}>
-          <strong style={{ color: "var(--text-primary)" }}>100% private.</strong>{" "}
-          All data stays on your device. Coral uses Ollama locally — no cloud APIs, no data sharing.
-        </p>
-      </GlassCard>
-
+      {/* Demoted document/upload strip — see DocumentsStrip docstring. */}
+      <DocumentsStrip stats={docStats} loading={docsLoading} error={docsError} onRetry={loadDocStats} />
     </div>
   );
 }
