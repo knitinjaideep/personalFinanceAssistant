@@ -32,7 +32,7 @@ Commit: b2e019a
 
 ### M4 — Banking
 
-- [ ] PR07 Banking Flow
+- [x] PR07 Banking Flow
 - [ ] PR08 Banking Drift
 - [ ] PR09 Classification Review
 - [ ] PR10 Banking Insights

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Landmark, TrendingDown, CreditCard, ArrowDownLeft, ArrowUpRight,
@@ -17,7 +17,14 @@ import SectionHeader from "@/components/coral/SectionHeader";
 import EmptyState from "@/components/coral/EmptyState";
 import LoadingState from "@/components/coral/LoadingState";
 import ErrorState from "@/components/coral/ErrorState";
+import BankingFlowTree from "@/components/banking/BankingFlowTree";
+import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
+import DsErrorState from "@/components/coral-ds/ErrorState";
+import DsSectionHeader from "@/components/coral-ds/SectionHeader";
 import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
+import PageHeader from "@/components/coral-ds/PageHeader";
+import SkeletonState from "@/components/coral-ds/SkeletonState";
+import { overviewApi, type OverviewInsightsResult, type PlanVsActualResult } from "@/features/overview/api";
 
 const INSIGHT_PROMPTS = [
   "What were my largest expenses in the last 6 months?",
@@ -178,6 +185,14 @@ function AccountRow({
   );
 }
 
+interface LoadState<T> {
+  data: T | null;
+  loading: boolean;
+  error: boolean;
+}
+
+const INITIAL_LOAD_STATE = { data: null, loading: true, error: false };
+
 export default function BankingPageClient() {
   const [data, setData]     = useState<BankingDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -188,6 +203,34 @@ export default function BankingPageClient() {
   const [error, setError]   = useState<string | null>(null);
   const openUploadModal     = useAppStore((s) => s.openUploadModal);
   const { selection, resolved, setSelection, goToPreviousMonth, goToNextMonth } = useFinancialPeriod();
+
+  // Plan vs Actual (drives the flow tree, PR 07) and the advisor summary
+  // headline — both reuse the exact same already-computed backend surfaces
+  // Overview uses (GET /api/v1/plan-vs-actual, GET /api/v1/overview/insights),
+  // scoped to Banking's own period selection. No parallel classification or
+  // aggregation is introduced here; see BankingFlowTree/lib/bankingFlowTree.ts.
+  const [planVsActual, setPlanVsActual] = useState<LoadState<PlanVsActualResult>>(INITIAL_LOAD_STATE);
+  const [insights, setInsights] = useState<LoadState<OverviewInsightsResult>>(INITIAL_LOAD_STATE);
+
+  const { startDate, endDate } = resolved;
+
+  const loadFlow = useCallback(() => {
+    const periodParams = { startDate, endDate };
+
+    setPlanVsActual((s) => ({ ...s, loading: true, error: false }));
+    overviewApi
+      .planVsActual(periodParams)
+      .then((d) => setPlanVsActual({ data: d, loading: false, error: false }))
+      .catch(() => setPlanVsActual({ data: null, loading: false, error: true }));
+
+    setInsights((s) => ({ ...s, loading: true, error: false }));
+    overviewApi
+      .insights(periodParams)
+      .then((d) => setInsights({ data: d, loading: false, error: false }))
+      .catch(() => setInsights({ data: null, loading: false, error: true }));
+  }, [startDate, endDate]);
+
+  useEffect(() => { loadFlow(); }, [loadFlow]);
 
   const load = (isPeriodChange: boolean) => {
     if (isPeriodChange) setRefreshing(true); else setLoading(true);
@@ -222,15 +265,16 @@ export default function BankingPageClient() {
 
   const hasAnyData = (data?.card_summary?.length ?? 0) > 0 || (data?.spend_by_month?.length ?? 0) > 0;
 
-  return (
-    <div className="space-y-8">
+  const anyFlowLoading = planVsActual.loading || insights.loading;
 
-      {/* ── Header ──────────────────────────────────────────────────── */}
-      <SectionHeader
-        eyebrow="Finance"
-        title="Banking"
-        description="Track cash flow, card spend, recurring charges, and account movement across your statements."
-        size="lg"
+  return (
+    <div className="space-y-10">
+
+      {/* ── Header (kept, per pr-07-banking-flow.md: title + period selector) ── */}
+      <PageHeader
+        eyebrow="Banking"
+        title="Where did my cash go?"
+        subtitle="Track cash flow, understand where your money went, and stay on plan."
         action={
           <FinancialPeriodSelector
             selection={selection}
@@ -238,18 +282,47 @@ export default function BankingPageClient() {
             onChange={setSelection}
             onPrevMonth={goToPreviousMonth}
             onNextMonth={goToNextMonth}
-            loading={refreshing}
+            loading={refreshing || anyFlowLoading}
           />
         }
       />
 
-      {/* ── Summary metrics ─────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.40, delay: 0.05 }}
-        className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4"
-      >
+      {/* ── Advisor summary (kept) ──────────────────────────────────── */}
+      {insights.loading ? (
+        <SkeletonState variant="card" height="96px" />
+      ) : insights.error ? (
+        <DsErrorState compact message="Couldn't load your banking summary for this period." onRetry={loadFlow} />
+      ) : insights.data ? (
+        <CoralAdvisorCard
+          headline={insights.data.status.headline}
+          body={insights.data.status.body}
+          tone={insights.data.status.tone}
+        />
+      ) : null}
+
+      {/* ── Banking Flow Tree — the hero (pr-07-banking-flow.md) ────── */}
+      <section>
+        <DsSectionHeader eyebrow="This period" title="Your Cash Flow" size="sm" className="mb-5" />
+        <BankingFlowTree
+          result={planVsActual.data}
+          loading={planVsActual.loading}
+          error={planVsActual.error}
+          onRetry={loadFlow}
+          period={{ startDate, endDate }}
+        />
+      </section>
+
+      {/* ── Summary metrics — demoted from dominant position; the flow tree
+       * above is the hero (pr-07-banking-flow.md: "Remove generic KPI row
+       * from dominant position"). Kept as supporting detail, not removed. ── */}
+      <div>
+        <SectionHeader eyebrow="At a glance" title="Card & Cash Summary" size="sm" className="mb-5" />
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.40, delay: 0.05 }}
+          className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4"
+        >
         {[
           {
             title: "Credit Card Spend",
@@ -305,7 +378,8 @@ export default function BankingPageClient() {
         ].map((m) => (
           <MetricCard key={m.title} {...m} size="sm" />
         ))}
-      </motion.div>
+        </motion.div>
+      </div>
 
       {/* ── Account groups ──────────────────────────────────────────── */}
       {hasAnyData ? (

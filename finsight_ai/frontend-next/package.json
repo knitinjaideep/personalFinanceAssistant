@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint \"app/**/*.{ts,tsx}\" \"components/**/*.{ts,tsx}\" \"features/**/*.{ts,tsx}\" \"hooks/**/*.{ts,tsx}\" \"lib/**/*.{ts,tsx}\" \"store/**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
@@ -35,5 +36,8 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.1",
     "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
   }
 }
