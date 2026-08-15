@@ -34,6 +34,7 @@ from app.db.models import (
     MorganStanleyDetailModel,
     PlanAllocationModel,
     PlanSuballocationModel,
+    SavingsGoalModel,
     StatementModel,
     TextChunkModel,
     TransactionClassificationOverrideModel,
@@ -870,6 +871,49 @@ async def find_merchant_rule(
                 category_match = category_match or rule
 
     return merchant_account_match or merchant_match or category_match
+
+
+async def get_earliest_transaction_date(session: AsyncSession) -> date | None:
+    """Global floor of Coral's ingested transaction history — the earliest
+    `transaction_date` across every account. Used as the honest proxy for
+    "the earliest point Coral has any observed data" when assessing a
+    savings goal's completeness (app.domain.savings_goals): a goal's
+    contribution transactions may live on ANY ingested account (most often
+    the checking-side transfer-out leg, not the savings account itself — see
+    docs/coral-redesign/BLOCKED.md decision 1), so a single global floor is
+    the correct, simple, non-fabricated bound rather than a per-account one
+    that would require reconciling the statement catalog to ingested
+    AccountModel rows account-by-account."""
+    result = await session.execute(select(func.min(TransactionModel.transaction_date)))
+    return result.scalar()
+
+
+# ── Savings Goals ────────────────────────────────────────────────────────────
+
+async def create_savings_goal(session: AsyncSession, **kwargs: Any) -> SavingsGoalModel:
+    goal = SavingsGoalModel(**kwargs)
+    session.add(goal)
+    await session.flush()
+    return goal
+
+
+async def get_savings_goal(session: AsyncSession, goal_id: str) -> SavingsGoalModel:
+    result = await session.execute(
+        select(SavingsGoalModel).where(SavingsGoalModel.id == goal_id)
+    )
+    goal = result.scalar_one_or_none()
+    if goal is None:
+        raise EntityNotFoundError("SavingsGoal", goal_id)
+    return goal
+
+
+async def list_savings_goals(session: AsyncSession) -> list[SavingsGoalModel]:
+    result = await session.execute(
+        select(SavingsGoalModel).order_by(
+            SavingsGoalModel.priority.asc(), SavingsGoalModel.created_at.asc(),
+        )
+    )
+    return list(result.scalars().all())
 
 
 async def delete_allocations_for_version(session: AsyncSession, version_id: str) -> None:

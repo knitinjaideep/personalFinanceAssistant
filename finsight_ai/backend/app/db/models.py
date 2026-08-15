@@ -481,3 +481,58 @@ class MerchantClassificationRuleModel(SQLModel, table=True):
     cash_flow_type: str
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
+
+
+# ── Savings Goals (PR 13) ────────────────────────────────────────────────────
+#
+# A savings goal's TRACKING state (target/current/status/priority/account
+# mapping), distinct from the plan's Savings suballocation TARGETS
+# (plan_suballocations, e.g. "Emergency Fund" = 5% of the whole plan). A goal
+# may reuse one of the plan's three seeded Savings suballocation names
+# (Emergency Fund / House / Goals / Child Savings — see
+# app.domain.transaction_classification.SAVINGS_CATEGORIES) or be a
+# user-defined custom goal.
+#
+# `current_amount` is intentionally NOT stored here — it is always a derived,
+# Coral-computed cumulative sum of the goal's mapped
+# `savings_contribution`-classified transactions since `effective_date`,
+# recomputed on read by app.services.savings_goals.get_goal_progress(). Coral
+# has no bank-verified running-balance data for any savings account today
+# (Marcus/529 are catalog-only stubs — see
+# app.config.statement_catalog.ACCOUNT_CATALOG), so persisting a stored
+# "balance" here would risk silently drifting from the transactions it's
+# supposed to represent. See docs/coral-redesign/pr-13-savings-goals.md and
+# accounting-invariants.md #10 (never fabricate a value to look complete).
+
+class SavingsGoalModel(SQLModel, table=True):
+    """One savings goal: a target (dollars and/or % of income), optionally
+    scoped to one or more explicitly-mapped accounts (never inferred from
+    account name alone — see `account_mappings_json`)."""
+    __tablename__ = "savings_goals"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    name: str
+    # GoalType value (app.domain.savings_goals.GoalType): emergency_fund /
+    # house_goals / child_savings / custom.
+    goal_type: str
+    # The classification_category (transactions.classification_category /
+    # ClassifiedTxn.category) whose savings_contribution rows accumulate
+    # toward this goal — e.g. "Emergency Fund". For the three built-in
+    # goal_types this always matches
+    # app.domain.savings_goals.GOAL_TYPE_TO_CATEGORY; a custom goal supplies
+    # its own category_name explicitly.
+    category_name: str
+    target_amount: Optional[str] = None                # Decimal as string
+    target_percentage_of_income: Optional[str] = None   # Decimal as string, e.g. "5"
+    # Only meaningful when goal_type == "emergency_fund" (e.g. "3" or "6").
+    target_months_of_expenses: Optional[str] = None     # Decimal as string
+    # JSON list of {"institution_slug": ..., "account_slug": ...} — explicit,
+    # user/plan-authored mapping to app.config.statement_catalog entries.
+    # One account may back multiple goals; one goal may span multiple
+    # accounts. Never inferred from account name at read time.
+    account_mappings_json: str = "[]"
+    # Lower number = higher priority (ties broken by created_at). Default 0.
+    priority: int = 0
+    effective_date: date
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)

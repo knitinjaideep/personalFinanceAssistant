@@ -152,6 +152,7 @@ def create_app() -> FastAPI:
     from app.api.investment_plan import router as investment_plan_router
     from app.api.overview import router as overview_router
     from app.api.plan_vs_actual import router as plan_vs_actual_router
+    from app.api.savings_goals import router as savings_goals_router
     from app.api.scan import router as scan_router
 
     app.include_router(documents_router)
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(investment_plan_router)
     app.include_router(overview_router)
     app.include_router(classification_router)
+    app.include_router(savings_goals_router)
 
     return app
 

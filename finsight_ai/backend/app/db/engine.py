@@ -276,6 +276,10 @@ async def init_db() -> None:
     from app.services.financial_plan import seed_default_plan_if_missing
     await seed_default_plan_if_missing()
 
+    # 5. Seed the three default Savings Goals if none exist yet (PR 13).
+    from app.services.savings_goals import seed_default_goals_if_missing
+    await seed_default_goals_if_missing()
+
     logger.info("db.initialized", path=str(db_path))
 
 

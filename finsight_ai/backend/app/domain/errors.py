@@ -107,3 +107,10 @@ class PlanVersionImmutableError(CoralError):
 
 class DuplicateEffectiveDateError(CoralError):
     """A plan version with this effective_from already exists for this plan."""
+
+
+# ── Savings Goals ────────────────────────────────────────────────────────────
+
+class SavingsGoalValidationError(CoralError):
+    """Savings goal input fails validation (missing target, invalid mapping,
+    target_months_of_expenses on a non-emergency-fund goal, etc.)."""
