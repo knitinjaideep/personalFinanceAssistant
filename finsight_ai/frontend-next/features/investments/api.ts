@@ -68,6 +68,61 @@ export interface DashboardPeriodParams {
   endDate?: string;   // "YYYY-MM-DD"
 }
 
+export type InvestmentDriftStatus = "on_track" | "watch" | "off_track" | "unknown";
+
+export interface InvestmentContributionCompleteness {
+  status: "complete" | "incomplete";
+  is_complete: boolean;
+  income_observed: boolean;
+  plan_available: boolean;
+  payroll_data_complete: boolean;
+  notes: string[];
+}
+
+export interface InvestmentContributionVehicle {
+  vehicle: string;
+  target_pct: string | null;
+  actual_pct: string | null;
+  target_amount: string | null;
+  actual_amount: string;
+  variance_amount: string | null;
+  variance_pct_points: string | null;
+  status: InvestmentDriftStatus;
+  data_completeness: InvestmentContributionCompleteness;
+  recommended_next_month_delta: string | null;
+  transaction_count: number;
+}
+
+export interface InvestmentContributionPlanResult {
+  period: {
+    start: string;
+    end: string;
+    label: string;
+  };
+  plannable_income: string;
+  vehicles: InvestmentContributionVehicle[];
+  total_target_pct: string | null;
+  total_actual_amount: string;
+  total_actual_pct: string | null;
+  completeness: {
+    plan_available: boolean;
+    plan_version_changed_mid_period: boolean;
+    income_observed: boolean;
+    unclassified_transaction_count: number;
+    unclassified_amount: string;
+    needs_review_count: number;
+    origin_only_transfer_legs_count: number;
+    origin_only_transfer_legs_amount: string;
+    payroll_deduction_signal_detected: boolean;
+    notes: string[];
+    is_complete?: boolean;
+  };
+}
+
+function periodQuery(period?: DashboardPeriodParams) {
+  return { start_date: period?.startDate, end_date: period?.endDate };
+}
+
 export const investmentsApi = {
   /**
    * `startDate`/`endDate` (PR 05 unified period contract, see
@@ -76,8 +131,8 @@ export const investmentsApi = {
    * period — see GET /dashboard/investments docstring.
    */
   investments: (period?: DashboardPeriodParams): Promise<InvestmentsDashboard> =>
-    api.get<InvestmentsDashboard>("/dashboard/investments", {
-      start_date: period?.startDate,
-      end_date: period?.endDate,
-    }),
+    api.get<InvestmentsDashboard>("/dashboard/investments", periodQuery(period)),
+
+  contributionPlan: (period?: DashboardPeriodParams): Promise<InvestmentContributionPlanResult> =>
+    api.get<InvestmentContributionPlanResult>("/investment-plan/contributions", periodQuery(period)),
 };
