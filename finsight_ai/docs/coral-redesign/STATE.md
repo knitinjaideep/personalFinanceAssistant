@@ -48,7 +48,7 @@ Commit: 57a7080
 
 ### M6 — Goals & Advisor
 
-- [ ] PR13 Savings Goals
+- [x] PR13 Savings Goals
 - [ ] PR14 Next Month Planner
 - [ ] PR15 Monthly Close
 
