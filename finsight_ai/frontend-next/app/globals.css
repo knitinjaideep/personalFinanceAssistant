@@ -8,8 +8,8 @@
   ── Coral typography scale ──────────────────────────────────────────────────────
 */
 :root {
-  /* Base app font — scales from 15px (mobile) to 16px (desktop) */
-  --font-size-app:   clamp(15px, 0.25vw + 14px, 16px);
+  /* Base app font — slightly grows on large displays without scaling the whole UI */
+  --font-size-app:   clamp(15px, 0.20vw + 14.4px, 17px);
   /* Small / secondary text */
   --font-size-small: clamp(13px, 0.18vw + 12.5px, 14.5px);
   /* Muted / captions */
@@ -17,7 +17,7 @@
   /* Tiny labels / badges */
   --font-size-label: clamp(11px, 0.12vw + 10.5px, 12.5px);
   /* Card body text */
-  --font-size-card:  clamp(13.5px, 0.20vw + 13px, 15px);
+  --font-size-card:  clamp(13.5px, 0.18vw + 13px, 15.5px);
   /* Sidebar nav labels */
   --font-size-nav:   clamp(13px, 0.18vw + 12.5px, 14.5px);
 
@@ -48,7 +48,7 @@
   */
   --nav-height:        96px;
   --page-top-padding:  clamp(1rem, 2vw, 2rem);
-  --page-x-padding:    clamp(1rem, 2vw, 2.5rem);
+  --page-x-padding:    clamp(1rem, 2.25vw, 4rem);
   --nav-offset:        calc(var(--nav-height) + var(--page-top-padding));
 }
 
@@ -702,6 +702,35 @@
     font-weight: 600;
     line-height: 1;
   }
+
+  .coral-surface-interactive {
+    transition:
+      transform 0.20s ease,
+      border-color 0.20s ease,
+      box-shadow 0.22s ease,
+      background 0.30s ease;
+  }
+
+  .coral-surface-interactive:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-accent) !important;
+    box-shadow: 0 14px 52px var(--card-hover-shadow), var(--panel-inset) !important;
+  }
+}
+
+@media (min-width: 1600px) {
+  :root {
+    --font-page-title: clamp(2.2rem, 1.7vw, 3.35rem);
+    --font-section-title: clamp(1.35rem, 1vw, 1.85rem);
+    --font-card-title: clamp(1rem, 0.62vw, 1.18rem);
+    --page-top-padding: clamp(1.5rem, 1.4vw, 2.5rem);
+  }
+}
+
+@media (min-width: 2200px) {
+  :root {
+    --page-x-padding: clamp(3rem, 3vw, 5rem);
+  }
 }
 
 @layer utilities {
@@ -1122,7 +1151,6 @@
   .nav-upload-btn {
     animation: none !important;
     transition-duration: 0.001ms !important;
-    transform: none !important;
   }
 }
 

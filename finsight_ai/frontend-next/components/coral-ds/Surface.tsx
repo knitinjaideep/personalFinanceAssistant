@@ -7,6 +7,7 @@ interface SurfaceProps {
   className?: string;
   style?: CSSProperties;
   as?: "div" | "section" | "article";
+  interactive?: boolean;
 }
 
 const PADDING_CLASS: Record<NonNullable<SurfaceProps["padding"]>, string> = {
@@ -20,10 +21,10 @@ const PADDING_CLASS: Record<NonNullable<SurfaceProps["padding"]>, string> = {
  * heavier glass variants. GlassCard is not replaced; it's still used by
  * MetricCard and other existing components.
  */
-export default function Surface({ children, padding = "md", className, style, as: Tag = "div" }: SurfaceProps) {
+export default function Surface({ children, padding = "md", className, style, as: Tag = "div", interactive = false }: SurfaceProps) {
   return (
     <Tag
-      className={clsx("rounded-2xl", PADDING_CLASS[padding], className)}
+      className={clsx("rounded-2xl", interactive && "coral-surface-interactive", PADDING_CLASS[padding], className)}
       style={{
         background: "var(--card-bg)",
         border: "1px solid var(--border-subtle)",

@@ -65,6 +65,7 @@ export default function NextMonthPlanSection({
     <div className="space-y-3">
       {recommendations.map((rec) => (
         <Surface
+          interactive
           key={`${rec.priority}-${rec.action_type}-${rec.category ?? rec.bucket ?? "plan"}`}
           padding="sm"
           className="flex items-start gap-3"

@@ -22,7 +22,7 @@ const TONE_ICON_CLASS: Record<StatusTone, string> = {
 /** Icon + title + description insight card, e.g. "Overspending in Wants". */
 export default function InsightCard({ icon, title, description, tone, action, className }: InsightCardProps) {
   return (
-    <Surface padding="md" className={clsx("flex flex-col gap-3", className)}>
+    <Surface interactive padding="md" className={clsx("flex flex-col gap-3", className)}>
       <span className={clsx("w-9 h-9 rounded-xl flex items-center justify-center shrink-0", TONE_ICON_CLASS[tone])}>
         {icon}
       </span>

@@ -26,6 +26,7 @@ const TONE_ACCENT: Record<StatusTone, string> = {
 export default function CoralAdvisorCard({ headline, body, tone, actions, className }: CoralAdvisorCardProps) {
   return (
     <Surface
+      interactive
       padding="md"
       className={className}
       style={tone ? { borderLeft: `3px solid ${TONE_ACCENT[tone]}` } : undefined}

@@ -1,5 +1,8 @@
+"use client";
+
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 
 export type PageShellWidth = "narrow" | "default" | "wide";
 
@@ -10,9 +13,9 @@ interface PageShellProps {
 }
 
 const MAX_WIDTH: Record<PageShellWidth, string> = {
-  narrow: "1040px",
-  default: "1440px",
-  wide: "1680px",
+  narrow: "1120px",
+  default: "1680px",
+  wide: "1920px",
 };
 
 /**
@@ -22,6 +25,8 @@ const MAX_WIDTH: Record<PageShellWidth, string> = {
  * app/investments/page.tsx.
  */
 export default function PageShell({ children, width = "default", className }: PageShellProps) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <div
       className="flex flex-col"
@@ -34,7 +39,10 @@ export default function PageShell({ children, width = "default", className }: Pa
           WebkitMaskImage: "linear-gradient(to bottom, transparent 0px, black 32px)",
         }}
       >
-        <div
+        <motion.div
+          initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+          animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           className={clsx("mx-auto w-full pb-12", className)}
           style={{
             maxWidth: MAX_WIDTH[width],
@@ -44,7 +52,7 @@ export default function PageShell({ children, width = "default", className }: Pa
           }}
         >
           {children}
-        </div>
+        </motion.div>
       </div>
     </div>
   );

@@ -31,6 +31,11 @@ function applyTheme(theme: Theme) {
   try { localStorage.setItem("coral-theme", theme); } catch {}
 }
 
+function preferredTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
 interface AppState {
   activePage: ActivePage;
   setActivePage: (page: ActivePage) => void;
@@ -78,7 +83,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         return;
       }
     } catch {}
-    applyTheme("dark");
+    const next = preferredTheme();
+    applyTheme(next);
+    set({ theme: next });
   },
   toggleTheme: () => {
     const next: Theme = get().theme === "dark" ? "light" : "dark";

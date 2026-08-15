@@ -28,11 +28,19 @@ Each also has a `-soft` variant (e.g. `--status-good-soft`) — a low-alpha tint
 
 ## Layout primitives
 
-- **`PageShell`** (`components/coral-ds/PageShell.tsx`) — standard page wrapper: nav-offset margin, scroll container, max-width column. `width="narrow" | "default" | "wide"` (1040 / 1440 / 1680px). Use this instead of hand-rolling a page wrapper.
+- **`PageShell`** (`components/coral-ds/PageShell.tsx`) — standard page wrapper: nav-offset margin, scroll container, max-width column. `width="narrow" | "default" | "wide"` (1120 / 1680 / 1920px). Use this instead of hand-rolling a page wrapper.
 - **`PageHeader`** — eyebrow + title + subtitle + right-aligned action slot (typically a `GlobalPeriodFilter`).
 - **`GlobalPeriodFilter`** — month + 1M/3M/6M/YTD range control. Presentational only — no data wiring yet.
 - **`SectionHeader`** — heading used above a content section, three sizes.
-- **`Surface`** — calm base panel (card background, subtle border, small shadow). Prefer this over `GlassCard`'s heavier glass variants for new dashboard content.
+- **`Surface`** — calm base panel (card background, subtle border, small shadow). Prefer this over `GlassCard`'s heavier glass variants for new dashboard content. Set `interactive` only when the entire surface behaves like an affordance; hover elevation is intentionally opt-in.
+
+## Responsive Rules
+
+- Page gutters use `--page-x-padding: clamp(1rem, 2.25vw, 4rem)` with a wider large-display step above 2200px. Do not hardcode page gutters inside individual pages.
+- The default `PageShell` max width is 1680px so 1440px laptops remain dense while 1920px and 2560px displays allow charts, flow trees, and multi-column layouts to breathe. Use `wide` only for pages that genuinely need table/chart width.
+- Typography grows through token-level `clamp()` values, not viewport-wide scaling. Body text tops out at 17px; section/card type has separate large-screen caps.
+- Tables should stay constrained by their parent surface and use local horizontal overflow only when their semantic columns cannot stack. Cards should stack at tablet widths before text becomes cramped.
+- Motion must be opacity/translate/elevation only, and must respect `prefers-reduced-motion`. Reduced motion disables animation timing without globally stripping static transforms such as icons, artwork positioning, or expanded-state indicators.
 
 ## Content primitives
 

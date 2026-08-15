@@ -4,7 +4,7 @@ import { memo, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   Home, Landmark, TrendingUp, FileText, MessageSquare,
   Upload, Sun, Moon, Menu, X,
@@ -69,9 +69,9 @@ const Brand = memo(function Brand() {
 // ── Nav link ──────────────────────────────────────────────────────────────────
 
 function NavLink({
-  href, label, Icon, active,
+  href, label, Icon, active, reduceMotion,
 }: {
-  href: string; label: string; Icon: typeof Home; active: boolean;
+  href: string; label: string; Icon: typeof Home; active: boolean; reduceMotion: boolean;
 }) {
   return active ? (
     <Link
@@ -82,7 +82,7 @@ function NavLink({
       <motion.span
         layoutId="topnav-pill"
         className="absolute inset-0 rounded-full nav-active-pill-bg"
-        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+        transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 32 }}
       />
 
       {/* Inner shine on hover */}
@@ -145,6 +145,7 @@ function NavLink({
 function ThemeToggle() {
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
+  const reduceMotion = useReducedMotion();
   const isLight = theme === "light";
 
   return (
@@ -167,10 +168,10 @@ function ThemeToggle() {
       <AnimatePresence mode="wait" initial={false}>
         <motion.span
           key={isLight ? "sun" : "moon"}
-          initial={{ opacity: 0, rotate: -45, scale: 0.6 }}
+          initial={reduceMotion ? false : { opacity: 0, rotate: -45, scale: 0.6 }}
           animate={{ opacity: 1, rotate: 0, scale: 1 }}
-          exit={{ opacity: 0, rotate: 45, scale: 0.6 }}
-          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          exit={reduceMotion ? { opacity: 0 } : { opacity: 0, rotate: 45, scale: 0.6 }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           className="flex items-center justify-center"
         >
           {isLight
@@ -223,15 +224,8 @@ function UploadButton({ onClick }: { onClick: () => void }) {
 
 function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
   const pathname = usePathname() ?? "/";
-  const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 16);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
@@ -239,9 +233,9 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
     <div className="fixed top-0 inset-x-0 z-40 pointer-events-none">
       <div className="mx-auto max-w-[1440px] px-4 sm:px-6">
         <motion.nav
-          initial={{ y: -24, opacity: 0 }}
+          initial={reduceMotion ? false : { y: -24, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           /*
            * group/nav — all children can react to nav-level hover via
            * group-hover/nav: variants without adding JS state.
@@ -278,6 +272,7 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
                 label={item.label}
                 Icon={item.icon}
                 active={isActive(pathname, item.href)}
+                reduceMotion={Boolean(reduceMotion)}
               />
             ))}
           </div>
@@ -314,10 +309,10 @@ function TopNav({ onUploadClick }: { onUploadClick: () => void }) {
         <AnimatePresence>
           {mobileOpen && (
             <motion.div
-              initial={{ opacity: 0, transform: "translateY(-8px)" }}
+              initial={reduceMotion ? { opacity: 1, transform: "translateY(0px)" } : { opacity: 0, transform: "translateY(-8px)" }}
               animate={{ opacity: 1, transform: "translateY(0px)" }}
-              exit={{ opacity: 0, transform: "translateY(-8px)" }}
-              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              exit={reduceMotion ? { opacity: 0, transform: "translateY(0px)" } : { opacity: 0, transform: "translateY(-8px)" }}
+              transition={reduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
               className="lg:hidden pointer-events-auto mt-2 rounded-3xl p-2 origin-top"
               style={{
                 background: "var(--nav-bg-scrolled)",
