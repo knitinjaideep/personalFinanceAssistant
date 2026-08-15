@@ -150,6 +150,8 @@ def create_app() -> FastAPI:
     from app.api.financial_plan import router as financial_plan_router
     from app.api.health import router as health_router
     from app.api.investment_plan import router as investment_plan_router
+    from app.api.monthly_close import router as monthly_close_router
+    from app.api.next_month_planner import router as next_month_planner_router
     from app.api.overview import router as overview_router
     from app.api.plan_vs_actual import router as plan_vs_actual_router
     from app.api.savings_goals import router as savings_goals_router
@@ -165,9 +167,11 @@ def create_app() -> FastAPI:
     app.include_router(financial_plan_router)
     app.include_router(plan_vs_actual_router)
     app.include_router(investment_plan_router)
+    app.include_router(monthly_close_router)
     app.include_router(overview_router)
     app.include_router(classification_router)
     app.include_router(savings_goals_router)
+    app.include_router(next_month_planner_router)
 
     return app
 

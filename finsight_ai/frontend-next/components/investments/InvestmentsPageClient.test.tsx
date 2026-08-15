@@ -3,6 +3,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import InvestmentsPageClient from "./InvestmentsPageClient";
 import { investmentsApi } from "@/features/investments/api";
+import { overviewApi } from "@/features/overview/api";
 import type {
   InvestmentContributionPlanResult,
   InvestmentsDashboard,
@@ -227,10 +228,39 @@ const DASHBOARD: InvestmentsDashboard = {
   period: { start_date: "2026-08-01", end_date: "2026-08-31" },
 };
 
+const NEXT_MONTH_PLAN = {
+  period: { start: "2026-08-01", end: "2026-08-31", label: "2026-08" },
+  recommendations: [
+    {
+      title: "Increase Roth IRA contribution by $190 next period",
+      reason: "Roth IRA is $190 short of its target this period.",
+      estimated_impact: "190.00",
+      priority: 1,
+      action_type: "increase_investment_contribution" as const,
+      source_facts: [{ label: "Vehicle", value: "Roth IRA" }],
+      bucket: "investments" as const,
+      category: "Roth IRA",
+      incomplete_source: false,
+    },
+    {
+      title: "Reduce Wants by $250 next period",
+      reason: "Wants is over target this period.",
+      estimated_impact: "250.00",
+      priority: 2,
+      action_type: "reduce_category" as const,
+      source_facts: [{ label: "Bucket", value: "Wants" }],
+      bucket: "wants" as const,
+      category: null,
+      incomplete_source: false,
+    },
+  ],
+};
+
 describe("<InvestmentsPageClient />", () => {
   beforeEach(() => {
     vi.spyOn(investmentsApi, "investments").mockResolvedValue(DASHBOARD);
     vi.spyOn(investmentsApi, "contributionPlan").mockResolvedValue(CONTRIBUTION_PLAN);
+    vi.spyOn(overviewApi, "nextMonthPlan").mockResolvedValue(NEXT_MONTH_PLAN);
   });
 
   afterEach(() => {
@@ -312,5 +342,17 @@ describe("<InvestmentsPageClient />", () => {
     expect(await screen.findByText("12.3%")).toBeInTheDocument();
     expect(screen.getByText("Plan vs Actual Contributions")).toBeInTheDocument();
     expect(screen.getByText("portfolio unavailable")).toBeInTheDocument();
+  });
+
+  it("exposes investment-specific recommendations from the shared PR14 planner", async () => {
+    render(<InvestmentsPageClient />);
+
+    expect(await screen.findByText("Investment Next Month Plan")).toBeInTheDocument();
+    expect(screen.getByText("Increase Roth IRA contribution by $190 next period")).toBeInTheDocument();
+    expect(screen.queryByText("Reduce Wants by $250 next period")).not.toBeInTheDocument();
+    expect(overviewApi.nextMonthPlan).toHaveBeenCalledWith({
+      startDate: "2026-08-01",
+      endDate: "2026-08-31",
+    });
   });
 });

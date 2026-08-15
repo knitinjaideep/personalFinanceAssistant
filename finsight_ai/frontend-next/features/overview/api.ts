@@ -108,6 +108,91 @@ export interface OverviewInsightsResult {
   completeness: CompletenessMetadata;
 }
 
+// ── Next Month Planner (GET /api/v1/next-month-plan) — PR 14 ───────────────
+//
+// Mirrors backend/app/domain/next_month_planner.py 1:1 — no reshaping.
+// Supersedes the lightweight `NextMonthPlanItem` preview above
+// (`overview_insights.build_next_month_plan`), which that module's own
+// docstring documents as a stand-in for this richer, multi-source planner.
+// See docs/NEXT_MONTH_PLANNER.md.
+
+export type RecommendationActionType =
+  | "reduce_category"
+  | "increase_savings_goal"
+  | "maintain_contribution"
+  | "increase_investment_contribution"
+  | "review_merchant"
+  | "review_subscription"
+  | "adjust_plan";
+
+export interface RecommendationSourceFact {
+  label: string;
+  value: string;
+}
+
+export interface Recommendation {
+  title: string;
+  reason: string;
+  estimated_impact: string;
+  priority: number;
+  action_type: RecommendationActionType;
+  source_facts: RecommendationSourceFact[];
+  bucket: MasterBucket | null;
+  category: string | null;
+  incomplete_source: boolean;
+}
+
+export interface NextMonthPlanResult {
+  period: Period;
+  recommendations: Recommendation[];
+}
+
+// ── Monthly Close (GET /api/v1/monthly-close) — PR 15 ──────────────────────
+
+export type MonthlyCloseStatus = "good" | "warning" | "danger" | "neutral";
+
+export interface MonthlyCloseLineItem {
+  label: string;
+  bucket: MasterBucket | null;
+  target_amount: string | null;
+  actual_amount: string;
+  variance_amount: string | null;
+  status: MonthlyCloseStatus;
+  note: string | null;
+}
+
+export interface MonthlyCloseDriver {
+  merchant: string;
+  bucket: MasterBucket;
+  category: string | null;
+  amount: string;
+  transaction_count: number;
+}
+
+export interface MonthlyCloseGoalProgress {
+  name: string;
+  category_name: string;
+  current_amount: string;
+  target_amount_effective: string | null;
+  variance_amount: string | null;
+  status: string;
+  incomplete_source: boolean;
+}
+
+export interface MonthlyCloseResult {
+  period: Period;
+  generated_on: string;
+  is_completed_month: boolean;
+  summary: string;
+  line_items: MonthlyCloseLineItem[];
+  went_well: CoralInsight[];
+  needs_attention: CoralInsight[];
+  biggest_drivers: MonthlyCloseDriver[];
+  goal_progress: MonthlyCloseGoalProgress[];
+  next_month_plan: Recommendation[];
+  completeness_notes: string[];
+}
+
 // ── Monthly flow (GET /api/v1/overview/monthly-flow) — PR 06 ───────────────
 
 export interface MonthlyFlowSummary {
@@ -133,4 +218,10 @@ export const overviewApi = {
 
   monthlyFlow: (period?: DashboardPeriodParams): Promise<MonthlyFlowSummary[]> =>
     api.get<MonthlyFlowSummary[]>("/overview/monthly-flow", periodQuery(period)),
+
+  nextMonthPlan: (period?: DashboardPeriodParams): Promise<NextMonthPlanResult> =>
+    api.get<NextMonthPlanResult>("/next-month-plan", periodQuery(period)),
+
+  monthlyClose: (period?: DashboardPeriodParams): Promise<MonthlyCloseResult> =>
+    api.get<MonthlyCloseResult>("/monthly-close", periodQuery(period)),
 };

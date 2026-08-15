@@ -29,7 +29,13 @@ import DsSectionHeader from "@/components/coral-ds/SectionHeader";
 import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
 import PageHeader from "@/components/coral-ds/PageHeader";
 import SkeletonState from "@/components/coral-ds/SkeletonState";
-import { overviewApi, type OverviewInsightsResult, type PlanVsActualResult } from "@/features/overview/api";
+import NextMonthPlanSection from "@/components/overview/NextMonthPlanSection";
+import {
+  overviewApi,
+  type NextMonthPlanResult,
+  type OverviewInsightsResult,
+  type PlanVsActualResult,
+} from "@/features/overview/api";
 
 const INSIGHT_PROMPTS = [
   "What were my largest expenses in the last 6 months?",
@@ -234,6 +240,7 @@ export default function BankingPageClient() {
   const [wantsBreakdown, setWantsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
   const [savingsBreakdown, setSavingsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
   const [bankingInsights, setBankingInsights] = useState<LoadState<BankingInsightsResult>>(INITIAL_LOAD_STATE);
+  const [nextMonthPlan, setNextMonthPlan] = useState<LoadState<NextMonthPlanResult>>(INITIAL_LOAD_STATE);
 
   const { startDate, endDate } = resolved;
 
@@ -285,6 +292,17 @@ export default function BankingPageClient() {
 
   useEffect(() => { loadBankingInsights(); }, [loadBankingInsights]);
 
+  const loadNextMonthPlan = useCallback(() => {
+    const periodParams = { startDate, endDate };
+    setNextMonthPlan((s) => ({ ...s, loading: true, error: false }));
+    overviewApi
+      .nextMonthPlan(periodParams)
+      .then((d) => setNextMonthPlan({ data: d, loading: false, error: false }))
+      .catch(() => setNextMonthPlan({ data: null, loading: false, error: true }));
+  }, [startDate, endDate]);
+
+  useEffect(() => { loadNextMonthPlan(); }, [loadNextMonthPlan]);
+
   const driftLoading = needsBreakdown.loading || wantsBreakdown.loading || savingsBreakdown.loading;
   const driftError = needsBreakdown.error || wantsBreakdown.error || savingsBreakdown.error;
   const driftRows: DriftRow[] | null = driftLoading
@@ -328,7 +346,16 @@ export default function BankingPageClient() {
 
   const hasAnyData = (data?.card_summary?.length ?? 0) > 0 || (data?.spend_by_month?.length ?? 0) > 0;
 
-  const anyFlowLoading = planVsActual.loading || insights.loading;
+  const anyFlowLoading = planVsActual.loading || insights.loading || nextMonthPlan.loading;
+  const bankingPlanRecommendations = nextMonthPlan.data?.recommendations.filter((rec) => (
+    rec.bucket === "needs" ||
+    rec.bucket === "wants" ||
+    rec.bucket === "savings" ||
+    rec.action_type === "review_merchant" ||
+    rec.action_type === "review_subscription" ||
+    rec.action_type === "reduce_category" ||
+    rec.action_type === "increase_savings_goal"
+  )) ?? null;
 
   return (
     <div className="space-y-10">
@@ -431,6 +458,20 @@ export default function BankingPageClient() {
           loading={bankingInsights.loading}
           error={bankingInsights.error}
           onRetry={loadBankingInsights}
+        />
+      </section>
+
+      {/* ── Next Month Plan (PR 14) — banking-relevant actions from the
+       * shared deterministic planner. Source facts are visible here because
+       * Banking is the correction/action surface for cash-flow drift. ── */}
+      <section>
+        <DsSectionHeader eyebrow="Next period" title="Banking Next Month Plan" size="sm" className="mb-5" />
+        <NextMonthPlanSection
+          recommendations={bankingPlanRecommendations}
+          loading={nextMonthPlan.loading}
+          error={nextMonthPlan.error}
+          onRetry={loadNextMonthPlan}
+          showSourceFacts
         />
       </section>
 

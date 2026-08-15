@@ -18,12 +18,13 @@
  *
  * All financial values are already-computed backend output
  * (GET /api/v1/plan-vs-actual, GET /api/v1/overview/insights,
- * GET /api/v1/overview/monthly-flow) — no financial math happens in this
- * component tree (.claude/rules/frontend.md).
+ * GET /api/v1/overview/monthly-flow, GET /api/v1/next-month-plan) — no
+ * financial math happens in this component tree (.claude/rules/frontend.md).
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, Upload } from "lucide-react";
+import Link from "next/link";
+import { FileCheck2, Sparkles, Upload } from "lucide-react";
 import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
 import EmptyState from "@/components/coral-ds/EmptyState";
 import ErrorState from "@/components/coral-ds/ErrorState";
@@ -41,6 +42,7 @@ import { documentsApi } from "@/features/documents/api";
 import {
   overviewApi,
   type MonthlyFlowSummary,
+  type NextMonthPlanResult,
   type OverviewInsightsResult,
   type PlanVsActualResult,
 } from "@/features/overview/api";
@@ -63,6 +65,7 @@ export default function HomePageClient() {
   const [planVsActual, setPlanVsActual] = useState<LoadState<PlanVsActualResult>>(INITIAL_LOAD_STATE);
   const [insights, setInsights] = useState<LoadState<OverviewInsightsResult>>(INITIAL_LOAD_STATE);
   const [monthlyFlow, setMonthlyFlow] = useState<LoadState<MonthlyFlowSummary[]>>(INITIAL_LOAD_STATE);
+  const [nextMonthPlan, setNextMonthPlan] = useState<LoadState<NextMonthPlanResult>>(INITIAL_LOAD_STATE);
 
   const [docStats, setDocStats] = useState<DocumentStats | null>(null);
   const [docsLoading, setDocsLoading] = useState(true);
@@ -90,6 +93,12 @@ export default function HomePageClient() {
       .monthlyFlow(periodParams)
       .then((data) => setMonthlyFlow({ data, loading: false, error: false }))
       .catch(() => setMonthlyFlow({ data: null, loading: false, error: true }));
+
+    setNextMonthPlan((s) => ({ ...s, loading: true, error: false }));
+    overviewApi
+      .nextMonthPlan(periodParams)
+      .then((data) => setNextMonthPlan({ data, loading: false, error: false }))
+      .catch(() => setNextMonthPlan({ data: null, loading: false, error: true }));
   }, [startDate, endDate]);
 
   useEffect(() => {
@@ -116,14 +125,21 @@ export default function HomePageClient() {
     loadDocStats();
   }, [loadDocStats]);
 
-  const anyLoading = planVsActual.loading || insights.loading || monthlyFlow.loading;
+  const anyLoading =
+    planVsActual.loading || insights.loading || monthlyFlow.loading || nextMonthPlan.loading;
 
   // A total backend outage (every request failed) gets one clear full-page
   // error rather than a dashboard shell full of individually-broken
   // sections — .claude/rules/frontend.md requires a real error state, and
-  // stacking four small inline ones would bury the actual problem.
+  // stacking small inline ones would bury the actual problem.
   const isTotalOutage =
-    !anyLoading && !docsLoading && planVsActual.error && insights.error && monthlyFlow.error && docsError;
+    !anyLoading &&
+    !docsLoading &&
+    planVsActual.error &&
+    insights.error &&
+    monthlyFlow.error &&
+    nextMonthPlan.error &&
+    docsError;
 
   if (isTotalOutage) {
     return (
@@ -245,15 +261,39 @@ export default function HomePageClient() {
           />
         </section>
         <section className="xl:col-span-2">
-          <SectionHeader eyebrow="Preview" title="Next Month Plan" size="sm" className="mb-5" />
+          <SectionHeader eyebrow="Ranked by impact" title="Next Month Plan" size="sm" className="mb-5" />
           <NextMonthPlanSection
-            items={insights.data?.next_month_plan ?? null}
-            loading={insights.loading}
-            error={insights.error}
+            recommendations={nextMonthPlan.data?.recommendations ?? null}
+            loading={nextMonthPlan.loading}
+            error={nextMonthPlan.error}
             onRetry={load}
+            showSourceFacts
           />
         </section>
       </div>
+
+      <Surface padding="md" as="section" className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span
+            className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+            style={{ background: "var(--coral-primary-soft)", color: "var(--coral-primary)" }}
+          >
+            <FileCheck2 size={17} />
+          </span>
+          <div>
+            <h2 className="coral-card-title">Monthly Financial Close</h2>
+            <p className="small-text mt-1" style={{ color: "var(--text-secondary)" }}>
+              Review a completed month across income, plan drift, drivers, goals, and next actions.
+            </p>
+          </div>
+        </div>
+        <Link
+          href={`/monthly-close?period=custom&start=${startDate}&end=${endDate}`}
+          className="btn-coral inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl small-text font-semibold text-white"
+        >
+          Open close
+        </Link>
+      </Surface>
 
       {/* Demoted document/upload strip — see DocumentsStrip docstring. */}
       <DocumentsStrip stats={docStats} loading={docsLoading} error={docsError} onRetry={loadDocStats} />

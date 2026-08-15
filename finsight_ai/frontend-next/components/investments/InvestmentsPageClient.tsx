@@ -27,6 +27,7 @@ import SkeletonState from "@/components/coral-ds/SkeletonState";
 import StatusBadge, { type StatusTone } from "@/components/coral-ds/StatusBadge";
 import Surface from "@/components/coral-ds/Surface";
 import TargetProgressBar from "@/components/coral-ds/TargetProgressBar";
+import NextMonthPlanSection from "@/components/overview/NextMonthPlanSection";
 import {
   investmentsApi,
   type AccountBalance,
@@ -35,6 +36,7 @@ import {
   type InvestmentContributionVehicle,
   type InvestmentsDashboard,
 } from "@/features/investments/api";
+import { overviewApi, type NextMonthPlanResult } from "@/features/overview/api";
 import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
 import { formatCompactCurrency, formatCurrency } from "@/lib/utils";
 import { useAppStore } from "@/store/appStore";
@@ -701,6 +703,7 @@ export default function InvestmentsPageClient() {
   const [error, setError] = useState<string | null>(null);
   const [contributionPlan, setContributionPlan] =
     useState<LoadState<InvestmentContributionPlanResult>>(INITIAL_LOAD_STATE);
+  const [nextMonthPlan, setNextMonthPlan] = useState<LoadState<NextMonthPlanResult>>(INITIAL_LOAD_STATE);
   const openUploadModal = useAppStore((s) => s.openUploadModal);
   const { selection, resolved, setSelection, goToPreviousMonth, goToNextMonth } = useFinancialPeriod();
 
@@ -724,12 +727,22 @@ export default function InvestmentsPageClient() {
       .catch(() => setContributionPlan({ data: null, loading: false, error: true }));
   }, [startDate, endDate]);
 
+  const loadNextMonthPlan = useCallback(() => {
+    setNextMonthPlan((state) => ({ ...state, loading: true, error: false }));
+    overviewApi
+      .nextMonthPlan({ startDate, endDate })
+      .then((plan) => setNextMonthPlan({ data: plan, loading: false, error: false }))
+      .catch(() => setNextMonthPlan({ data: null, loading: false, error: true }));
+  }, [startDate, endDate]);
+
   useEffect(() => { loadDashboard(data !== null); }, [loadDashboard]);
   useEffect(() => { loadContributionPlan(); }, [loadContributionPlan]);
+  useEffect(() => { loadNextMonthPlan(); }, [loadNextMonthPlan]);
 
   const retryAll = () => {
     loadDashboard(false);
     loadContributionPlan();
+    loadNextMonthPlan();
   };
 
   const findAccount = useCallback((searchKeys: string[]) =>
@@ -742,6 +755,11 @@ export default function InvestmentsPageClient() {
     data.portfolio_summary.accounts.length > 0 || data.top_holdings.length > 0
   );
   const portfolioRows = useMemo(() => buildHealthRows(data), [data]);
+  const investmentPlanRecommendations = nextMonthPlan.data?.recommendations.filter((rec) => (
+    rec.bucket === "investments" ||
+    rec.action_type === "increase_investment_contribution" ||
+    rec.action_type === "maintain_contribution"
+  )) ?? null;
 
   return (
     <div className="space-y-8">
@@ -781,6 +799,17 @@ export default function InvestmentsPageClient() {
           error={contributionPlan.error}
         />
       </div>
+
+      <section>
+        <SectionHeader eyebrow="Shared planner" title="Investment Next Month Plan" size="sm" className="mb-5" />
+        <NextMonthPlanSection
+          recommendations={investmentPlanRecommendations}
+          loading={nextMonthPlan.loading}
+          error={nextMonthPlan.error}
+          onRetry={loadNextMonthPlan}
+          showSourceFacts
+        />
+      </section>
 
       <InvestmentInsights
         plan={contributionPlan.data}
