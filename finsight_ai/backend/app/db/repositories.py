@@ -670,11 +670,20 @@ async def list_transactions(
     account_id: str | None = None,
     unclassified_only: bool = False,
     needs_review_only: bool = False,
+    date_from: date | None = None,
+    date_to: date | None = None,
     limit: int | None = None,
 ) -> list[TransactionModel]:
+    """`date_from`/`date_to` are optional and inclusive on both ends; omitting
+    them keeps the original all-history behaviour every existing caller
+    relies on."""
     q = select(TransactionModel)
     if account_id:
         q = q.where(TransactionModel.account_id == account_id)
+    if date_from is not None:
+        q = q.where(TransactionModel.transaction_date >= date_from)
+    if date_to is not None:
+        q = q.where(TransactionModel.transaction_date <= date_to)
     if unclassified_only:
         q = q.where(TransactionModel.classification_source.is_(None))
     if needs_review_only:
@@ -707,6 +716,37 @@ async def list_transactions_for_period(
     q = q.order_by(TransactionModel.transaction_date.asc())
     result = await session.execute(q)
     return list(result.scalars().all())
+
+
+async def list_transactions_by_merchant_text(
+    session: AsyncSession,
+    *,
+    merchant_text: str,
+    date_from: date,
+    date_to: date,
+    account_id: str | None = None,
+) -> list[TransactionModel]:
+    """All transactions in `[date_from, date_to]` (inclusive) whose lowercased
+    `description`/`merchant_name` contains `merchant_text` — the exact same
+    substring-match semantics `find_merchant_rule` already uses for a
+    scope="merchant" rule (`rule.merchant_key.lower() in text`), so a bounded
+    "this merchant, this month" reclassification (PR 09) matches the same set
+    of transactions a forward-looking merchant rule of the same key would.
+    Used by TransactionClassificationService for the `merchant_this_month`
+    reclassify scope — a bounded, date-ranged alternative to
+    `apply_merchant_rule(reclassify_existing=True)`, which has no date bound
+    and would touch all matching history.
+    """
+    rows = await list_transactions_for_period(
+        session, date_from=date_from, date_to=date_to, account_id=account_id,
+    )
+    key = merchant_text.strip().lower()
+    if not key:
+        return []
+    return [
+        r for r in rows
+        if key in f"{r.description or ''} {r.merchant_name or ''}".strip().lower()
+    ]
 
 
 async def get_accounts_by_ids(

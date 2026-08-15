@@ -126,6 +126,84 @@ export interface TransactionDriver {
   amount: string;
 }
 
+// ── Classification review queue (GET /api/v1/classification/needs-review,
+// POST .../confirm, POST .../reclassify) — PR 09. Mirrors
+// backend/app/domain/classification_review.py's response shapes exactly, no
+// reshaping on the client. The classification ENGINE/SERVICE (bucket,
+// category, confidence, source) already exists (PR 03); this module only
+// adds the review-queue row shape and the two write actions.
+
+export type ReviewReason = "unclassified" | "ambiguous_merchant" | "low_confidence";
+
+export interface TransactionReviewItem {
+  transaction_id: string;
+  transaction_date: string;
+  description: string;
+  merchant: string | null;
+  amount: string;
+  master_bucket: MasterBucket;
+  category: string | null;
+  cash_flow_type: string;
+  confidence: number;
+  needs_review: boolean;
+  classification_source: string;
+  review_reason: ReviewReason;
+}
+
+export interface ClassificationActionResult {
+  transaction_id: string;
+  master_bucket: MasterBucket;
+  category: string | null;
+  cash_flow_type: string;
+  confidence: number;
+  needs_review: boolean;
+  source: string;
+}
+
+/** User-facing "Change" bucket choice — a superset of `MasterBucket`
+ * ("transfer" is a distinct, meaningful choice the backend resolves to
+ * `unclassified` + `cash_flow_type: "transfer"`, see
+ * `resolve_reclassify_choice` in classification_review.py). Never resolved
+ * to a (bucket, cash_flow_type) pair on the client — that mapping is
+ * deterministic backend logic. */
+export type ReclassifyChoice = "needs" | "wants" | "savings" | "investments" | "transfer" | "unclassified";
+
+export type ReclassifyScope = "transaction" | "merchant_future" | "merchant_this_month";
+
+export interface ReclassifyRequestBody {
+  master_bucket: ReclassifyChoice;
+  category?: string | null;
+  scope: ReclassifyScope;
+}
+
+export interface ReclassifyResponse {
+  transaction: ClassificationActionResult;
+  scope: ReclassifyScope;
+  other_transactions_reclassified: number;
+}
+
+export const classificationApi = {
+  /** Compact, backend-prioritized review queue — never the full transaction
+   * list. `period` follows the same PR 05 unified contract as every other
+   * financial fetch: the backend scopes the queue (and its lazy
+   * classification backfill) to the selected range, so the rows shown are
+   * exactly the ones affecting the Plan vs Actual numbers on screen. */
+  needsReview: (limit = 20, period?: PlanPeriodParams): Promise<TransactionReviewItem[]> =>
+    api.get<TransactionReviewItem[]>("/classification/needs-review", {
+      limit,
+      start_date: period?.startDate,
+      end_date: period?.endDate,
+    }),
+
+  /** "Looks right" — locks in the transaction's current classification, clearing needs_review. */
+  confirmTransaction: (transactionId: string): Promise<ClassificationActionResult> =>
+    api.post<ClassificationActionResult>(`/classification/transactions/${transactionId}/confirm`, {}),
+
+  /** "Change" — user-decided correction; see ReclassifyScope for the three scope options. */
+  reclassifyTransaction: (transactionId: string, body: ReclassifyRequestBody): Promise<ReclassifyResponse> =>
+    api.post<ReclassifyResponse>(`/classification/transactions/${transactionId}/reclassify`, body),
+};
+
 export const bankingApi = {
   /**
    * `startDate`/`endDate` (PR 05 unified period contract, see

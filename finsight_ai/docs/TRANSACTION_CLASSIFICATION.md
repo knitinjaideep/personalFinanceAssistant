@@ -311,8 +311,60 @@ route, exactly like `app.services.financial_plan`):
 - `classify(session, transaction_id) -> ClassificationResult` — compute and persist.
 - `classify_batch(session, *, account_id=None, only_unclassified=True) -> BatchClassificationSummary`
 - `apply_user_override(session, transaction_id, *, master_bucket, cash_flow_type, category=None)`
-- `apply_merchant_rule(session, *, master_bucket, cash_flow_type, category=None, scope, merchant_key=None, source_category=None, account_id=None)`
-- `get_needs_review(session, limit=100) -> list[TransactionModel]`
+- `apply_merchant_rule(session, *, master_bucket, cash_flow_type, category=None, scope, merchant_key=None, source_category=None, account_id=None, reclassify_existing=True)`
+- `get_needs_review(session, *, limit=100, date_from=None, date_to=None, auto_classify=True) -> list[TransactionModel]`
+- `reclassify_transaction(session, transaction_id, *, master_bucket, cash_flow_type, category, scope) -> (ClassificationResult, other_reclassified_count)`
+
+## Review queue and user corrections (PR 09)
+
+`app/api/classification.py` exposes the review/correction surface the
+Banking page's "Transactions to Review" section drives. Every route is a
+thin wrapper over the service above — **no route here ever calls an LLM**
+(the API instantiates `TransactionClassificationService()` with no
+`llm_classifier`, so tier 6 is unreachable from an edit).
+
+- `GET /api/v1/classification/needs-review?limit=&start_date=&end_date=`
+  — the prioritized queue: least-confident first, ties broken by largest
+  absolute dollar impact. Because tier 7 (`unclassified`) scores `0.0` and
+  the ambiguous-merchant gate scores `0.35`, "we have no idea" rows sort
+  above "we know we can't tell Needs from Wants here" rows, and both sort
+  above low-confidence LLM guesses. `start_date`/`end_date` follow the PR 05
+  unified period contract (both or neither, inclusive) and bound both the
+  query and its lazy `classify_batch` backfill, so a period-scoped GET never
+  writes across all history.
+- `POST /api/v1/classification/transactions/{id}/confirm` — "Looks right".
+  Writes the transaction's *current* derived classification as an explicit
+  tier-1 override; tier 1 always resolves with `needs_review=False`, so the
+  row leaves the queue and no later automated pass can revert it.
+- `POST /api/v1/classification/transactions/{id}/reclassify` — "Change".
+  The requested bucket is a `ReclassifyChoice` (the six user-facing options,
+  a superset of `MasterBucket`: Transfer and Other/Unclassified both resolve
+  to `MasterBucket.UNCLASSIFIED` with different `cash_flow_type`s), resolved
+  deterministically by `resolve_reclassify_choice`. A positive amount moved
+  into Needs/Wants resolves to `refund`, not `expense` (invariant #6). Any
+  supplied `category` must be in `CATEGORIES_BY_BUCKET` for the resolved
+  bucket, otherwise 422 — the value is joined straight onto plan
+  suballocation names by PR 04, so free text is never stored.
+
+### Reclassify scopes — blast radius
+
+| Scope                 | Existing rows written                                        | Forward-looking rule |
+|-----------------------|--------------------------------------------------------------|----------------------|
+| `transaction`         | the reviewed transaction only                                  | none                 |
+| `merchant_future`     | the reviewed transaction only                                  | tier-2 merchant rule |
+| `merchant_this_month` | the reviewed transaction + same-merchant rows in that transaction's own calendar month | tier-2 merchant rule |
+
+`merchant_this_month` deliberately does **not** use
+`apply_merchant_rule(reclassify_existing=True)`: that path re-runs
+`classify_batch(only_unclassified=False)` over the **entire** database with
+no date bound, which `docs/coral-redesign/pr-09-classification-review.md`
+explicitly forbids ("Never silently rewrite all historical transactions").
+Instead it writes individual tier-1 overrides to a date-bounded,
+merchant-matched set. Both scopes also create a `reclassify_existing=False`
+merchant rule, which writes nothing existing and only takes effect for rows
+that have never been classified. There is no conflict between the two: tier
+1 is checked before tier 2 for every transaction, and both carry the same
+bucket/category/cash-flow anyway.
 
 ## Known limitations / product decisions to revisit
 

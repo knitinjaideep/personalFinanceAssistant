@@ -33,8 +33,8 @@ Commit: b2e019a
 ### M4 — Banking
 
 - [x] PR07 Banking Flow
-- [ ] PR08 Banking Drift
-- [ ] PR09 Classification Review
+- [x] PR08 Banking Drift (blocked mid-review on Top Drivers' category-level drift baseline for Needs/Wants — plan has no per-category targets; resolved via user decision — Option B, bucket-level anchor — documented in BLOCKED.md; repaired and re-verified)
+- [x] PR09 Classification Review
 - [ ] PR10 Banking Insights
 
 Commit:

@@ -21,6 +21,7 @@ import ErrorState from "@/components/coral/ErrorState";
 import BankingFlowTree from "@/components/banking/BankingFlowTree";
 import BudgetDriftTable from "@/components/banking/BudgetDriftTable";
 import TopDrivers from "@/components/banking/TopDrivers";
+import ClassificationReviewSection from "@/components/banking/ClassificationReviewSection";
 import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
 import DsErrorState from "@/components/coral-ds/ErrorState";
 import DsSectionHeader from "@/components/coral-ds/SectionHeader";
@@ -384,6 +385,26 @@ export default function BankingPageClient() {
           error={planVsActual.error}
           onRetry={loadFlow}
           period={{ startDate, endDate }}
+        />
+      </section>
+
+      {/* ── Transactions to Review (PR 09) — the ACTION step after Plan →
+       * Actual → Drift above: uncertain classifications the user can confirm
+       * or correct. Scoped to the same globally-selected period as every
+       * section above (pr-05-period-filter.md), so a correction here always
+       * moves numbers the user can currently see. `onChanged` refetches the
+       * flow tree/drift/top-drivers data above so that happens without a
+       * full page reload — Plan vs Actual is naturally live server-side, so
+       * a plain refetch through the same loadFlow/loadDrift callbacks used
+       * for period changes is enough. ── */}
+      <section>
+        <DsSectionHeader eyebrow="This period" title="Transactions to Review" size="sm" className="mb-5" />
+        <ClassificationReviewSection
+          period={{ startDate, endDate }}
+          onChanged={() => {
+            loadFlow();
+            loadDrift();
+          }}
         />
       </section>
 

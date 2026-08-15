@@ -23,14 +23,18 @@ docs/TRANSACTION_CLASSIFICATION.md.
 
 from __future__ import annotations
 
+import calendar
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger import get_logger
 from app.db import repositories as repo
 from app.db.models import AccountModel, TransactionModel
+from app.domain.classification_review import ReclassifyScope
 from app.domain.transaction_classification import (
     CashFlowType,
     ClassificationResult,
@@ -73,6 +77,21 @@ def _to_input(
         account_type=account_type,
         account_name=account_name,
     )
+
+
+def derive_merchant_key(txn: TransactionModel) -> str:
+    """Best-effort normalized merchant identifier for a merchant-scoped rule,
+    matching the exact substring-match semantics `find_merchant_rule` already
+    uses (`rule.merchant_key.lower() in text`, where
+    `text = f"{description} {merchant_name}".lower()`). Prefers the parsed
+    `merchant_name`; falls back to the full lowercased `description` when a
+    parser didn't populate `merchant_name`. Either way the derived key is
+    guaranteed to match the transaction it was derived from — used by PR 09's
+    merchant_future/merchant_this_month reclassify scopes."""
+    name = (txn.merchant_name or "").strip()
+    if name:
+        return name.lower()
+    return (txn.description or "").strip().lower()
 
 
 def _persist(txn: TransactionModel, result: ClassificationResult) -> None:
@@ -201,6 +220,8 @@ class TransactionClassificationService:
         *,
         account_id: str | None = None,
         only_unclassified: bool = True,
+        date_from: date | None = None,
+        date_to: date | None = None,
         limit: int | None = None,
     ) -> BatchClassificationSummary:
         """Classify a set of transactions and persist the results.
@@ -210,9 +231,13 @@ class TransactionClassificationService:
         result is never silently reclassified by a batch run — the override
         row is still consulted every time regardless, but this flag avoids
         needlessly recomputing settled classifications on every ingest.
+
+        `date_from`/`date_to` (optional, inclusive) bound the backfill to one
+        period; omitting them keeps the original all-history behaviour.
         """
         transactions = await repo.list_transactions(
-            session, account_id=account_id, unclassified_only=only_unclassified, limit=limit,
+            session, account_id=account_id, unclassified_only=only_unclassified,
+            date_from=date_from, date_to=date_to, limit=limit,
         )
         summary = BatchClassificationSummary(total=len(transactions))
         for txn in transactions:
@@ -302,6 +327,160 @@ class TransactionClassificationService:
     # ── Review queue ──────────────────────────────────────────────────────────
 
     async def get_needs_review(
-        self, session: AsyncSession, *, limit: int = 100
+        self,
+        session: AsyncSession,
+        *,
+        limit: int = 100,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        auto_classify: bool = True,
     ) -> list[TransactionModel]:
-        return await repo.list_transactions(session, needs_review_only=True, limit=limit)
+        """Prioritized review queue (pr-09-classification-review.md: "Do not
+        show every transaction. Prioritize: low-confidence transactions,
+        ambiguous merchants, high financial impact..."). Fetches the full
+        `needs_review` set (unbounded — personal-finance scale, not a
+        pagination-worthy table) then sorts by least-confident first, tie-
+        broken by largest absolute dollar impact first, before truncating to
+        `limit`. `list_transactions`' own ordering (transaction_date desc) is
+        deliberately not relied on here — a page of the 25 most *recent*
+        flagged transactions is not the same as the 25 most worth reviewing.
+
+        `date_from`/`date_to` (optional, inclusive) restrict the queue to one
+        period. The Banking page always passes the globally-selected period
+        (pr-05-period-filter.md: the selected period "should drive backend
+        API queries" and "update all three financial pages"), which is also
+        what makes the work order's "transactions that materially affect plan
+        results" concrete — a correction to a row inside the displayed period
+        visibly moves the Plan vs Actual numbers on the same screen.
+
+        `auto_classify=True` (the default) first backfills any transaction
+        whose `classification_source` is still NULL — exactly the same lazy
+        backfill `app.services.plan_vs_actual._load_classified_transactions`
+        already performs for a period, bounded to the same date range so the
+        review queue never triggers a full-history write on a GET. Restricted
+        to `only_unclassified=True` so a user's prior override/merchant-rule
+        resolution is never recomputed.
+        """
+        if auto_classify:
+            await self.classify_batch(
+                session, only_unclassified=True, date_from=date_from, date_to=date_to,
+            )
+
+        candidates = await repo.list_transactions(
+            session, needs_review_only=True, date_from=date_from, date_to=date_to,
+        )
+
+        def _sort_key(t: TransactionModel) -> tuple[float, Decimal]:
+            confidence = (
+                t.classification_confidence if t.classification_confidence is not None else 0.0
+            )
+            try:
+                amount = abs(Decimal(t.amount))
+            except (InvalidOperation, TypeError):
+                amount = Decimal("0")
+            return (confidence, -amount)
+
+        candidates.sort(key=_sort_key)
+        return candidates[:limit]
+
+    # ── Reclassify (PR 09 "Change" action) ───────────────────────────────────
+
+    async def reclassify_transaction(
+        self,
+        session: AsyncSession,
+        transaction_id: str,
+        *,
+        master_bucket: MasterBucket,
+        cash_flow_type: CashFlowType,
+        category: str | None,
+        scope: ReclassifyScope,
+    ) -> tuple[ClassificationResult, int]:
+        """Apply a user 'Change' decision with the requested scope.
+
+        Returns `(this transaction's resulting classification, count of
+        OTHER existing transactions also reclassified by this call)` — the
+        count is always 0 for `transaction`/`merchant_future` and the number
+        of same-merchant, same-calendar-month transactions for
+        `merchant_this_month`.
+
+        - `scope=transaction`: tier-1 override, this transaction only.
+        - `scope=merchant_future`: tier-1 override for THIS transaction (it
+          is the record the user is actively resolving right now, not a
+          bystander swept in by a broad rule) PLUS a forward-looking tier-2
+          merchant rule (`reclassify_existing=False`). No OTHER existing
+          transaction is touched — verified from `apply_merchant_rule`'s own
+          implementation, which returns immediately without calling
+          `classify_batch` when `reclassify_existing=False`.
+        - `scope=merchant_this_month`: tier-1 override for every transaction
+          from this merchant within the SAME calendar month as the
+          transaction under review (bounded — never "all history", per the
+          work order's "never silently rewrite all historical transactions"),
+          EXCEPT any bystander row that already carries its own explicit
+          tier-1 override (an earlier user decision is not silently revoked
+          by a bulk action aimed at a different transaction — the same
+          protection `apply_merchant_rule` documents), PLUS the same
+          forward-looking merchant rule as `merchant_future`.
+          Implemented as per-transaction overrides rather than
+          `apply_merchant_rule(reclassify_existing=True)` because that flag
+          reclassifies EVERY matching transaction in the database with no
+          date bound at all, which the work order explicitly forbids.
+        """
+        txn = await repo.get_transaction(session, transaction_id)
+
+        # Always resolve THIS transaction via a tier-1 override, regardless
+        # of scope — see docstring above.
+        result = await self.apply_user_override(
+            session, transaction_id,
+            master_bucket=master_bucket, cash_flow_type=cash_flow_type, category=category,
+        )
+
+        if scope == ReclassifyScope.TRANSACTION:
+            return result, 0
+
+        merchant_key = derive_merchant_key(txn)
+        if not merchant_key:
+            # Nothing to key a merchant rule on (no description/merchant
+            # name at all) — degrade to a transaction-only correction rather
+            # than raising, since the per-transaction override above already
+            # succeeded.
+            return result, 0
+
+        # Forward-looking merchant rule — shared by both remaining scopes.
+        # reclassify_existing=False: verified to touch no existing row.
+        await self.apply_merchant_rule(
+            session,
+            master_bucket=master_bucket, cash_flow_type=cash_flow_type, category=category,
+            scope=RuleScope.MERCHANT, merchant_key=merchant_key,
+            reclassify_existing=False,
+        )
+
+        if scope == ReclassifyScope.MERCHANT_FUTURE:
+            return result, 0
+
+        # scope == MERCHANT_THIS_MONTH — bounded to the transaction's own
+        # calendar month.
+        month_start = txn.transaction_date.replace(day=1)
+        last_day = calendar.monthrange(txn.transaction_date.year, txn.transaction_date.month)[1]
+        month_end = txn.transaction_date.replace(day=last_day)
+
+        matching = await repo.list_transactions_by_merchant_text(
+            session, merchant_text=merchant_key, date_from=month_start, date_to=month_end,
+        )
+        touched = 0
+        for other in matching:
+            if other.id == transaction_id:
+                continue  # already handled above
+            # A bystander row the user already resolved explicitly is NOT
+            # re-decided by a bulk action aimed at a different transaction —
+            # same protection `apply_merchant_rule` documents for tier-1
+            # overrides. The user is correcting THIS row and asking Coral to
+            # apply the same call to look-alikes, not to revoke an earlier
+            # explicit decision they never revisited.
+            if await repo.get_transaction_override(session, other.id) is not None:
+                continue
+            await self.apply_user_override(
+                session, other.id,
+                master_bucket=master_bucket, cash_flow_type=cash_flow_type, category=category,
+            )
+            touched += 1
+        return result, touched
