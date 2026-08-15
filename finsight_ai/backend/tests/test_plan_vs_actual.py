@@ -12,6 +12,7 @@ and the thin API layer.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from app.db import repositories as repo
 from app.db.engine import get_session
@@ -254,6 +255,122 @@ async def test_bucket_and_merchant_drilldown_via_service(temp_db):
     top = drivers[0]
     assert top.merchant.upper().startswith("WHOLE FOODS")
     assert top.amount == "85.00"
+
+
+# ── Transaction-level drill-down (PR 08 — Category -> merchants -> transactions) ──
+
+async def test_transaction_drivers_reconcile_to_merchant_driver_amount(temp_db):
+    """The core consistency invariant: summing every TransactionDrift for one
+    merchant within a bucket/category equals that merchant's own
+    MerchantDriver.amount for the same bucket/category — both derived from
+    the exact same `_counts_toward_bucket` eligibility gate."""
+    async with get_session() as session:
+        acct, stmt = await _make_account(session)
+        await _add_txn(
+            session, acct.id, stmt.id, day=5, description="WHOLE FOODS MARKET", amount="-60.00",
+        )
+        await _add_txn(
+            session, acct.id, stmt.id, day=6, description="WHOLE FOODS MARKET", amount="-25.00",
+        )
+        await _add_txn(
+            session, acct.id, stmt.id, day=7, description="SHELL GAS STATION", amount="-40.00",
+        )
+
+    period = Period.for_month(2026, 8)
+    async with get_session() as session:
+        merchants = await service.get_merchant_drivers(session, period, bucket=MasterBucket.NEEDS)
+    whole_foods = next(m for m in merchants if m.merchant.upper().startswith("WHOLE FOODS"))
+
+    async with get_session() as session:
+        transactions = await service.get_transaction_drivers(
+            session, period, bucket=MasterBucket.NEEDS, merchant=whole_foods.merchant,
+        )
+    assert len(transactions) == 2
+    total = sum((Decimal(t.amount) for t in transactions), Decimal("0"))
+    assert str(total) == whole_foods.amount == "85.00"
+    # Sorted by transaction_date descending (most recent first).
+    assert transactions[0].transaction_date > transactions[1].transaction_date
+
+
+async def test_transaction_drivers_excludes_transfers_and_card_payments(temp_db):
+    async with get_session() as session:
+        checking, checking_stmt = await _make_account(
+            session, account_type="checking", suffix="3003",
+        )
+        await _add_txn(
+            session, checking.id, checking_stmt.id,
+            day=5, description="WHOLE FOODS MARKET", amount="-60.00",
+        )
+        # Checking-side credit-card payment — UNCLASSIFIED/neutral, must never
+        # appear in the transaction drill-down.
+        await repo.bulk_create_transactions(session, [{
+            "account_id": checking.id, "statement_id": checking_stmt.id,
+            "transaction_date": date(2026, 8, 10), "description": "CARD PAYMENT",
+            "amount": "-200.00", "transaction_type": "payment",
+        }])
+
+    async with get_session() as session:
+        transactions = await service.get_transaction_drivers(session, Period.for_month(2026, 8))
+    descriptions = {t.description for t in transactions}
+    assert "WHOLE FOODS MARKET" in descriptions
+    assert "CARD PAYMENT" not in descriptions
+
+
+async def test_transaction_drivers_bucket_category_merchant_filters_compose(temp_db):
+    async with get_session() as session:
+        acct, stmt = await _make_account(session)
+        await _add_txn(
+            session, acct.id, stmt.id, day=5, description="WHOLE FOODS MARKET", amount="-60.00",
+        )
+        await _add_txn(
+            session, acct.id, stmt.id, day=6, description="SHELL GAS STATION", amount="-40.00",
+        )
+
+    period = Period.for_month(2026, 8)
+    async with get_session() as session:
+        by_bucket = await service.get_transaction_drivers(
+            session, period, bucket=MasterBucket.NEEDS,
+        )
+    assert len(by_bucket) == 2
+
+    async with get_session() as session:
+        by_category = await service.get_transaction_drivers(
+            session, period, bucket=MasterBucket.NEEDS, category="Groceries",
+        )
+    assert len(by_category) == 1
+    assert by_category[0].description == "WHOLE FOODS MARKET"
+
+    async with get_session() as session:
+        by_merchant = await service.get_transaction_drivers(
+            session, period, bucket=MasterBucket.NEEDS, category="Groceries",
+            merchant=by_category[0].merchant or by_category[0].description,
+        )
+    assert len(by_merchant) == 1
+    assert by_merchant[0].description == "WHOLE FOODS MARKET"
+
+    # A bucket/category/merchant combination that doesn't exist returns empty,
+    # not a fabricated match.
+    async with get_session() as session:
+        none_found = await service.get_transaction_drivers(
+            session, period, bucket=MasterBucket.NEEDS, category="Groceries",
+            merchant="SHELL GAS STATION",
+        )
+    assert none_found == []
+
+
+async def test_transaction_drivers_api_layer(temp_db):
+    from app.api.plan_vs_actual import get_transaction_drivers as api_get_transaction_drivers
+
+    async with get_session() as session:
+        acct, stmt = await _make_account(session)
+        await _add_txn(
+            session, acct.id, stmt.id, day=5, description="WHOLE FOODS MARKET", amount="-60.00",
+        )
+
+    result = await api_get_transaction_drivers(year=2026, month=8, bucket="needs")
+    assert len(result) == 1
+    assert result[0].description == "WHOLE FOODS MARKET"
+    assert result[0].amount == "60.00"
 
 
 # ── API layer smoke test ────────────────────────────────────────────────────

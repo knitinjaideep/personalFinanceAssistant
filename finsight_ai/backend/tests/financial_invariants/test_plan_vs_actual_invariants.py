@@ -20,9 +20,11 @@ from app.domain.plan_vs_actual import (
     DriftStatus,
     Period,
     compute_category_breakdown,
+    compute_merchant_drivers,
     compute_plan_vs_actual,
     compute_plannable_income,
     compute_status,
+    compute_transaction_drivers,
     is_canonical_contribution_leg,
     payroll_deduction_signal,
 )
@@ -603,6 +605,235 @@ def test_category_target_matches_plan_suballocation_case_insensitively():
     assert row.target_percentage == "5"
     assert row.target_amount == "500.00"
     assert row.status == DriftStatus.ON_TRACK
+
+
+# ── Transaction-level drivers (PR 08 — Category -> merchants -> transactions) ─
+
+def test_transaction_drivers_sum_reconciles_to_merchant_driver_amount():
+    """The `compute_transaction_drivers` leaf level must always sum to the
+    `compute_merchant_drivers` amount for the same merchant/bucket/category —
+    both use the identical `_counts_toward_bucket` eligibility gate, so a
+    reconciliation gap here would indicate the two functions' gates drifted
+    apart (accounting-invariants.md: never double count, never silently drop)."""
+    transactions = [
+        _txn(
+            "t1", "-60.00", MasterBucket.NEEDS, CashFlowType.EXPENSE,
+            category="Groceries", merchant="Whole Foods",
+        ),
+        _txn(
+            "t2", "-25.00", MasterBucket.NEEDS, CashFlowType.EXPENSE,
+            category="Groceries", merchant="Whole Foods",
+        ),
+        _txn(
+            "t3", "-40.00", MasterBucket.NEEDS, CashFlowType.EXPENSE,
+            category="Transportation", merchant="Shell",
+        ),
+        # Checking-side card payment — must never appear in either driver list.
+        _txn("payment", "-150.00", MasterBucket.UNCLASSIFIED, CashFlowType.TRANSFER),
+    ]
+    merchants = compute_merchant_drivers(transactions, bucket=MasterBucket.NEEDS)
+    whole_foods = next(m for m in merchants if m.merchant == "Whole Foods")
+
+    txn_drivers = compute_transaction_drivers(
+        transactions, bucket=MasterBucket.NEEDS, merchant="Whole Foods",
+    )
+    assert len(txn_drivers) == 2
+    total = sum((Decimal(t.amount) for t in txn_drivers), Decimal("0"))
+    assert str(total) == whole_foods.amount == "85.00"
+
+    # The excluded card-payment transfer never appears in either list.
+    all_txn_drivers = compute_transaction_drivers(transactions)
+    assert not any(t.transaction_id == "payment" for t in all_txn_drivers)
+
+
+def test_transaction_drivers_net_refunds_the_same_way_merchant_drivers_do():
+    """Invariant #6 must hold identically at the leaf level: a refund appears
+    as a NEGATIVE TransactionDrift.amount and the merchant's transactions still
+    sum exactly to its MerchantDriver.amount. If the leaf level ever stopped
+    netting refunds, a drill-down would appear to show more spending than the
+    category/merchant row above it."""
+    transactions = [
+        _txn(
+            "buy", "-200.00", MasterBucket.WANTS, CashFlowType.EXPENSE,
+            category="Shopping", merchant="Amazon",
+        ),
+        _txn(
+            "refund", "50.00", MasterBucket.WANTS, CashFlowType.REFUND,
+            category="Shopping", merchant="Amazon",
+        ),
+    ]
+    merchants = compute_merchant_drivers(
+        transactions, bucket=MasterBucket.WANTS, category="Shopping",
+    )
+    amazon = next(m for m in merchants if m.merchant == "Amazon")
+    assert amazon.amount == "150.00"
+
+    rows = compute_transaction_drivers(
+        transactions, bucket=MasterBucket.WANTS, category="Shopping", merchant="Amazon",
+    )
+    by_id = {r.transaction_id: Decimal(r.amount) for r in rows}
+    assert by_id == {"buy": Decimal("200.00"), "refund": Decimal("-50.00")}
+    assert sum(by_id.values()) == Decimal(amazon.amount)
+
+
+def test_transaction_drivers_apply_the_same_option_c_transfer_leg_gate():
+    """The transaction drill-down must resolve the checking -> savings transfer
+    leg with the SAME coverage-aware (Option C, docs/coral-redesign/BLOCKED.md)
+    rule as bucket/category/merchant totals — never a parallel gate.
+
+    With destination coverage, the excluded origin leg must not surface in the
+    drill-down (it would look like double the real contribution when read
+    alongside the counted destination leg); with no coverage, the origin leg
+    IS the canonical leg and must surface.
+    """
+    origin_leg = _txn(
+        "origin", "-1500.00", MasterBucket.SAVINGS, CashFlowType.SAVINGS_CONTRIBUTION,
+        category=None, account_type="checking", merchant="TRANSFER TO MARCUS SAVINGS",
+    )
+    destination_leg = _txn(
+        "dest", "1500.00", MasterBucket.SAVINGS, CashFlowType.SAVINGS_CONTRIBUTION,
+        category="Emergency Fund", account_type="savings", merchant="DEPOSIT FROM CHASE",
+    )
+
+    # Destination coverage present -> only the destination leg drills down.
+    covered = compute_transaction_drivers(
+        [origin_leg, destination_leg], bucket=MasterBucket.SAVINGS,
+    )
+    assert [r.transaction_id for r in covered] == ["dest"]
+    assert sum(Decimal(r.amount) for r in covered) == Decimal("1500.00")
+
+    # No destination coverage -> the origin leg is canonical and drills down,
+    # normalized to the positive dollar amount that actually moved (same
+    # `_signed_bucket_amount` convention as every other level).
+    uncovered = compute_transaction_drivers([origin_leg], bucket=MasterBucket.SAVINGS)
+    assert [r.transaction_id for r in uncovered] == ["origin"]
+    assert uncovered[0].amount == "1500.00"
+
+    # And the leaf level reconciles to the merchant level in BOTH coverage
+    # states — the two gates can never silently diverge.
+    for txns in ([origin_leg, destination_leg], [origin_leg]):
+        merchant_total = sum(
+            Decimal(m.amount)
+            for m in compute_merchant_drivers(txns, bucket=MasterBucket.SAVINGS)
+        )
+        leaf_total = sum(
+            Decimal(r.amount)
+            for r in compute_transaction_drivers(txns, bucket=MasterBucket.SAVINGS)
+        )
+        assert leaf_total == merchant_total == Decimal("1500.00")
+
+
+def test_transaction_drivers_exclude_internal_transfers_between_own_accounts():
+    """Invariant #1: a checking -> checking internal transfer is neutral and
+    must never appear as a "driver" the user can drill into (pr-08: "Internal
+    transfers must never appear in Top Drivers")."""
+    transactions = [
+        _txn(
+            "spend", "-80.00", MasterBucket.NEEDS, CashFlowType.EXPENSE,
+            category="Groceries", merchant="Whole Foods",
+        ),
+        _txn("xfer_out", "-500.00", MasterBucket.UNCLASSIFIED, CashFlowType.TRANSFER),
+        _txn(
+            "xfer_in", "500.00", MasterBucket.UNCLASSIFIED, CashFlowType.TRANSFER,
+            account_type="checking",
+        ),
+        # Defensive: even a transfer mislabelled into a consumption bucket by a
+        # future classifier change stays out — the gate keys off cash_flow_type.
+        _txn("xfer_mislabelled", "-500.00", MasterBucket.NEEDS, CashFlowType.TRANSFER),
+    ]
+    rows = compute_transaction_drivers(transactions)
+    assert [r.transaction_id for r in rows] == ["spend"]
+
+
+def test_transaction_drivers_sorted_by_date_descending():
+    transactions = [
+        _txn(
+            "early", "-10.00", MasterBucket.NEEDS, CashFlowType.EXPENSE,
+            category="Groceries", day=1,
+        ),
+        _txn(
+            "late", "-20.00", MasterBucket.NEEDS, CashFlowType.EXPENSE,
+            category="Groceries", day=20,
+        ),
+    ]
+    rows = compute_transaction_drivers(transactions, bucket=MasterBucket.NEEDS)
+    assert [r.transaction_id for r in rows] == ["late", "early"]
+
+
+# ── Whole-bucket merchant drivers reconcile to the bucket's actual $ ───────
+# This is the invariant Banking's bucket-anchored "Top Drivers" card depends
+# on (docs/coral-redesign/BLOCKED.md, Decision 2 — Option B): the card
+# decomposes a Needs/Wants bucket's ACTUAL $ into "top N merchants + all other
+# merchants", where the "all other" row is computed as
+# `bucket.actual_amount - sum(top N merchant amounts)`. If an unbounded
+# whole-bucket merchant list ever stopped summing to the bucket total, that
+# residual would silently absorb the discrepancy and misstate the money.
+
+def test_whole_bucket_merchant_drivers_sum_to_the_bucket_actual_amount():
+    plan = _default_plan()
+    transactions = [
+        _txn("income", "10000.00", MasterBucket.UNCLASSIFIED, CashFlowType.INCOME),
+        _txn(
+            "w1", "-900.00", MasterBucket.WANTS, CashFlowType.EXPENSE,
+            category="Shopping", merchant="Amazon",
+        ),
+        # Same merchant in a DIFFERENT category within the same bucket — the
+        # whole-bucket (category=None) call groups these as two separate rows,
+        # and both must be part of the reconciliation.
+        _txn(
+            "w2", "-300.00", MasterBucket.WANTS, CashFlowType.EXPENSE,
+            category="Dining", merchant="Amazon",
+        ),
+        _txn(
+            "w3", "-450.00", MasterBucket.WANTS, CashFlowType.EXPENSE,
+            category="Shopping", merchant="Target",
+        ),
+        # Refund nets down its merchant (invariant #6) at both levels.
+        _txn(
+            "w4", "120.00", MasterBucket.WANTS, CashFlowType.REFUND,
+            category="Shopping", merchant="Target",
+        ),
+        # Uncategorized Wants spend must still be reconciled, not dropped.
+        _txn("w5", "-70.00", MasterBucket.WANTS, CashFlowType.EXPENSE, merchant="Kiosk"),
+        # Excluded everywhere: card payment + internal transfer + another
+        # bucket's spend must not leak into the Wants reconciliation.
+        _txn("payment", "-800.00", MasterBucket.UNCLASSIFIED, CashFlowType.TRANSFER),
+        _txn("xfer", "-200.00", MasterBucket.UNCLASSIFIED, CashFlowType.TRANSFER),
+        _txn(
+            "n1", "-5000.00", MasterBucket.NEEDS, CashFlowType.EXPENSE,
+            category="Housing", merchant="Landlord",
+        ),
+    ]
+
+    result = compute_plan_vs_actual(PERIOD, transactions, plan)
+    wants = next(b for b in result.buckets if b.bucket == MasterBucket.WANTS)
+    assert wants.actual_amount == "1600.00"  # 900 + 300 + 450 - 120 + 70
+
+    # Unbounded whole-bucket merchant list (no category filter) — exactly what
+    # `bankingApi.merchantDrivers(bucket, null, …)` requests, minus the display
+    # limit — reconciles to the bucket total to the cent.
+    merchants = compute_merchant_drivers(
+        transactions, bucket=MasterBucket.WANTS, category=None, top_n=1000,
+    )
+    assert sum(Decimal(m.amount) for m in merchants) == Decimal(wants.actual_amount)
+    assert not any(m.merchant == "Landlord" for m in merchants)
+
+    # The card's "all other merchants" residual is therefore exactly the net
+    # total of the merchants that were not displayed — never a plug figure.
+    top_2 = compute_merchant_drivers(
+        transactions, bucket=MasterBucket.WANTS, category=None, top_n=2,
+    )
+    residual = Decimal(wants.actual_amount) - sum(Decimal(m.amount) for m in top_2)
+    untouched = sum(Decimal(m.amount) for m in merchants[2:])
+    assert residual == untouched
+
+    # The bucket's drift is a different number from its actual $ — the merchant
+    # list must never be presented as summing to the drift (Option B's copy
+    # requirement). target = 20% of 10000 = 2000, so Wants is $400 UNDER plan
+    # here even though $1,600 of merchant spend decomposes cleanly.
+    assert wants.target_amount == "2000.00"
+    assert wants.variance_amount == "-400.00"
+    assert Decimal(wants.variance_amount) != sum(Decimal(m.amount) for m in merchants)
 
 
 # ── compute_status is centralized, not scattered magic numbers ─────────────

@@ -35,9 +35,11 @@ from app.domain.plan_vs_actual import (
     Period,
     PlanVsActualResult,
     StatusThresholds,
+    TransactionDrift,
     compute_category_breakdown,
     compute_merchant_drivers,
     compute_plan_vs_actual,
+    compute_transaction_drivers,
 )
 from app.domain.transaction_classification import MasterBucket
 from app.services import financial_plan as plan_service
@@ -176,3 +178,23 @@ async def get_merchant_drivers(
     one category), sorted by absolute net $ within the period."""
     transactions = await _load_classified_transactions(session, period, account_id=account_id)
     return compute_merchant_drivers(transactions, bucket=bucket, category=category, top_n=top_n)
+
+
+async def get_transaction_drivers(
+    session: AsyncSession,
+    period: Period,
+    *,
+    bucket: MasterBucket | None = None,
+    category: str | None = None,
+    merchant: str | None = None,
+    account_id: str | None = None,
+) -> list[TransactionDrift]:
+    """Individual transactions behind a bucket/category/merchant driver — the
+    leaf level of Category -> merchants -> transactions
+    (pr-08-banking-drift.md). Mirrors `get_merchant_drivers`'s structure
+    exactly: load the period's classified transactions, delegate to the pure
+    domain function."""
+    transactions = await _load_classified_transactions(session, period, account_id=account_id)
+    return compute_transaction_drivers(
+        transactions, bucket=bucket, category=category, merchant=merchant,
+    )

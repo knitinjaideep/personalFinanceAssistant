@@ -1,5 +1,14 @@
 # Coral Redesign — BLOCKED
 
+| # | Decision | Raised by | Status |
+|---|---|---|---|
+| 1 | Which transfer leg counts as a Savings/Investments contribution | review of PR04 (M1) | **RESOLVED** — Option C, 2026-08-13 |
+| 2 | What baseline defines **category-level** drift for Needs/Wants | review of PR08 (M4) | **RESOLVED** — Option B, 2026-08-15 |
+
+---
+
+# Decision 1 — transfer-leg double counting (RESOLVED)
+
 Raised by: independent review of **PR04 — Plan vs Actual Engine** (M1)
 Status: **RESOLVED — user selected Option C (coverage-aware hybrid)**, 2026-08-13.
 Routed back to `coral-implementer` for repair; reviewer will re-review, verifier will re-verify.
@@ -183,3 +192,130 @@ present, credit-card payment neutrality holds through aggregation, refund
 netting, rollover exclusion, multi-account aggregation, month-boundary
 scoping, historical plan-version resolution, zero LLM involvement, and a
 green suite (410 passed).
+
+---
+---
+
+# Decision 2 — category-level drift baseline for Needs/Wants (OPEN)
+
+Raised by: independent review of **PR08 — Banking Drift & Top Drivers** (M4)
+Status: **RESOLVED — user selected Option B (bucket-level anchor), 2026-08-15.**
+Routed back to `coral-implementer` for repair; reviewer will re-review, verifier will re-verify.
+
+## Decision needed
+
+**Against what target is a Needs/Wants *category* (Dining, Shopping, Housing…)
+declared "off plan"?**
+
+The financial plan defines percentage targets for the four master buckets
+(50/20/15/15) and sub-targets **only** for Savings and Investments
+(`app/services/financial_plan.py::_DEFAULT_ALLOCATIONS`). Needs and Wants have
+**no suballocations**, and there is no frontend surface anywhere in
+`frontend-next/` that can author one — the seeded default is the only plan any
+Coral user will have today.
+
+## Why it matters
+
+`compute_category_breakdown` correctly refuses to fabricate a target it was
+never given, so under the shipped plan **every** Needs/Wants category row
+comes back with no target at all. Verified end-to-end against a temp DB with
+the seeded default plan and a $10,000 payroll deposit:
+
+```
+wants  Dining     target=None  actual=400.00  variance=None  status=unknown
+needs  Housing    target=None  actual=3000.00 variance=None  status=unknown
+savings Emergency Fund target=500.00 actual=600.00 variance=100.00 status=on_track
+```
+
+Consequences for PR08 as built:
+
+1. **Top Drivers never renders a single driver.** Its candidate filter is
+   "consumption bucket AND adverse drift > 0"; adverse drift is `null` for
+   every consumption category, so the component shows its empty state
+   ("Nothing significantly off plan this period") 100% of the time, for every
+   period, for every user. The PR's own worked example — `Shopping +$400 /
+   Amazon +$250 / Target +$100 / Other +$50` — is unreachable.
+2. **"Where You're Off Plan" is mostly "No target."** Only the three Savings
+   sub-categories produce real Target/Actual/Drift rows. Every actual spending
+   category — the substance of Banking's "Where did my cash go?" — renders
+   `—` / "No target" and sorts to the bottom of the table.
+
+This is not an implementation defect: the engine, the drill-down, the
+transfer-leg gate and the merchant/transaction reconciliation are all correct
+(see review notes). The gap is that the work order assumes a per-category
+plan target that the financial model does not define.
+
+## Options
+
+### Option A — add per-category Needs/Wants targets to the plan
+
+Extend `_DEFAULT_ALLOCATIONS` with suballocations for Housing, Groceries,
+Dining, Shopping, etc.
+
+- Pro: PR08 works exactly as written, no component changes.
+- Con: `financial-model.md` lists Needs/Wants categories but assigns them **no
+  percentages** — any defaults would be invented by Coral, i.e. exactly the
+  "hard-coded presentation constants where a stored plan exists" the skill
+  forbids, and a fabricated target the user never chose (invariant #10).
+  Also requires the plan suballocation names to track PR03's category
+  taxonomy exactly, forever.
+- Realistically needs a plan-editing UI first, so the user authors them.
+
+### Option B — anchor consumption drift at the bucket level, rank categories/merchants as contributors
+
+Needs/Wants *do* have real, plan-defined targets (50% / 20%). Key Top Drivers
+off `BucketDrift` (e.g. "Wants is $400 above plan") and use the existing
+`compute_merchant_drivers(bucket=…)` / `compute_category_breakdown` output to
+rank the largest contributors *within* that overspent bucket, framed as
+contribution to a bucket-level drift rather than a per-category drift. The
+drift table keeps category rows for Target/Actual where a target exists, and
+otherwise shows category actual $ with the bucket's drift as the anchor.
+
+- Pro: uses only targets the plan actually defines; no fabricated numbers; no
+  new backend concepts (both endpoints already exist and already exclude
+  internal transfers); satisfies "explain in terms of plan drift" truthfully;
+  works today with the seeded plan.
+- Con: a driver is attributed to a bucket's drift, not its own target, so the
+  card's headline number is shared across the merchants listed under it — the
+  copy must be precise about that.
+
+### Option C — baseline-relative drift ("vs. your typical month")
+
+Compare each category against its own trailing N-period average and label the
+comparison explicitly as *not* a plan target.
+
+- Pro: gives every category a meaningful, non-fabricated reference point.
+- Con: new backend computation; introduces a second, different meaning of
+  "drift" alongside plan drift; needs enough ingested history to be stable;
+  arguably answers a different question than PLAN → ACTUAL → DRIFT.
+
+### Option D — ship PR08 as-is and accept a permanently empty Top Drivers
+
+- Pro: zero further work.
+- Con: fails the M4 acceptance criterion "merchant drivers work"; ships a
+  section that can never display content.
+
+## Recommendation
+
+**Option B**, with **Option A as the follow-on** once a plan-editing UI exists
+(then per-category targets become user-authored, not Coral-invented, and the
+drift table can show real per-category Target/Actual for the categories the
+user chose to budget).
+
+Option B is the only choice that makes Top Drivers work *today*, uses only
+plan values that genuinely exist, and requires no new financial concept — the
+backend aggregation it needs is already built and already verified.
+
+Recommended sequencing: resolve before PR08 is committed, since Top Drivers is
+a named M4 deliverable and the fix changes which backend surface the component
+reads.
+
+## Not blocked
+
+The rest of PR08 verified clean and does not depend on this decision:
+`compute_transaction_drivers` reuses the identical `_counts_toward_bucket` /
+Option C coverage gate (transaction, merchant and category totals reconcile in
+both coverage states — new invariant tests added), internal transfers and card
+payments are excluded at every level, refunds net correctly at the leaf level,
+the drill-down wiring and period-reset behave, and status/colour come from the
+backend's threshold-aware `DriftStatus` rather than a naive over/under rule.

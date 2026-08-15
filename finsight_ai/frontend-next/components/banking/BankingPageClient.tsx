@@ -1,16 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import Link from "next/link";
 import {
   Landmark, TrendingDown, CreditCard, ArrowDownLeft, ArrowUpRight,
   RefreshCw, ChevronDown, MessageSquare, Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { bankingApi, type BankingDashboard } from "@/features/banking/api";
+import { bankingApi, type BankingDashboard, type CategoryDrift } from "@/features/banking/api";
 import { useAppStore } from "@/store/appStore";
 import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
 import { formatCompactCurrency, formatCurrency } from "@/lib/utils";
+import { buildBudgetDriftRows, type DriftRow } from "@/lib/bankingDrift";
 import MetricCard from "@/components/coral/MetricCard";
 import GlassCard from "@/components/coral/GlassCard";
 import SectionHeader from "@/components/coral/SectionHeader";
@@ -18,6 +19,8 @@ import EmptyState from "@/components/coral/EmptyState";
 import LoadingState from "@/components/coral/LoadingState";
 import ErrorState from "@/components/coral/ErrorState";
 import BankingFlowTree from "@/components/banking/BankingFlowTree";
+import BudgetDriftTable from "@/components/banking/BudgetDriftTable";
+import TopDrivers from "@/components/banking/TopDrivers";
 import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
 import DsErrorState from "@/components/coral-ds/ErrorState";
 import DsSectionHeader from "@/components/coral-ds/SectionHeader";
@@ -212,6 +215,23 @@ export default function BankingPageClient() {
   const [planVsActual, setPlanVsActual] = useState<LoadState<PlanVsActualResult>>(INITIAL_LOAD_STATE);
   const [insights, setInsights] = useState<LoadState<OverviewInsightsResult>>(INITIAL_LOAD_STATE);
 
+  // Needs/Wants/Savings category breakdowns for "Where You're Off Plan"
+  // (PR 08) — reuse the exact same GET /plan-vs-actual/buckets/{bucket}
+  // endpoint BankingFlowTree's category drill-down already uses
+  // (bankingApi.bucketBreakdown), just fetched eagerly for all three
+  // consumption/accumulation buckets Banking shows rather than lazily on
+  // click. Investments is intentionally excluded (see lib/bankingDrift.ts).
+  //
+  // "Top Drivers" is anchored differently (Decision 2, RESOLVED — Option B,
+  // docs/coral-redesign/BLOCKED.md): Needs/Wants categories have no
+  // plan-defined target, so it reads `planVsActual.data.buckets` instead —
+  // the exact same bucket-level PlanVsActualResult BankingFlowTree already
+  // fetches above, not this category breakdown. See lib/bankingDrift.ts's
+  // `buildTopDriverCandidates`.
+  const [needsBreakdown, setNeedsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
+  const [wantsBreakdown, setWantsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
+  const [savingsBreakdown, setSavingsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
+
   const { startDate, endDate } = resolved;
 
   const loadFlow = useCallback(() => {
@@ -231,6 +251,35 @@ export default function BankingPageClient() {
   }, [startDate, endDate]);
 
   useEffect(() => { loadFlow(); }, [loadFlow]);
+
+  const loadDrift = useCallback(() => {
+    const periodParams = { startDate, endDate };
+    const fetchBucket = (
+      bucket: "needs" | "wants" | "savings",
+      set: Dispatch<SetStateAction<LoadState<CategoryDrift[]>>>,
+    ) => {
+      set((s) => ({ ...s, loading: true, error: false }));
+      bankingApi
+        .bucketBreakdown(bucket, periodParams)
+        .then((d) => set({ data: d, loading: false, error: false }))
+        .catch(() => set({ data: null, loading: false, error: true }));
+    };
+    fetchBucket("needs", setNeedsBreakdown);
+    fetchBucket("wants", setWantsBreakdown);
+    fetchBucket("savings", setSavingsBreakdown);
+  }, [startDate, endDate]);
+
+  useEffect(() => { loadDrift(); }, [loadDrift]);
+
+  const driftLoading = needsBreakdown.loading || wantsBreakdown.loading || savingsBreakdown.loading;
+  const driftError = needsBreakdown.error || wantsBreakdown.error || savingsBreakdown.error;
+  const driftRows: DriftRow[] | null = driftLoading
+    ? null
+    : buildBudgetDriftRows(needsBreakdown.data, wantsBreakdown.data, savingsBreakdown.data);
+  // Retry refetches all three buckets through the same code path as the
+  // initial load, so the skeleton (not a stale error card) is shown while the
+  // retry is in flight.
+  const retryDrift = loadDrift;
 
   const load = (isPeriodChange: boolean) => {
     if (isPeriodChange) setRefreshing(true); else setLoading(true);
@@ -305,6 +354,32 @@ export default function BankingPageClient() {
         <DsSectionHeader eyebrow="This period" title="Your Cash Flow" size="sm" className="mb-5" />
         <BankingFlowTree
           result={planVsActual.data}
+          loading={planVsActual.loading}
+          error={planVsActual.error}
+          onRetry={loadFlow}
+          period={{ startDate, endDate }}
+        />
+      </section>
+
+      {/* ── Where You're Off Plan (PR 08) ───────────────────────────── */}
+      <section>
+        <DsSectionHeader eyebrow="This period" title="Where You're Off Plan" size="sm" className="mb-5" />
+        <BudgetDriftTable
+          rows={driftRows}
+          loading={driftLoading}
+          error={driftError}
+          onRetry={retryDrift}
+          period={{ startDate, endDate }}
+        />
+      </section>
+
+      {/* ── Top Drivers (PR 08) — bucket-anchored, see BankingPageClient's
+       * planVsActual state + lib/bankingDrift.ts's module docstring for why
+       * this reads `planVsActual.data.buckets` rather than `driftRows`. ── */}
+      <section>
+        <DsSectionHeader eyebrow="This period" title="Top Drivers" size="sm" className="mb-5" />
+        <TopDrivers
+          buckets={planVsActual.data?.buckets ?? null}
           loading={planVsActual.loading}
           error={planVsActual.error}
           onRetry={loadFlow}

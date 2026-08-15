@@ -25,6 +25,7 @@ from app.domain.plan_vs_actual import (
     MerchantDriver,
     Period,
     PlanVsActualResult,
+    TransactionDrift,
 )
 from app.domain.transaction_classification import MasterBucket
 from app.services import plan_vs_actual as service
@@ -117,4 +118,29 @@ async def get_merchant_drivers(
         return await service.get_merchant_drivers(
             session, period, bucket=master_bucket, category=category,
             account_id=account_id, top_n=limit,
+        )
+
+
+@router.get("/transactions", response_model=list[TransactionDrift])
+async def get_transaction_drivers(
+    year: int | None = Query(None, ge=2000, le=2100),
+    month: int | None = Query(None, ge=1, le=12),
+    start_date: date | None = None,
+    end_date: date | None = None,
+    bucket: str | None = None,
+    category: str | None = None,
+    merchant: str | None = None,
+    account_id: str | None = None,
+) -> list[TransactionDrift]:
+    """Leaf level of Category -> merchants -> transactions
+    (pr-08-banking-drift.md): individual transactions behind a bucket/
+    category/merchant driver, using the exact same eligibility gate as
+    GET /plan-vs-actual/merchants so a merchant's transaction list always
+    sums to that merchant's own driver amount."""
+    period = _resolve_period(year, month, start_date, end_date)
+    master_bucket = _resolve_bucket(bucket) if bucket else None
+    async with get_session() as session:
+        return await service.get_transaction_drivers(
+            session, period, bucket=master_bucket, category=category,
+            merchant=merchant, account_id=account_id,
         )

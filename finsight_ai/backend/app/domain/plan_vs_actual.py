@@ -546,6 +546,72 @@ def compute_merchant_drivers(
     return rows[:top_n]
 
 
+class TransactionDrift(BaseModel):
+    """One individual transaction within a merchant/category/bucket drift
+    drill-down — the third level of Category -> merchants -> transactions
+    (pr-08-banking-drift.md). `amount` uses the exact same sign convention as
+    `MerchantDriver.amount` (`_signed_bucket_amount`, then `_round_money`), so
+    summing every `TransactionDrift.amount` for one `merchant` within a
+    bucket/category always reconciles exactly to that merchant's own
+    `MerchantDriver.amount` — see `compute_transaction_drivers` below and its
+    consistency test in backend/tests/test_plan_vs_actual.py."""
+
+    transaction_id: str
+    transaction_date: date
+    description: str
+    merchant: str | None = None
+    bucket: MasterBucket
+    category: str | None = None
+    amount: str
+
+
+def compute_transaction_drivers(
+    transactions: list[ClassifiedTxn],
+    *,
+    bucket: MasterBucket | None = None,
+    category: str | None = None,
+    merchant: str | None = None,
+) -> list[TransactionDrift]:
+    """Individual transactions behind a merchant/category/bucket driver — the
+    leaf level of Category -> merchants -> transactions. Uses the exact same
+    `_counts_toward_bucket` eligibility gate as `compute_merchant_drivers`
+    (never a parallel gate that could disagree), so a merchant's transaction
+    list always sums to that merchant's own `MerchantDriver.amount`.
+    Internal transfers and card payments — anything `_counts_toward_bucket`
+    excludes — never appear here either.
+
+    `merchant`, when supplied, matches `txn.driver_key()` exactly — the same
+    key `compute_merchant_drivers` groups on — so a merchant name passed back
+    from a `MerchantDriver` row always finds its own transactions.
+
+    Sorted by `transaction_date` descending (most recent first).
+    """
+    savings_coverage, investment_coverage = compute_transfer_leg_coverage(transactions)
+    rows: list[TransactionDrift] = []
+    for txn in transactions:
+        if not _counts_toward_bucket(
+            txn, savings_coverage=savings_coverage, investment_coverage=investment_coverage,
+        ):
+            continue
+        if bucket is not None and txn.master_bucket != bucket:
+            continue
+        if category is not None and (txn.category or UNCATEGORIZED) != category:
+            continue
+        if merchant is not None and txn.driver_key() != merchant:
+            continue
+        rows.append(TransactionDrift(
+            transaction_id=txn.transaction_id,
+            transaction_date=txn.transaction_date,
+            description=txn.description,
+            merchant=txn.merchant_name,
+            bucket=txn.master_bucket,
+            category=txn.category,
+            amount=str(_round_money(_signed_bucket_amount(txn))),
+        ))
+    rows.sort(key=lambda r: r.transaction_date, reverse=True)
+    return rows
+
+
 # ── Completeness metadata ───────────────────────────────────────────────────
 
 class CompletenessMetadata(BaseModel):

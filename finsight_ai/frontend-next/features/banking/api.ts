@@ -99,6 +99,33 @@ export interface CategoryDrift {
   transaction_count: number;
 }
 
+// ── Merchant / transaction drivers (GET /api/v1/plan-vs-actual/merchants,
+// GET /api/v1/plan-vs-actual/transactions) — PR 08, Banking Drift & Top
+// Drivers. Mirrors backend/app/domain/plan_vs_actual.py's `MerchantDriver` /
+// `TransactionDrift` shapes exactly, same no-reshaping discipline as
+// `CategoryDrift` above. Both endpoints already apply the same
+// `_counts_toward_bucket` eligibility gate the rest of Plan vs Actual uses —
+// internal transfers, origin-only transfer legs, and card payments never
+// appear in either response, so no client-side filtering is needed here.
+
+export interface MerchantDriver {
+  merchant: string;
+  bucket: MasterBucket | null;
+  category: string | null;
+  amount: string;
+  transaction_count: number;
+}
+
+export interface TransactionDriver {
+  transaction_id: string;
+  transaction_date: string;
+  description: string;
+  merchant: string | null;
+  bucket: MasterBucket;
+  category: string | null;
+  amount: string;
+}
+
 export const bankingApi = {
   /**
    * `startDate`/`endDate` (PR 05 unified period contract, see
@@ -116,6 +143,36 @@ export const bankingApi = {
   /** Category-level drift within one master bucket (Needs/Wants/Savings/Investments) for the given period. */
   bucketBreakdown: (bucket: MasterBucket, period?: PlanPeriodParams): Promise<CategoryDrift[]> =>
     api.get<CategoryDrift[]>(`/plan-vs-actual/buckets/${bucket}`, {
+      start_date: period?.startDate,
+      end_date: period?.endDate,
+    }),
+
+  /** Top merchant/description drivers, optionally narrowed to one bucket/category — backend-aggregated (PR 08). */
+  merchantDrivers: (
+    bucket: MasterBucket | null,
+    category: string | null,
+    period?: PlanPeriodParams,
+    limit?: number,
+  ): Promise<MerchantDriver[]> =>
+    api.get<MerchantDriver[]>("/plan-vs-actual/merchants", {
+      bucket: bucket ?? undefined,
+      category: category ?? undefined,
+      start_date: period?.startDate,
+      end_date: period?.endDate,
+      limit,
+    }),
+
+  /** Individual transactions behind one bucket/category/merchant driver — the leaf of Category -> merchants -> transactions (PR 08). */
+  transactionDrivers: (
+    bucket: MasterBucket | null,
+    category: string | null,
+    merchant: string | null,
+    period?: PlanPeriodParams,
+  ): Promise<TransactionDriver[]> =>
+    api.get<TransactionDriver[]>("/plan-vs-actual/transactions", {
+      bucket: bucket ?? undefined,
+      category: category ?? undefined,
+      merchant: merchant ?? undefined,
       start_date: period?.startDate,
       end_date: period?.endDate,
     }),
