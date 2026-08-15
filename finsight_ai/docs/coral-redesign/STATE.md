@@ -41,10 +41,10 @@ Commit: 32dab94
 
 ### M5 — Investments
 
-- [ ] PR11 Investment Contribution Model
+- [x] PR11 Investment Contribution Model
 - [ ] PR12 Investments UI
 
-Commit:
+Commit: 57a7080
 
 ### M6 — Goals & Advisor
 
