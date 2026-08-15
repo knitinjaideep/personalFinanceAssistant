@@ -161,6 +161,32 @@ async def test_never_classified_transactions_are_backfilled_before_aggregating(t
         assert txns[0].classification_source is not None  # backfilled as a side effect
 
 
+async def test_auto_classification_backfill_is_bounded_to_requested_period(temp_db):
+    async with get_session() as session:
+        acct, stmt = await _make_account(session)
+        await repo.bulk_create_transactions(session, [
+            {
+                "account_id": acct.id, "statement_id": stmt.id,
+                "transaction_date": date(2026, 7, 31), "description": "STARBUCKS JULY",
+                "amount": "-5.00", "transaction_type": "purchase",
+            },
+            {
+                "account_id": acct.id, "statement_id": stmt.id,
+                "transaction_date": date(2026, 8, 10), "description": "STARBUCKS AUGUST",
+                "amount": "-6.25", "transaction_type": "purchase",
+            },
+        ])
+
+    async with get_session() as session:
+        await service.get_plan_vs_actual(session, Period.for_month(2026, 8))
+
+    async with get_session() as session:
+        txns = await repo.list_transactions(session, account_id=acct.id)
+        by_desc = {txn.description: txn for txn in txns}
+        assert by_desc["STARBUCKS AUGUST"].classification_source is not None
+        assert by_desc["STARBUCKS JULY"].classification_source is None
+
+
 async def test_user_override_survives_plan_vs_actual_auto_classification(temp_db):
     """Auto-classification must never clobber a prior user override — it only
     ever touches classification_source IS NULL rows."""

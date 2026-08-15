@@ -83,7 +83,11 @@ async def _load_classified_transactions(
     """
     if auto_classify:
         summary = await TransactionClassificationService().classify_batch(
-            session, account_id=account_id, only_unclassified=True,
+            session,
+            account_id=account_id,
+            only_unclassified=True,
+            date_from=period.start,
+            date_to=period.end,
         )
         if summary.total:
             logger.info(
