@@ -2,7 +2,7 @@
 
 Branch: feature/coral-plan-vs-actual-redesign
 
-Status: IN_PROGRESS
+Status: COMPLETE
 
 ## Completed foundational work
 
@@ -65,9 +65,9 @@ Commit: dc50e05
 
 ### M8 — Final Audit
 
-- [ ] PR20 Final Audit
+- [x] PR20 Final Audit
 
-Commit:
+Commit: 21476d0
 
 ## Current blocker
 
