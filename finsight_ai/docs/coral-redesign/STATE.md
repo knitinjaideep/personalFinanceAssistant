@@ -49,10 +49,10 @@ Commit: 1c7d604
 ### M6 — Goals & Advisor
 
 - [x] PR13 Savings Goals
-- [ ] PR14 Next Month Planner
-- [ ] PR15 Monthly Close
+- [x] PR14 Next Month Planner
+- [x] PR15 Monthly Close
 
-Commit:
+Commit: 731aa5d
 
 ### M7 — UI Completion
 
