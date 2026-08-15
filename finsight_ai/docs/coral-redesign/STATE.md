@@ -56,12 +56,12 @@ Commit: 731aa5d
 
 ### M7 — UI Completion
 
-- [ ] PR16 Cleanup
-- [ ] PR17 Dark Mode
-- [ ] PR18 Responsive
-- [ ] PR19 Motion
+- [x] PR16 Cleanup
+- [x] PR17 Dark Mode
+- [x] PR18 Responsive
+- [x] PR19 Motion
 
-Commit:
+Commit: dc50e05
 
 ### M8 — Final Audit
 
