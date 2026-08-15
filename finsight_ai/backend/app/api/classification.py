@@ -94,6 +94,7 @@ def _to_action_result(
 @router.get("/needs-review", response_model=list[TransactionReviewItem])
 async def get_needs_review(
     limit: int = Query(20, ge=1, le=100),
+    account_id: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> list[TransactionReviewItem]:
@@ -112,7 +113,11 @@ async def get_needs_review(
         raise HTTPException(422, "end_date must not be before start_date.")
     async with get_session() as session:
         rows = await _service.get_needs_review(
-            session, limit=limit, date_from=start_date, date_to=end_date,
+            session,
+            limit=limit,
+            account_id=account_id,
+            date_from=start_date,
+            date_to=end_date,
         )
         return [_to_review_item(t) for t in rows]
 

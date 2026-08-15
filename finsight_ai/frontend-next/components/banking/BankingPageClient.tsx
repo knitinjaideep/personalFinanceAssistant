@@ -7,7 +7,7 @@ import {
   RefreshCw, ChevronDown, MessageSquare, Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { bankingApi, type BankingDashboard, type CategoryDrift } from "@/features/banking/api";
+import { bankingApi, type BankingDashboard, type BankingInsightsResult, type CategoryDrift } from "@/features/banking/api";
 import { useAppStore } from "@/store/appStore";
 import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
 import { formatCompactCurrency, formatCurrency } from "@/lib/utils";
@@ -22,6 +22,7 @@ import BankingFlowTree from "@/components/banking/BankingFlowTree";
 import BudgetDriftTable from "@/components/banking/BudgetDriftTable";
 import TopDrivers from "@/components/banking/TopDrivers";
 import ClassificationReviewSection from "@/components/banking/ClassificationReviewSection";
+import BankingInsightsSection from "@/components/banking/BankingInsightsSection";
 import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
 import DsErrorState from "@/components/coral-ds/ErrorState";
 import DsSectionHeader from "@/components/coral-ds/SectionHeader";
@@ -232,6 +233,7 @@ export default function BankingPageClient() {
   const [needsBreakdown, setNeedsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
   const [wantsBreakdown, setWantsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
   const [savingsBreakdown, setSavingsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
+  const [bankingInsights, setBankingInsights] = useState<LoadState<BankingInsightsResult>>(INITIAL_LOAD_STATE);
 
   const { startDate, endDate } = resolved;
 
@@ -271,6 +273,17 @@ export default function BankingPageClient() {
   }, [startDate, endDate]);
 
   useEffect(() => { loadDrift(); }, [loadDrift]);
+
+  const loadBankingInsights = useCallback(() => {
+    const periodParams = { startDate, endDate };
+    setBankingInsights((s) => ({ ...s, loading: true, error: false }));
+    bankingApi
+      .insights(periodParams)
+      .then((d) => setBankingInsights({ data: d, loading: false, error: false }))
+      .catch(() => setBankingInsights({ data: null, loading: false, error: true }));
+  }, [startDate, endDate]);
+
+  useEffect(() => { loadBankingInsights(); }, [loadBankingInsights]);
 
   const driftLoading = needsBreakdown.loading || wantsBreakdown.loading || savingsBreakdown.loading;
   const driftError = needsBreakdown.error || wantsBreakdown.error || savingsBreakdown.error;
@@ -404,7 +417,20 @@ export default function BankingPageClient() {
           onChanged={() => {
             loadFlow();
             loadDrift();
+            loadBankingInsights();
           }}
+        />
+      </section>
+
+      {/* ── Banking Insights (PR 10) — deterministic top three actions,
+       * backed by the backend's ranked Banking insight facts. ───────── */}
+      <section>
+        <DsSectionHeader eyebrow="This period" title="Banking Insights" size="sm" className="mb-5" />
+        <BankingInsightsSection
+          insights={bankingInsights.data?.insights ?? null}
+          loading={bankingInsights.loading}
+          error={bankingInsights.error}
+          onRetry={loadBankingInsights}
         />
       </section>
 

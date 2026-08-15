@@ -126,6 +126,43 @@ export interface TransactionDriver {
   amount: string;
 }
 
+// ── Banking Insights (GET /api/v1/dashboard/banking/insights) — PR 10 ─────
+
+export type BankingInsightType =
+  | "merchant_overspend"
+  | "category_overspend"
+  | "persistent_wants_overspend"
+  | "unusual_spending_spike"
+  | "savings_shortfall"
+  | "recurring_charge_increase"
+  | "merchant_concentration"
+  | "classification_uncertainty"
+  | "positive_improvement";
+
+export type BankingInsightSeverity = "positive" | "info" | "warning" | "critical";
+
+export interface BankingInsightFact {
+  label: string;
+  value: string;
+}
+
+export interface BankingInsight {
+  type: BankingInsightType;
+  severity: BankingInsightSeverity;
+  tone: "good" | "neutral" | "warning" | "danger";
+  title: string;
+  summary: string;
+  impact_amount: string | null;
+  confidence: string;
+  action: string;
+  supporting_facts: BankingInsightFact[];
+}
+
+export interface BankingInsightsResult {
+  period: string;
+  insights: BankingInsight[];
+}
+
 // ── Classification review queue (GET /api/v1/classification/needs-review,
 // POST .../confirm, POST .../reclassify) — PR 09. Mirrors
 // backend/app/domain/classification_review.py's response shapes exactly, no
@@ -251,6 +288,13 @@ export const bankingApi = {
       bucket: bucket ?? undefined,
       category: category ?? undefined,
       merchant: merchant ?? undefined,
+      start_date: period?.startDate,
+      end_date: period?.endDate,
+    }),
+
+  /** Deterministic Coral Banking Insights, ranked and capped by the backend. */
+  insights: (period?: PlanPeriodParams): Promise<BankingInsightsResult> =>
+    api.get<BankingInsightsResult>("/dashboard/banking/insights", {
       start_date: period?.startDate,
       end_date: period?.endDate,
     }),

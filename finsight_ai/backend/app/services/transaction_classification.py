@@ -330,7 +330,8 @@ class TransactionClassificationService:
         self,
         session: AsyncSession,
         *,
-        limit: int = 100,
+        limit: int | None = 100,
+        account_id: str | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
         auto_classify: bool = True,
@@ -363,11 +364,19 @@ class TransactionClassificationService:
         """
         if auto_classify:
             await self.classify_batch(
-                session, only_unclassified=True, date_from=date_from, date_to=date_to,
+                session,
+                account_id=account_id,
+                only_unclassified=True,
+                date_from=date_from,
+                date_to=date_to,
             )
 
         candidates = await repo.list_transactions(
-            session, needs_review_only=True, date_from=date_from, date_to=date_to,
+            session,
+            account_id=account_id,
+            needs_review_only=True,
+            date_from=date_from,
+            date_to=date_to,
         )
 
         def _sort_key(t: TransactionModel) -> tuple[float, Decimal]:
@@ -381,7 +390,7 @@ class TransactionClassificationService:
             return (confidence, -amount)
 
         candidates.sort(key=_sort_key)
-        return candidates[:limit]
+        return candidates[:limit] if limit is not None else candidates
 
     # ── Reclassify (PR 09 "Change" action) ───────────────────────────────────
 

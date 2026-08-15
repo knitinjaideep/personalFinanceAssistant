@@ -25,16 +25,10 @@ from datetime import date
 import structlog
 from fastapi import APIRouter, HTTPException
 
+from app.api.plan_vs_actual import _resolve_period
 from app.db.engine import get_session
-from app.services.dashboard.investment_queries import (
-    allocation_by_account,
-    balance_history_by_account,
-    document_coverage_investments,
-    investment_fees_summary,
-    investment_portfolio_summary,
-    top_holdings_by_gain_loss,
-    top_holdings_by_value,
-)
+from app.domain.banking_insights import BankingInsightsResult
+from app.services import banking_insights as banking_insights_service
 from app.services.dashboard.banking_queries import (
     banking_card_spend_summary,
     banking_cash_flow,
@@ -43,6 +37,15 @@ from app.services.dashboard.banking_queries import (
     banking_subscriptions,
     banking_top_merchants,
     document_coverage_banking,
+)
+from app.services.dashboard.investment_queries import (
+    allocation_by_account,
+    balance_history_by_account,
+    document_coverage_investments,
+    investment_fees_summary,
+    investment_portfolio_summary,
+    top_holdings_by_gain_loss,
+    top_holdings_by_value,
 )
 from app.services.dashboard.summary_queries import (
     document_count_by_institution,
@@ -110,10 +113,16 @@ async def get_investments_dashboard(
         portfolio   = await investment_portfolio_summary(session, as_of=end_date)
         allocation  = await allocation_by_account(session, as_of=end_date)
         top_hold    = await top_holdings_by_value(session, limit=10, as_of=end_date)
-        top_gain    = await top_holdings_by_gain_loss(session, limit=10, direction="gain", as_of=end_date)
-        top_loss    = await top_holdings_by_gain_loss(session, limit=10, direction="loss", as_of=end_date)
+        top_gain = await top_holdings_by_gain_loss(
+            session, limit=10, direction="gain", as_of=end_date,
+        )
+        top_loss = await top_holdings_by_gain_loss(
+            session, limit=10, direction="loss", as_of=end_date,
+        )
         fees        = await investment_fees_summary(session, date_from=start_date, date_to=end_date)
-        history     = await balance_history_by_account(session, date_from=start_date, date_to=end_date)
+        history = await balance_history_by_account(
+            session, date_from=start_date, date_to=end_date,
+        )
         coverage    = await document_coverage_investments(session)
 
     return {
@@ -125,7 +134,10 @@ async def get_investments_dashboard(
         "fees": fees,
         "balance_history": history,
         "coverage": coverage,
-        "period": {"start_date": start_date, "end_date": end_date} if start_date and end_date else None,
+        "period": (
+            {"start_date": start_date, "end_date": end_date}
+            if start_date and end_date else None
+        ),
     }
 
 
@@ -160,11 +172,21 @@ async def get_banking_dashboard(
     """
     _validate_range(start_date, end_date)
     async with get_session() as session:
-        monthly     = await banking_spend_by_month(session, months=months, date_from=start_date, date_to=end_date)
-        by_cat      = await banking_spend_by_category(session, date_from=start_date, date_to=end_date)
-        merchants   = await banking_top_merchants(session, limit=10, date_from=start_date, date_to=end_date)
-        cards       = await banking_card_spend_summary(session, date_from=start_date, date_to=end_date)
-        cash_flow   = await banking_cash_flow(session, months=months, date_from=start_date, date_to=end_date)
+        monthly = await banking_spend_by_month(
+            session, months=months, date_from=start_date, date_to=end_date,
+        )
+        by_cat = await banking_spend_by_category(
+            session, date_from=start_date, date_to=end_date,
+        )
+        merchants = await banking_top_merchants(
+            session, limit=10, date_from=start_date, date_to=end_date,
+        )
+        cards = await banking_card_spend_summary(
+            session, date_from=start_date, date_to=end_date,
+        )
+        cash_flow = await banking_cash_flow(
+            session, months=months, date_from=start_date, date_to=end_date,
+        )
         subs        = await banking_subscriptions(session)
         coverage    = await document_coverage_banking(session)
 
@@ -176,8 +198,31 @@ async def get_banking_dashboard(
         "cash_flow": cash_flow,
         "subscriptions": subs,
         "coverage": coverage,
-        "period": {"start_date": start_date, "end_date": end_date} if start_date and end_date else None,
+        "period": (
+            {"start_date": start_date, "end_date": end_date}
+            if start_date and end_date else None
+        ),
     }
+
+
+@router.get("/banking/insights", response_model=BankingInsightsResult)
+async def get_banking_insights(
+    year: int | None = None,
+    month: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    account_id: str | None = None,
+) -> BankingInsightsResult:
+    """Deterministic Coral Banking Insights for the selected period.
+
+    Uses the same period contract as Plan vs Actual / Overview: callers pass
+    either `start_date`+`end_date` or `year`+`month`.
+    """
+    period = _resolve_period(year, month, start_date, end_date)
+    async with get_session() as session:
+        return await banking_insights_service.get_banking_insights(
+            session, period, account_id=account_id,
+        )
 
 
 @router.get("/coverage")
