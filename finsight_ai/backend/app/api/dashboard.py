@@ -30,6 +30,7 @@ from app.db.engine import get_session
 from app.domain.banking_insights import BankingInsightsResult
 from app.services import banking_insights as banking_insights_service
 from app.services.dashboard.banking_queries import (
+    banking_account_value_history,
     banking_card_spend_summary,
     banking_cash_flow,
     banking_spend_by_category,
@@ -165,6 +166,7 @@ async def get_banking_dashboard(
       - spend_by_category: totals per category for pie/bar chart
       - top_merchants: top 10 by total spend
       - card_summary: per-card spend breakdown
+      - account_value_history: cash account balance snapshots for the selected range
       - cash_flow: monthly inflow vs outflow (checking/savings only)
       - subscriptions: recurring transactions
       - coverage: document counts per institution
@@ -184,6 +186,9 @@ async def get_banking_dashboard(
         cards = await banking_card_spend_summary(
             session, date_from=start_date, date_to=end_date,
         )
+        account_values = await banking_account_value_history(
+            session, date_from=start_date, date_to=end_date,
+        )
         cash_flow = await banking_cash_flow(
             session, months=months, date_from=start_date, date_to=end_date,
         )
@@ -195,6 +200,7 @@ async def get_banking_dashboard(
         "spend_by_category": by_cat,
         "top_merchants": merchants,
         "card_summary": cards,
+        "account_value_history": account_values,
         "cash_flow": cash_flow,
         "subscriptions": subs,
         "coverage": coverage,

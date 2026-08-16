@@ -73,6 +73,17 @@ Commit: 21476d0
 
 None.
 
+## Account Value Refinement
+
+### Prompt 1 — Shared account-value foundation
+
+- [x] Opened and inspected approved Banking and Investments mockups.
+- [x] Added read-only Banking account-value history from existing balance snapshots.
+- [x] Added shared frontend account-value normalization and reusable UI primitives.
+- [x] Verified account-value deltas use latest snapshot minus previous available monthly snapshot.
+
+Commit: included in Prompt 1 commit
+
 ## Notes
 
 Update this file only after verification passes.

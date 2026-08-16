@@ -64,6 +64,21 @@ export interface BankingDashboard {
   spend_by_category: SpendByCategory[];
   top_merchants: TopMerchant[];
   card_summary: CardSpend[];
+  account_value_history: Array<{
+    account_id: string;
+    account_name: string;
+    institution: string;
+    institution_type: string;
+    account_type: string;
+    domain: "banking";
+    snapshot_date: string;
+    value: number;
+    currency: string;
+    source_statement_id: string;
+    source_type: string;
+    latest_statement_month: string | null;
+    status: string;
+  }>;
   cash_flow: CashFlowMonth[];
   subscriptions: Subscription[];
   coverage: InstitutionCoverage[];

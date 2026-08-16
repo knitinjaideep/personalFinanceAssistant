@@ -42,6 +42,7 @@ const BANKING_DASHBOARD = {
   spend_by_category: [],
   top_merchants: [],
   card_summary: [],
+  account_value_history: [],
   cash_flow: [],
   subscriptions: [],
   coverage: [],

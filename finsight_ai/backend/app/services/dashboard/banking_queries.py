@@ -7,33 +7,32 @@ No LLM calls. No inference. Pure SQL + simple Python aggregation.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from datetime import date
-import math
 from decimal import Decimal
 
-from sqlalchemy import func, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.db.models import (
     AccountModel,
-    DocumentModel,
-    FeeModel,
+    BalanceSnapshotModel,
     InstitutionModel,
     StatementModel,
-    TransactionModel,
 )
+from app.services.dashboard.utils import date_range_clause as _date_range_clause
 from app.services.dashboard.utils import (
-    date_range_clause as _date_range_clause,
     date_range_or_rolling_months_clause as _date_range_or_rolling_months_clause,
-    dec as _dec,
-    fmt as _fmt,
-    normalize_merchant as _normalize_merchant,
 )
+from app.services.dashboard.utils import dec as _dec
+from app.services.dashboard.utils import fmt as _fmt
+from app.services.dashboard.utils import normalize_merchant as _normalize_merchant
 
 # Banking institution types
 _BANKING_TYPES = ["chase", "amex", "discover", "bofa", "marcus"]
+_BANKING_VALUE_ACCOUNT_TYPES = ["checking", "savings"]
 
 # Spend categories to display (ordered for UI)
 SPEND_CATEGORIES = [
@@ -41,6 +40,77 @@ SPEND_CATEGORIES = [
     "shopping", "gas", "utilities", "healthcare", "entertainment",
     "education", "insurance", "transfers", "fees", "atm_cash", "other",
 ]
+
+
+# ── Account value snapshots ─────────────────────────────────────────────────
+
+async def banking_account_value_history(
+    session: AsyncSession,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict]:
+    """
+    Month-by-month banking account values from parsed balance snapshots.
+
+    This is account VALUE history, not spend history. We intentionally restrict
+    Banking's value timeline to cash-like account types (`checking`, `savings`)
+    so credit-card statement balances are not presented as positive banking
+    assets. Duplicate snapshots from duplicate ingests are collapsed per
+    account/date/value instead of summed.
+    """
+    query = (
+        select(
+            BalanceSnapshotModel.account_id,
+            AccountModel.account_name,
+            AccountModel.account_type,
+            AccountModel.institution_type,
+            InstitutionModel.name.label("institution"),
+            BalanceSnapshotModel.snapshot_date,
+            BalanceSnapshotModel.total_value,
+            BalanceSnapshotModel.currency,
+            BalanceSnapshotModel.statement_id,
+            StatementModel.period_end.label("latest_statement"),
+        )
+        .join(AccountModel, BalanceSnapshotModel.account_id == AccountModel.id)
+        .join(InstitutionModel, AccountModel.institution_id == InstitutionModel.id)
+        .join(StatementModel, BalanceSnapshotModel.statement_id == StatementModel.id)
+        .where(AccountModel.institution_type.in_(_BANKING_TYPES))
+        .where(AccountModel.account_type.in_(_BANKING_VALUE_ACCOUNT_TYPES))
+    )
+    if date_from is not None:
+        query = query.where(BalanceSnapshotModel.snapshot_date >= date_from)
+    if date_to is not None:
+        query = query.where(BalanceSnapshotModel.snapshot_date <= date_to)
+    query = query.order_by(
+        AccountModel.institution_type,
+        AccountModel.account_name,
+        BalanceSnapshotModel.snapshot_date,
+    )
+
+    rows = await session.execute(query)
+    snapshots = []
+    seen: set[tuple[str, str, str]] = set()
+    for r in rows.fetchall():
+        dedupe_key = (str(r.account_id), str(r.snapshot_date), str(r.total_value))
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        snapshots.append({
+            "account_id": str(r.account_id),
+            "account_name": r.account_name or f"{r.institution} {r.account_type}".strip(),
+            "institution": r.institution,
+            "institution_type": r.institution_type,
+            "account_type": r.account_type,
+            "domain": "banking",
+            "snapshot_date": str(r.snapshot_date),
+            "value": round(float(_dec(r.total_value)), 2),
+            "currency": r.currency,
+            "source_statement_id": str(r.statement_id),
+            "source_type": "balance_snapshot",
+            "latest_statement_month": str(r.latest_statement)[:7] if r.latest_statement else None,
+            "status": "complete",
+        })
+    return snapshots
 
 
 # ── Monthly spend ─────────────────────────────────────────────────────────────

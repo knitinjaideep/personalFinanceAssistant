@@ -20,6 +20,7 @@ from app.api.dashboard import _validate_range, get_banking_dashboard, get_invest
 from app.db import repositories as repo
 from app.db.engine import get_session
 from app.services.dashboard.banking_queries import (
+    banking_account_value_history,
     banking_card_spend_summary,
     banking_cash_flow,
     banking_spend_by_category,
@@ -147,6 +148,46 @@ async def test_banking_card_spend_summary_filters_to_range(temp_db):
         rows = await banking_card_spend_summary(session, date_from=date(2026, 6, 1), date_to=date(2026, 6, 30))
     assert len(rows) == 1
     assert rows[0]["total_spend"] == 30.0
+
+
+async def test_banking_account_value_history_filters_cash_snapshots_only(temp_db):
+    async with get_session() as session:
+        checking, checking_stmt = await _make_account(
+            session, institution_type="chase", account_type="checking", suffix="cash",
+        )
+        card, card_stmt = await _make_account(
+            session, institution_type="chase", account_type="credit_card", suffix="card",
+        )
+        await repo.bulk_create_balance_snapshots(session, [
+            {
+                "account_id": checking.id,
+                "statement_id": checking_stmt.id,
+                "snapshot_date": date(2026, 6, 30),
+                "total_value": "11000.00",
+            },
+            {
+                "account_id": checking.id,
+                "statement_id": checking_stmt.id,
+                "snapshot_date": date(2026, 5, 31),
+                "total_value": "10000.00",
+            },
+            {
+                "account_id": card.id,
+                "statement_id": card_stmt.id,
+                "snapshot_date": date(2026, 6, 30),
+                "total_value": "500.00",
+            },
+        ])
+
+    async with get_session() as session:
+        rows = await banking_account_value_history(
+            session, date_from=date(2026, 6, 1), date_to=date(2026, 6, 30),
+        )
+
+    assert len(rows) == 1
+    assert rows[0]["account_type"] == "checking"
+    assert rows[0]["snapshot_date"] == "2026-06-30"
+    assert rows[0]["value"] == 11000.0
 
 
 # ── banking_cash_flow ────────────────────────────────────────────────────────
