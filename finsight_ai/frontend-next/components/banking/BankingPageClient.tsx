@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
   Landmark, TrendingDown, CreditCard, ArrowDownLeft, ArrowUpRight,
-  RefreshCw, ChevronDown, MessageSquare, Sparkles,
+  RefreshCw, ChevronDown, MessageSquare, Sparkles, Info,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { bankingApi, type BankingDashboard, type BankingInsightsResult, type CategoryDrift } from "@/features/banking/api";
@@ -23,11 +24,21 @@ import BudgetDriftTable from "@/components/banking/BudgetDriftTable";
 import TopDrivers from "@/components/banking/TopDrivers";
 import ClassificationReviewSection from "@/components/banking/ClassificationReviewSection";
 import BankingInsightsSection from "@/components/banking/BankingInsightsSection";
+import {
+  AccountValueLegend,
+  AccountValueSummaryCard,
+  AccountValueTable,
+  AccountValueTrendChart,
+  AccountValueViewToggle,
+  CurrentSnapshotPanel,
+  ExpandedAccountDetail,
+  colorFor,
+  type AccountValueViewMode,
+} from "@/components/account-value/AccountValueExperience";
 import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
 import DsErrorState from "@/components/coral-ds/ErrorState";
 import DsSectionHeader from "@/components/coral-ds/SectionHeader";
 import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
-import PageHeader from "@/components/coral-ds/PageHeader";
 import SkeletonState from "@/components/coral-ds/SkeletonState";
 import NextMonthPlanSection from "@/components/overview/NextMonthPlanSection";
 import {
@@ -36,6 +47,7 @@ import {
   type OverviewInsightsResult,
   type PlanVsActualResult,
 } from "@/features/overview/api";
+import { buildAccountValueDataset } from "@/lib/accountValue";
 
 const INSIGHT_PROMPTS = [
   "What were my largest expenses in the last 6 months?",
@@ -204,6 +216,32 @@ interface LoadState<T> {
 
 const INITIAL_LOAD_STATE = { data: null, loading: true, error: false };
 
+function accountInsightText(dataset: ReturnType<typeof buildAccountValueDataset>) {
+  if (dataset.accounts.length === 0) {
+    return {
+      title: "Upload cash account statements to unlock account trends.",
+      body: "Coral only shows account-value history when real balance snapshots are available.",
+    };
+  }
+  if (dataset.totalChange === null) {
+    return {
+      title: "Your latest cash snapshot is available.",
+      body: "Add another month of statements to compare month-over-month movement.",
+    };
+  }
+  const topMover = [...dataset.accounts]
+    .filter((account) => account.change !== null)
+    .sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))[0];
+  return {
+    title: dataset.totalChange >= 0
+      ? "Your cash accounts increased this period."
+      : "Your cash accounts declined this period.",
+    body: topMover
+      ? `${topMover.accountName} moved the most, changing by ${formatCurrency(Math.abs(topMover.change ?? 0))}.`
+      : "Coral is using the latest available monthly balance snapshots.",
+  };
+}
+
 export default function BankingPageClient() {
   const [data, setData]     = useState<BankingDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -241,6 +279,8 @@ export default function BankingPageClient() {
   const [savingsBreakdown, setSavingsBreakdown] = useState<LoadState<CategoryDrift[]>>(INITIAL_LOAD_STATE);
   const [bankingInsights, setBankingInsights] = useState<LoadState<BankingInsightsResult>>(INITIAL_LOAD_STATE);
   const [nextMonthPlan, setNextMonthPlan] = useState<LoadState<NextMonthPlanResult>>(INITIAL_LOAD_STATE);
+  const [accountViewMode, setAccountViewMode] = useState<AccountValueViewMode>("line");
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
 
   const { startDate, endDate } = resolved;
 
@@ -303,6 +343,27 @@ export default function BankingPageClient() {
 
   useEffect(() => { loadNextMonthPlan(); }, [loadNextMonthPlan]);
 
+  const accountDataset = useMemo(
+    () => buildAccountValueDataset(data?.account_value_history ?? []),
+    [data?.account_value_history],
+  );
+  const selectedAccount = accountDataset.accounts.find((account) => (
+    account.accountId === selectedAccountId
+  )) ?? null;
+  const accountInsight = useMemo(() => accountInsightText(accountDataset), [accountDataset]);
+
+  useEffect(() => {
+    if (accountDataset.accounts.length === 0) {
+      if (selectedAccountId !== null) setSelectedAccountId(null);
+      return;
+    }
+    if (!selectedAccountId || !accountDataset.accounts.some((account) => (
+      account.accountId === selectedAccountId
+    ))) {
+      setSelectedAccountId(accountDataset.accounts[0].accountId);
+    }
+  }, [accountDataset.accounts, selectedAccountId]);
+
   const driftLoading = needsBreakdown.loading || wantsBreakdown.loading || savingsBreakdown.loading;
   const driftError = needsBreakdown.error || wantsBreakdown.error || savingsBreakdown.error;
   const driftRows: DriftRow[] | null = driftLoading
@@ -360,24 +421,157 @@ export default function BankingPageClient() {
   return (
     <div className="space-y-10">
 
-      {/* ── Header (kept, per pr-07-banking-flow.md: title + period selector) ── */}
-      <PageHeader
-        eyebrow="Banking"
-        title="Where did my cash go?"
-        subtitle="Track cash flow, understand where your money went, and stay on plan."
-        action={
-          <FinancialPeriodSelector
-            selection={selection}
-            resolved={resolved}
-            onChange={setSelection}
-            onPrevMonth={goToPreviousMonth}
-            onNextMonth={goToNextMonth}
-            loading={refreshing || anyFlowLoading}
-          />
-        }
-      />
+      {/* ── Account-value hero — approved Banking mockup direction ───── */}
+      <section className="space-y-6">
+        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_560px]">
+          <div>
+            <h1 className="text-5xl font-black tracking-normal text-slate-950 md:text-6xl">
+              Banking
+            </h1>
+            <p className="mt-3 max-w-xl text-lg text-slate-600">
+              Track how your cash accounts are growing month by month.
+            </p>
+            <div className="mt-5">
+              <FinancialPeriodSelector
+                selection={selection}
+                resolved={resolved}
+                onChange={setSelection}
+                onPrevMonth={goToPreviousMonth}
+                onNextMonth={goToNextMonth}
+                loading={refreshing || anyFlowLoading}
+              />
+            </div>
+          </div>
 
-      {/* ── Advisor summary (kept) ──────────────────────────────────── */}
+          <div className="grid items-center gap-5 sm:grid-cols-[210px_minmax(0,1fr)]">
+            <Image
+              src="/mascots/coral-banking.png"
+              alt=""
+              width={240}
+              height={160}
+              priority
+              className="mx-auto h-36 w-auto object-contain"
+            />
+            <div
+              className="rounded-[28px] bg-white/86 p-6 shadow-[0_18px_48px_rgba(30,70,110,0.08)] ring-1 ring-slate-200/80"
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-orange-50 text-coral-orange">
+                  <Sparkles size={16} />
+                </span>
+                <div>
+                  <p className="text-sm font-black text-slate-950">Here's the story of your cash</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{accountInsight.body}</p>
+                </div>
+              </div>
+              <Link
+                href="/chat"
+                className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-coral-orange"
+              >
+                View key takeaways <ArrowUpRight size={14} />
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {accountDataset.accounts.length > 0 ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {accountDataset.accounts.map((account, index) => (
+                <AccountValueSummaryCard
+                  key={account.accountId}
+                  account={account}
+                  color={colorFor(index)}
+                  selected={selectedAccountId === account.accountId}
+                  onSelect={() => setSelectedAccountId((current) => (
+                    current === account.accountId ? null : account.accountId
+                  ))}
+                />
+              ))}
+            </div>
+
+            <ExpandedAccountDetail
+              account={selectedAccount}
+              color={colorFor(Math.max(0, accountDataset.accounts.findIndex((account) => (
+                account.accountId === selectedAccount?.accountId
+              ))))}
+              meta={selectedAccount ? {
+                accountId: selectedAccount.accountId,
+                classification: selectedAccount.accountType === "checking"
+                  ? "Joint cash account"
+                  : "Cash reserve",
+                purpose: selectedAccount.institutionType === "bofa"
+                  ? "Fun spending and larger wants"
+                  : selectedAccount.accountType === "checking"
+                    ? "Salary, rent, utilities, cars, groceries, dining, and recurring transfers"
+                    : null,
+              } : null}
+            />
+          </>
+        ) : (
+          <div className="rounded-[28px] bg-white/88 p-8 text-center shadow-[0_18px_50px_rgba(30,70,110,0.08)] ring-1 ring-slate-200/80">
+            <h2 className="text-xl font-black text-slate-950">No cash account value snapshots yet</h2>
+            <p className="mx-auto mt-2 max-w-2xl text-sm text-slate-600">
+              Coral found banking activity, but no checking or savings balance snapshots in this period.
+              Upload cash account statements with ending balances to enable account trends.
+            </p>
+          </div>
+        )}
+      </section>
+
+      <section
+        className="rounded-[30px] bg-white/90 p-5 shadow-[0_20px_60px_rgba(30,70,110,0.10)] ring-1 ring-slate-200/80 md:p-6"
+      >
+        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-black text-slate-950">Account Value Trends</h2>
+              <Info size={15} className="text-slate-400" />
+            </div>
+            <p className="mt-1 text-sm text-slate-600">Your banking accounts over time</p>
+          </div>
+          <AccountValueViewToggle value={accountViewMode} onChange={setAccountViewMode} />
+        </div>
+        <div className="mb-4">
+          <AccountValueLegend dataset={accountDataset} />
+        </div>
+        {accountViewMode === "line" ? (
+          <AccountValueTrendChart
+            dataset={accountDataset}
+            height={390}
+            selectedAccountId={selectedAccountId}
+          />
+        ) : (
+          <AccountValueTable dataset={accountDataset} />
+        )}
+      </section>
+
+      {accountDataset.accounts.length > 0 && (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+          <CurrentSnapshotPanel dataset={accountDataset} />
+          <div
+            className="rounded-[28px] bg-gradient-to-br from-sky-50 to-white p-6 shadow-[0_18px_50px_rgba(30,70,110,0.08)] ring-1 ring-sky-100"
+          >
+            <div className="flex items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <Sparkles size={20} />
+              </span>
+              <div>
+                <h3 className="text-lg font-black text-slate-950">Coral Insight</h3>
+                <p className="mt-5 text-lg font-black text-slate-950">{accountInsight.title}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{accountInsight.body}</p>
+                <Link
+                  href="/chat"
+                  className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-coral-orange"
+                >
+                  See all insights <ArrowUpRight size={14} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {insights.loading ? (
         <SkeletonState variant="card" height="96px" />
       ) : insights.error ? (
@@ -390,7 +584,7 @@ export default function BankingPageClient() {
         />
       ) : null}
 
-      {/* ── Banking Flow Tree — the hero (pr-07-banking-flow.md) ────── */}
+      {/* ── Banking Flow Tree — preserved below account-value experience ─ */}
       <section>
         <DsSectionHeader eyebrow="This period" title="Your Cash Flow" size="sm" className="mb-5" />
         <BankingFlowTree

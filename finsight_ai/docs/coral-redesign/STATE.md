@@ -84,6 +84,15 @@ None.
 
 Commit: included in Prompt 1 commit
 
+### Prompt 2 — Banking account-value page
+
+- [x] Banking page now leads with the approved account-value hierarchy.
+- [x] Added data-driven account summary cards with inline selected-account detail.
+- [x] Added Account Value Trends line/table view using the shared monthly snapshot dataset.
+- [x] Preserved existing cash-flow, drift, review, insight, and planner sections below.
+
+Commit: included in Prompt 2 commit
+
 ## Notes
 
 Update this file only after verification passes.
