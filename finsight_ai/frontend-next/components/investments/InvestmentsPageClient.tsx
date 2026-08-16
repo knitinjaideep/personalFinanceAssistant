@@ -18,6 +18,17 @@ import {
   Upload,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import {
+  AccountValueLegend,
+  AccountValueSummaryCard,
+  AccountValueTable,
+  AccountValueTrendChart,
+  AccountValueViewToggle,
+  CurrentSnapshotPanel,
+  ExpandedAccountDetail,
+  colorFor,
+  type AccountValueViewMode,
+} from "@/components/account-value/AccountValueExperience";
 import EmptyState from "@/components/coral/EmptyState";
 import ErrorState from "@/components/coral/ErrorState";
 import GlassCard from "@/components/coral/GlassCard";
@@ -30,7 +41,6 @@ import TargetProgressBar from "@/components/coral-ds/TargetProgressBar";
 import NextMonthPlanSection from "@/components/overview/NextMonthPlanSection";
 import {
   investmentsApi,
-  type AccountBalance,
   type Holding,
   type InvestmentContributionPlanResult,
   type InvestmentContributionVehicle,
@@ -38,6 +48,7 @@ import {
 } from "@/features/investments/api";
 import { overviewApi, type NextMonthPlanResult } from "@/features/overview/api";
 import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
+import { buildAccountValueDataset, type AccountValueSnapshot } from "@/lib/accountValue";
 import { formatCompactCurrency, formatCurrency } from "@/lib/utils";
 import { useAppStore } from "@/store/appStore";
 
@@ -55,6 +66,58 @@ interface LoadState<T> {
 }
 
 const INITIAL_LOAD_STATE = { data: null, loading: true, error: false };
+
+function investmentAccountSnapshots(data: InvestmentsDashboard | null): AccountValueSnapshot[] {
+  if (!data) return [];
+  const accountByName = new Map(data.portfolio_summary.accounts.map((account) => [
+    account.account_name,
+    account,
+  ]));
+  return data.balance_history.map((point) => {
+    const account = accountByName.get(point.account_name);
+    return {
+      account_id: `${point.institution_type}:${point.account_name}`,
+      account_name: point.account_name,
+      institution: point.institution_type.replace(/_/g, " "),
+      institution_type: point.institution_type,
+      account_type: account?.account_type ?? "investment",
+      domain: "investments",
+      snapshot_date: point.date,
+      value: point.total_value,
+      currency: "USD",
+      source_type: "balance_snapshot",
+      latest_statement_month: account?.latest_statement_date?.slice(0, 7) ?? point.date.slice(0, 7),
+      status: "complete",
+    };
+  });
+}
+
+function portfolioInsightText(dataset: ReturnType<typeof buildAccountValueDataset>) {
+  if (dataset.accounts.length === 0) {
+    return {
+      title: "Upload investment statements to unlock portfolio trends.",
+      body: "Coral only shows portfolio value history when statement balance snapshots exist.",
+    };
+  }
+  if (dataset.totalChange === null) {
+    return {
+      title: "Your latest portfolio snapshot is available.",
+      body: "Add another month of statements to compare account growth.",
+    };
+  }
+  const drivers = [...dataset.accounts]
+    .filter((account) => account.change !== null)
+    .sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
+    .slice(0, 2);
+  return {
+    title: dataset.totalChange >= 0
+      ? "Your portfolio increased this period."
+      : "Your portfolio declined this period.",
+    body: drivers.length > 0
+      ? `${drivers.map((account) => account.accountName).join(" and ")} drove most of the monthly change.`
+      : "Coral is using the latest available monthly account value snapshots.",
+  };
+}
 
 function num(value: string | null | undefined): number {
   return value === null || value === undefined ? 0 : Number(value);
@@ -595,77 +658,6 @@ function AccountAllocation({ data }: { data: InvestmentsDashboard | null }) {
   );
 }
 
-function AccountCard({
-  label,
-  icon,
-  data,
-}: {
-  label: string;
-  icon: string;
-  data?: AccountBalance | null;
-}) {
-  const hasData = !!data && !!data.total_value_fmt;
-  const gainPositive = (data?.unrealized_gain_loss ?? 0) >= 0;
-
-  return (
-    <div
-      className="flex items-center justify-between px-5 py-4 rounded-2xl transition-colors hover:bg-white/[0.02]"
-      style={{ background: "var(--panel-bg)", border: "1px solid var(--border-subtle)" }}
-    >
-      <div className="flex items-center gap-3 min-w-0">
-        <div
-          className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
-          style={{
-            background: "var(--financial-investments-soft)",
-            border: "1px solid rgba(156,141,255,0.20)",
-            color: "var(--financial-investments)",
-            fontSize: "0.65rem",
-            fontWeight: 700,
-          }}
-        >
-          {icon}
-        </div>
-        <div className="min-w-0">
-          <p className="small-text font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-            {label}
-          </p>
-          {data?.latest_statement_date && (
-            <p className="micro-text mt-0.5" style={{ color: "var(--text-muted)" }}>
-              {new Date(data.latest_statement_date).toLocaleDateString()}
-            </p>
-          )}
-          {!hasData && (
-            <p className="micro-text mt-0.5" style={{ color: "var(--text-dim)" }}>Waiting for data</p>
-          )}
-        </div>
-      </div>
-
-      {hasData ? (
-        <div className="text-right shrink-0">
-          <p className="small-text font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
-            {data!.total_value_fmt}
-          </p>
-          {data?.unrealized_gain_loss_fmt && (
-            <p
-              className="micro-text tabular-nums"
-              style={{ color: gainPositive ? "#4CAF93" : "#E45757" }}
-            >
-              {gainPositive ? "↑" : "↓"} {data.unrealized_gain_loss_fmt}
-            </p>
-          )}
-        </div>
-      ) : (
-        <span
-          className="px-2.5 py-1 rounded-lg text-xs font-medium shrink-0"
-          style={{ background: "var(--empty-bg)", color: "var(--text-dim)", border: "1px solid var(--empty-border)" }}
-        >
-          No data
-        </span>
-      )}
-    </div>
-  );
-}
-
 function HoldingRow({ holding, index, total }: { holding: Holding; index: number; total: number }) {
   return (
     <div
@@ -704,6 +696,8 @@ export default function InvestmentsPageClient() {
   const [contributionPlan, setContributionPlan] =
     useState<LoadState<InvestmentContributionPlanResult>>(INITIAL_LOAD_STATE);
   const [nextMonthPlan, setNextMonthPlan] = useState<LoadState<NextMonthPlanResult>>(INITIAL_LOAD_STATE);
+  const [accountViewMode, setAccountViewMode] = useState<AccountValueViewMode>("line");
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const openUploadModal = useAppStore((s) => s.openUploadModal);
   const { selection, resolved, setSelection, goToPreviousMonth, goToNextMonth } = useFinancialPeriod();
 
@@ -745,15 +739,41 @@ export default function InvestmentsPageClient() {
     loadNextMonthPlan();
   };
 
-  const findAccount = useCallback((searchKeys: string[]) =>
-    data?.portfolio_summary.accounts.find((account) => {
-      const name = (account.account_name ?? "").toLowerCase();
-      return searchKeys.some((key) => name.includes(key));
-    }) ?? null, [data]);
-
   const hasAnyData = !!data && (
     data.portfolio_summary.accounts.length > 0 || data.top_holdings.length > 0
   );
+  const accountDataset = useMemo(
+    () => buildAccountValueDataset(investmentAccountSnapshots(data)),
+    [data],
+  );
+  const selectedAccount = accountDataset.accounts.find((account) => (
+    account.accountId === selectedAccountId
+  )) ?? null;
+  const portfolioInsight = useMemo(() => portfolioInsightText(accountDataset), [accountDataset]);
+  const allocationByName = useMemo(() => new Map((data?.allocation ?? []).map((account) => [
+    account.account_name,
+    account.pct_of_portfolio,
+  ])), [data?.allocation]);
+  const holdingsByAccount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const holding of data?.top_holdings ?? []) {
+      counts.set(holding.account_name, (counts.get(holding.account_name) ?? 0) + 1);
+    }
+    return counts;
+  }, [data?.top_holdings]);
+
+  useEffect(() => {
+    if (accountDataset.accounts.length === 0) {
+      if (selectedAccountId !== null) setSelectedAccountId(null);
+      return;
+    }
+    if (!selectedAccountId || !accountDataset.accounts.some((account) => (
+      account.accountId === selectedAccountId
+    ))) {
+      setSelectedAccountId(accountDataset.accounts[0].accountId);
+    }
+  }, [accountDataset.accounts, selectedAccountId]);
+
   const portfolioRows = useMemo(() => buildHealthRows(data), [data]);
   const investmentPlanRecommendations = nextMonthPlan.data?.recommendations.filter((rec) => (
     rec.bucket === "investments" ||
@@ -763,29 +783,179 @@ export default function InvestmentsPageClient() {
 
   return (
     <div className="space-y-8">
-      <SectionHeader
-        eyebrow="Investments"
-        title="Am I investing according to plan?"
-        description="Track contributions against your long-term investment targets."
-        size="lg"
-        action={
-          <FinancialPeriodSelector
-            selection={selection}
-            resolved={resolved}
-            onChange={setSelection}
-            onPrevMonth={goToPreviousMonth}
-            onNextMonth={goToNextMonth}
-            loading={refreshing || contributionPlan.loading}
-          />
-        }
-      />
+      <section className="space-y-6">
+        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_460px]">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-600">
+              Investments
+            </p>
+            <h1 className="mt-3 text-5xl font-black tracking-normal text-slate-950 md:text-6xl">
+              Investments
+            </h1>
+            <p className="mt-3 max-w-xl text-lg text-slate-600">
+              See how your investment accounts change month by month.
+            </p>
+            <div className="mt-5">
+              <FinancialPeriodSelector
+                selection={selection}
+                resolved={resolved}
+                onChange={setSelection}
+                onPrevMonth={goToPreviousMonth}
+                onNextMonth={goToNextMonth}
+                loading={refreshing || contributionPlan.loading}
+              />
+            </div>
+          </div>
 
-      <ContributionHero
-        plan={contributionPlan.data}
-        loading={contributionPlan.loading}
-        error={contributionPlan.error}
-        onRetry={loadContributionPlan}
-      />
+          <Image
+            src="/mascots/coral-investments.png"
+            alt=""
+            width={440}
+            height={260}
+            priority
+            className="mx-auto h-48 w-auto object-contain"
+          />
+        </div>
+
+        {accountDataset.accounts.length > 0 ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {accountDataset.accounts.map((account, index) => (
+                <AccountValueSummaryCard
+                  key={account.accountId}
+                  account={account}
+                  color={colorFor(index)}
+                  selected={selectedAccountId === account.accountId}
+                  onSelect={() => setSelectedAccountId((current) => (
+                    current === account.accountId ? null : account.accountId
+                  ))}
+                />
+              ))}
+            </div>
+
+            <ExpandedAccountDetail
+              account={selectedAccount}
+              color={colorFor(Math.max(0, accountDataset.accounts.findIndex((account) => (
+                account.accountId === selectedAccount?.accountId
+              ))))}
+              meta={selectedAccount ? {
+                accountId: selectedAccount.accountId,
+                classification: selectedAccount.accountType.replace(/_/g, " "),
+                shareOfTotal: allocationByName.get(selectedAccount.accountName) ?? null,
+                holdingsSummary: holdingsByAccount.get(selectedAccount.accountName)
+                  ? `${holdingsByAccount.get(selectedAccount.accountName)} top holdings imported`
+                  : null,
+              } : null}
+            />
+          </>
+        ) : null}
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section
+          className="rounded-[30px] bg-white/90 p-5 shadow-[0_20px_60px_rgba(30,70,110,0.10)] ring-1 ring-slate-200/80 md:p-6"
+        >
+          <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-black text-slate-950">Portfolio Account Value Trends</h2>
+                <Info size={15} className="text-slate-400" />
+              </div>
+              <p className="mt-1 text-sm text-slate-600">Monthly account snapshots from imported statements</p>
+            </div>
+            <AccountValueViewToggle value={accountViewMode} onChange={setAccountViewMode} />
+          </div>
+          <div className="mb-4">
+            <AccountValueLegend dataset={accountDataset} />
+          </div>
+          {accountViewMode === "line" ? (
+            <AccountValueTrendChart
+              dataset={accountDataset}
+              height={430}
+              selectedAccountId={selectedAccountId}
+            />
+          ) : (
+            <AccountValueTable dataset={accountDataset} />
+          )}
+        </section>
+
+        <div className="space-y-5">
+          <div className="rounded-[28px] bg-white/90 p-5 shadow-[0_18px_50px_rgba(30,70,110,0.08)] ring-1 ring-slate-200/80">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-black text-slate-950">Latest Portfolio Snapshot</h2>
+              <span className="text-xs font-semibold text-slate-500">
+                {data?.portfolio_summary.last_updated
+                  ? new Date(data.portfolio_summary.last_updated).toLocaleDateString()
+                  : "Latest"}
+              </span>
+            </div>
+            <div className="space-y-3">
+              {accountDataset.accounts.map((account, index) => (
+                <div key={account.accountId} className="flex items-center gap-3 border-b border-slate-200/70 pb-3 last:border-0 last:pb-0">
+                  <span className="h-3 w-3 rounded-full" style={{ background: colorFor(index) }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-slate-900">{account.accountName}</p>
+                  </div>
+                  <p className="text-sm font-black tabular-nums text-slate-950">
+                    {account.latest ? formatCurrency(account.latest.value) : "-"}
+                  </p>
+                  <p className="w-12 text-right text-sm text-slate-500">
+                    {allocationByName.get(account.accountName)?.toFixed(1) ?? "-"}%
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 border-t border-slate-200/80 pt-5">
+              <p className="text-sm font-bold text-slate-700">Total Portfolio Value</p>
+              <p className="mt-1 text-3xl font-black tabular-nums text-slate-950">
+                {formatCurrency(accountDataset.totalLatestValue)}
+              </p>
+              {accountDataset.totalChange !== null && (
+                <p
+                  className="mt-2 text-sm font-bold tabular-nums"
+                  style={{ color: accountDataset.totalChange >= 0 ? "#149a6a" : "#d84b36" }}
+                >
+                  {accountDataset.totalChange >= 0 ? "+" : "-"}
+                  {formatCurrency(Math.abs(accountDataset.totalChange))} vs last month
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[28px] bg-gradient-to-br from-orange-50 to-white p-6 shadow-[0_18px_50px_rgba(30,70,110,0.08)] ring-1 ring-orange-100">
+            <Sparkles size={20} className="text-coral-orange" />
+            <h3 className="mt-4 text-lg font-black text-slate-950">Coral Insight</h3>
+            <p className="mt-4 text-lg font-black text-slate-950">{portfolioInsight.title}</p>
+            <p className="mt-3 text-sm leading-6 text-slate-600">{portfolioInsight.body}</p>
+            <Link
+              href="/chat"
+              className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-coral-orange"
+            >
+              View growth breakdown <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {accountDataset.accounts.length > 0 && (
+        <CurrentSnapshotPanel dataset={accountDataset} />
+      )}
+
+      <section>
+        <SectionHeader
+          eyebrow="Contributions"
+          title="Investment Contribution Planning"
+          description="Plan-vs-actual guidance stays available below the portfolio value view."
+          size="sm"
+          className="mb-5"
+        />
+        <ContributionHero
+          plan={contributionPlan.data}
+          loading={contributionPlan.loading}
+          error={contributionPlan.error}
+          onRetry={loadContributionPlan}
+        />
+      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] gap-6">
         <ContributionBars
@@ -877,28 +1047,7 @@ export default function InvestmentsPageClient() {
         </motion.div>
       )}
 
-      {hasAnyData ? (
-        <section>
-          <SectionHeader eyebrow="Accounts" title="Investment Accounts" size="sm" className="mb-5" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {[
-              { label: "Morgan Stanley Joint", icon: "MS", keys: ["joint", "morgan"] },
-              { label: "Traditional IRA", icon: "IRA", keys: ["traditional", "trad ira"] },
-              { label: "Roth IRA", icon: "Roth", keys: ["roth"] },
-              { label: "E*TRADE", icon: "ET", keys: ["etrade", "e*trade"] },
-              { label: "Empower / 401k", icon: "401k", keys: ["empower", "401k"] },
-              { label: "Down-Payment Savings", icon: "$", keys: ["down", "savings", "529"] },
-            ].map((account) => (
-              <AccountCard
-                key={account.label}
-                label={account.label}
-                icon={account.icon}
-                data={findAccount(account.keys)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : (
+      {!hasAnyData && (
         <EmptyState
           icon={<TrendingUp size={28} />}
           title={data?.period ? "No investment data in this period" : "No investment data yet"}

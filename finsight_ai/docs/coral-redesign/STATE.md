@@ -93,6 +93,15 @@ Commit: included in Prompt 1 commit
 
 Commit: included in Prompt 2 commit
 
+### Prompt 3 — Investments account-value page
+
+- [x] Investments page now leads with portfolio account value trends.
+- [x] Account card deltas use latest monthly snapshot minus previous available monthly snapshot.
+- [x] Added latest portfolio snapshot and Coral Insight panels matching the approved hierarchy.
+- [x] Kept contribution planning available as a secondary section below portfolio value.
+
+Commit: included in Prompt 3 commit
+
 ## Notes
 
 Update this file only after verification passes.

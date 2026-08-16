@@ -282,11 +282,12 @@ describe("<InvestmentsPageClient />", () => {
     });
   });
 
-  it("keeps portfolio details accessible below the contribution sections", async () => {
+  it("keeps portfolio details accessible in the account-value experience", async () => {
     render(<InvestmentsPageClient />);
 
+    expect(await screen.findByText("Portfolio Account Value Trends")).toBeInTheDocument();
+    expect(screen.getByText("Latest Portfolio Snapshot")).toBeInTheDocument();
     expect(await screen.findByText("Account Allocation")).toBeInTheDocument();
-    expect(screen.getByText("Investment Accounts")).toBeInTheDocument();
     expect(screen.getByText("Top Holdings")).toBeInTheDocument();
     expect(screen.getByText("AAPL")).toBeInTheDocument();
   });
