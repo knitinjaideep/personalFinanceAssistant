@@ -153,6 +153,8 @@ export function AccountValueSummaryCard({
     <button
       type="button"
       onClick={onSelect}
+      data-account-value-card="true"
+      aria-label={`${selected ? "Collapse" : "Expand"} ${account.accountName} account details`}
       aria-expanded={selected}
       className="group min-h-[138px] rounded-3xl p-5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
       style={{
@@ -336,6 +338,7 @@ export function AccountValueTable({ dataset }: { dataset: AccountValueDataset })
 }
 
 function AccountMiniTrend({ account, color }: { account: AccountValueSeries; color: string }) {
+  const fillId = `account-fill-${account.accountId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   const rows = account.points.slice(-12).map((point) => ({
     monthLabel: formatMonthLabel(point.month),
     value: point.value,
@@ -346,7 +349,7 @@ function AccountMiniTrend({ account, color }: { account: AccountValueSeries; col
       <ResponsiveContainer>
         <AreaChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <defs>
-            <linearGradient id={`account-fill-${account.accountId}`} x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={color} stopOpacity={0.18} />
               <stop offset="95%" stopColor={color} stopOpacity={0} />
             </linearGradient>
@@ -355,7 +358,7 @@ function AccountMiniTrend({ account, color }: { account: AccountValueSeries; col
           <XAxis dataKey="monthLabel" tick={{ fill: "#64748b", fontSize: 11 }} tickLine={false} axisLine={false} />
           <YAxis tickFormatter={(value) => formatCompactCurrency(Number(value))} tick={{ fill: "#64748b", fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
           <Tooltip formatter={(value) => [formatCurrency(Number(value)), account.accountName]} />
-          <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2.5} fill={`url(#account-fill-${account.accountId})`} dot={{ r: 3, fill: "#fff", stroke: color, strokeWidth: 2 }} />
+          <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2.5} fill={`url(#${fillId})`} dot={{ r: 3, fill: "#fff", stroke: color, strokeWidth: 2 }} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -397,6 +400,7 @@ export function ExpandedAccountDetail({
           background: "linear-gradient(180deg, rgba(255,255,255,0.94), rgba(247,252,255,0.88))",
           border: `1px solid ${color}33`,
           boxShadow: "0 24px 60px rgba(25,65,105,0.12)",
+          color: "#0a1735",
         }}
       >
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.05fr)]">

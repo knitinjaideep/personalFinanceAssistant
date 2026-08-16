@@ -111,6 +111,17 @@ Commit: included in Prompt 3 commit
 
 Commit: included in Prompt 4 commit
 
+### Prompt 5 — Visual fidelity and implementation-quality review
+
+- [x] Compared Banking and Investments against the approved account-trends mockups.
+- [x] Visually tested rendered Banking and Investments pages at 1440x900, 1920x1080, 2560x1440, and iPad landscape.
+- [x] Confirmed no horizontal overflow, scoped account-card expansion state, readable charts/tables, and selected-account detail rendering.
+- [x] Fixed expanded-detail text contrast so the pale panel remains readable on the underwater page background.
+- [x] Hardened account-card accessibility labels and sanitized account-specific chart gradient ids.
+- [x] Verified account values continue to use existing backend snapshots without interpolation or data mutation.
+
+Commit: included in Prompt 5 commit
+
 ## Notes
 
 Update this file only after verification passes.
