@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ChevronDown,
   Landmark,
@@ -371,6 +371,7 @@ export function ExpandedAccountDetail({
   color: string;
   meta?: AccountMeta | null;
 }) {
+  const prefersReducedMotion = useReducedMotion();
   if (!account) return null;
   const latest = account.latest?.value ?? null;
   const previous = account.previous?.value ?? null;
@@ -387,7 +388,10 @@ export function ExpandedAccountDetail({
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+        transition={{
+          duration: prefersReducedMotion ? 0 : 0.22,
+          ease: [0.4, 0, 0.2, 1],
+        }}
         className="rounded-[28px] p-5 md:p-6"
         style={{
           background: "linear-gradient(180deg, rgba(255,255,255,0.94), rgba(247,252,255,0.88))",

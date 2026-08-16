@@ -102,6 +102,15 @@ Commit: included in Prompt 2 commit
 
 Commit: included in Prompt 3 commit
 
+### Prompt 4 — Inline expandable account details
+
+- [x] Account summary cards use button semantics with `aria-expanded`.
+- [x] Inline detail panel presents current value, prior month, change, chart, table, and metadata.
+- [x] Global line/table mode is independent from expanded account detail.
+- [x] Added interaction tests for expansion and view-toggle accessibility.
+
+Commit: included in Prompt 4 commit
+
 ## Notes
 
 Update this file only after verification passes.
