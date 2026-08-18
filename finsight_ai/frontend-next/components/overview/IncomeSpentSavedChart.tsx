@@ -112,12 +112,16 @@ export default function IncomeSpentSavedChart({ rows, loading, error, onRetry }:
             width={68}
           />
           <Tooltip
+            cursor={{ fill: "rgba(34,211,238,0.05)" }}
             formatter={(v) => formatCurrency(Number(v))}
+            labelStyle={{ color: "var(--text-primary)", fontWeight: 800 }}
+            itemStyle={{ color: "var(--text-secondary)" }}
             contentStyle={{
               background: "var(--card-bg)",
               border: "1px solid var(--border-subtle)",
               borderRadius: 12,
               fontSize: 12,
+              boxShadow: "var(--panel-shadow)",
             }}
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />

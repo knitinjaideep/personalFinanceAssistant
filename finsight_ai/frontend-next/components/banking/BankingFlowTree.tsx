@@ -27,8 +27,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { ResponsiveContainer, Sankey, Tooltip } from "recharts";
-import type { LinkProps, NodeProps } from "recharts/types/chart/Sankey";
 import { HelpCircle, Home, PiggyBank, ShoppingBag } from "lucide-react";
 import EmptyState from "@/components/coral-ds/EmptyState";
 import ErrorState from "@/components/coral-ds/ErrorState";
@@ -38,7 +36,7 @@ import Surface from "@/components/coral-ds/Surface";
 import VarianceBadge from "@/components/coral-ds/VarianceBadge";
 import { bankingApi, type CategoryDrift } from "@/features/banking/api";
 import type { DashboardPeriodParams, MasterBucket, PlanVsActualResult } from "@/features/overview/api";
-import { formatCurrency } from "@/lib/utils";
+import { formatCompactCurrency, formatCurrency } from "@/lib/utils";
 import { buildBankingFlowTree, buildFlowAccessibleSummary, type FlowNode } from "@/lib/bankingFlowTree";
 
 interface BankingFlowTreeProps {
@@ -84,97 +82,134 @@ function nodeSoftColor(node: FlowNode): string {
   return "var(--status-neutral-soft)";
 }
 
-function FlowSankeyNode(props: NodeProps & { selectedBucket: MasterBucket | null; onSelectBucket: (b: MasterBucket) => void }) {
-  const { x, y, width, height, payload, selectedBucket, onSelectBucket } = props;
-  const node = payload as unknown as FlowNode;
-  const color = nodeColor(node);
-  const clickable = node.kind === "bucket" && node.bucket !== null;
-  const dimmed = selectedBucket !== null && node.kind === "bucket" && node.bucket !== selectedBucket;
-  const h = Math.max(height, 3);
-
-  return (
-    <g
-      style={{ cursor: clickable ? "pointer" : "default" }}
-      onClick={clickable ? () => onSelectBucket(node.bucket as MasterBucket) : undefined}
-      role={clickable ? "button" : undefined}
-      aria-label={clickable ? `Show ${node.label} category breakdown` : undefined}
-    >
-      <rect
-        x={x}
-        y={y}
-        width={width}
-        height={h}
-        rx={3}
-        fill={color}
-        fillOpacity={dimmed ? 0.35 : 0.92}
-      />
-      <text
-        x={x + width / 2}
-        y={y - 6}
-        textAnchor="middle"
-        fontSize={11}
-        fontWeight={600}
-        style={{ fill: dimmed ? "var(--text-dim)" : "var(--text-secondary)" }}
-      >
-        {node.label}
-      </text>
-    </g>
-  );
+function formatPercent(value: number | null): string {
+  if (value === null) return "—";
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
 }
 
-function FlowSankeyLink(props: LinkProps & { selectedBucket: MasterBucket | null }) {
-  const { sourceX, sourceY, sourceControlX, targetX, targetY, targetControlX, linkWidth, payload, selectedBucket } = props;
-  const target = payload.target as unknown as FlowNode;
-  const color = nodeColor(target);
-  const dimmed = selectedBucket !== null && target.kind === "bucket" && target.bucket !== selectedBucket;
+function FlowMap({
+  tree,
+  selectedBucket,
+  onSelectBucket,
+}: {
+  tree: ReturnType<typeof buildBankingFlowTree>;
+  selectedBucket: MasterBucket | null;
+  onSelectBucket: (bucket: MasterBucket) => void;
+}) {
+  const bucketNodes = tree.nodes.filter((node) => node.kind === "bucket" || node.kind === "unallocated");
+  const positiveNodes = bucketNodes.filter((node) => node.detail.actualAmount > 0);
+  const negativeNodes = bucketNodes.filter((node) => node.detail.actualAmount < 0);
+  const branchCount = Math.max(positiveNodes.length, 1);
+  const maxBranch = Math.max(...positiveNodes.map((node) => node.detail.actualAmount), tree.incomeAmount, 1);
+  const pathWidth = (value: number) => Math.max(10, Math.min(64, (value / maxBranch) * 64));
 
   return (
-    <path
-      d={`M${sourceX},${sourceY} C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}`}
-      fill="none"
-      stroke={color}
-      strokeWidth={Math.max(linkWidth, 1)}
-      strokeOpacity={dimmed ? 0.12 : 0.32}
-    />
-  );
-}
-
-function FlowTooltipContent({ active, payload }: { active?: boolean; payload?: { payload?: { payload?: FlowNode | { source: FlowNode; target: FlowNode; value: number } } }[] }) {
-  if (!active || !payload?.length) return null;
-  const raw = payload[0]?.payload?.payload;
-  if (!raw) return null;
-
-  // Node hover: raw is a FlowNode. Link hover: raw is {source, target, value}.
-  const node: FlowNode | null = "detail" in raw ? (raw as FlowNode) : null;
-  const link = "source" in raw && "target" in raw ? (raw as { source: FlowNode; target: FlowNode; value: number }) : null;
-
-  const box = (title: string, body: React.ReactNode) => (
     <div
-      className="rounded-xl px-3 py-2.5 small-text"
-      style={{ background: "var(--card-bg)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}
+      className="relative h-[340px] overflow-hidden rounded-[28px] p-5"
+      style={{
+        background: "linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08))",
+        border: "1px solid var(--border-subtle)",
+      }}
     >
-      <p className="font-semibold mb-1" style={{ color: "var(--text-primary)" }}>{title}</p>
-      {body}
+      <svg viewBox="0 0 760 300" className="h-full w-full" role="img" aria-label="Cash flow from income through checking into plan buckets">
+        <defs>
+          <filter id="banking-flow-shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="10" stdDeviation="12" floodColor="#0b3347" floodOpacity="0.16" />
+          </filter>
+        </defs>
+
+        <g filter="url(#banking-flow-shadow)">
+          <rect x="32" y="72" width="68" height="156" rx="20" fill="rgba(255,255,255,0.72)" />
+          <rect x="52" y="92" width="28" height="116" rx="12" fill="var(--accent-strong)" />
+          <text x="66" y="52" textAnchor="middle" fontSize="13" fontWeight="800" fill="var(--text-primary)">Income</text>
+          <text x="66" y="244" textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-secondary)">
+            {formatCompactCurrency(tree.incomeAmount)}
+          </text>
+
+          <rect x="292" y="72" width="84" height="156" rx="24" fill="rgba(255,255,255,0.78)" />
+          <rect x="320" y="92" width="28" height="116" rx="12" fill="var(--accent-strong)" />
+          <text x="334" y="52" textAnchor="middle" fontSize="13" fontWeight="800" fill="var(--text-primary)">Checking</text>
+          <text x="334" y="244" textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--text-secondary)">
+            {formatCompactCurrency(tree.incomeAmount)}
+          </text>
+        </g>
+
+        <path
+          d="M80 150 C160 150 220 150 320 150"
+          fill="none"
+          stroke="var(--accent-strong)"
+          strokeWidth="34"
+          strokeLinecap="round"
+          strokeOpacity="0.28"
+        />
+
+        {positiveNodes.map((node, index) => {
+          const y = branchCount === 1 ? 150 : 62 + (index * 176) / Math.max(branchCount - 1, 1);
+          const clickable = node.kind === "bucket" && node.bucket !== null;
+          const selected = selectedBucket === node.bucket;
+          const dimmed = selectedBucket !== null && clickable && !selected;
+          return (
+            <g
+              key={node.id}
+              role={clickable ? "button" : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              aria-label={clickable ? `Show ${node.label} category breakdown` : undefined}
+              onClick={clickable ? () => onSelectBucket(node.bucket as MasterBucket) : undefined}
+              onKeyDown={clickable ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelectBucket(node.bucket as MasterBucket);
+                }
+              } : undefined}
+              style={{ cursor: clickable ? "pointer" : "default", outline: "none" }}
+            >
+              <path
+                d={`M348 150 C460 150 502 ${y} 598 ${y}`}
+                fill="none"
+                stroke={nodeColor(node)}
+                strokeWidth={pathWidth(node.detail.actualAmount)}
+                strokeLinecap="round"
+                strokeOpacity={dimmed ? 0.16 : selected ? 0.58 : 0.34}
+              />
+              <rect
+                x="598"
+                y={y - 26}
+                width="132"
+                height="52"
+                rx="16"
+                fill="rgba(255,255,255,0.86)"
+                stroke={selected ? nodeColor(node) : "rgba(105,132,155,0.22)"}
+              />
+              <circle cx="620" cy={y} r="12" fill={nodeSoftColor(node)} />
+              <text x="642" y={y - 5} fontSize="12" fontWeight="800" fill="#0a1735">{node.label}</text>
+              <text x="642" y={y + 13} fontSize="11" fontWeight="700" fill="#53657f">
+                {formatCompactCurrency(node.detail.actualAmount)} · {formatPercent(node.detail.actualPercentage)}
+              </text>
+            </g>
+          );
+        })}
+
+        {negativeNodes.map((node, index) => (
+          <g key={node.id} opacity="0.95">
+            <path
+              d={`M348 ${188 + index * 18} C430 ${224 + index * 6} 500 ${236 + index * 6} 590 ${236 + index * 6}`}
+              fill="none"
+              stroke="var(--status-danger)"
+              strokeWidth="3"
+              strokeDasharray="7 7"
+              strokeLinecap="round"
+              strokeOpacity="0.7"
+            />
+            <rect x="598" y={210 + index * 56} width="132" height="52" rx="16" fill="rgba(255,255,255,0.76)" stroke="rgba(216,75,54,0.42)" />
+            <text x="614" y={231 + index * 56} fontSize="12" fontWeight="800" fill="#0a1735">{node.label}</text>
+            <text x="614" y={249 + index * 56} fontSize="11" fontWeight="700" fill="var(--status-danger)">
+              {formatCompactCurrency(node.detail.actualAmount)} · {formatPercent(node.detail.actualPercentage)}
+            </text>
+          </g>
+        ))}
+      </svg>
     </div>
   );
-
-  if (node) {
-    const d = node.detail;
-    return box(
-      node.label,
-      <div className="space-y-0.5">
-        <p>Actual {formatCurrency(d.actualAmount)}{d.actualPercentage !== null ? ` (${d.actualPercentage}% of income)` : ""}</p>
-        {d.targetPercentage !== null && <p>Target {d.targetPercentage}%{d.targetAmount !== null ? ` (${formatCurrency(d.targetAmount)})` : ""}</p>}
-        {d.varianceAmount !== null && (
-          <p>{d.varianceAmount >= 0 ? "Over" : "Under"} plan by {formatCurrency(Math.abs(d.varianceAmount))}</p>
-        )}
-      </div>,
-    );
-  }
-  if (link) {
-    return box(`${link.source.label} → ${link.target.label}`, <p>{formatCurrency(link.value)}</p>);
-  }
-  return null;
 }
 
 function BucketCard({
@@ -217,7 +252,7 @@ function BucketCard({
             <VarianceBadge value={d.varianceAmount} direction={direction} />
           ) : (
             <StatusBadge status="neutral">
-              {d.actualPercentage !== null ? `${d.actualPercentage}%` : "—"}
+              {formatPercent(d.actualPercentage)}
             </StatusBadge>
           )}
         </div>
@@ -225,8 +260,8 @@ function BucketCard({
           {formatCurrency(d.actualAmount)}
         </p>
         <p className="micro-text mt-0.5" style={{ color: "var(--text-muted)" }}>
-          {d.actualPercentage !== null ? `${d.actualPercentage}% of income` : "No income this period"}
-          {d.targetPercentage !== null && ` · vs plan ${d.targetPercentage}%`}
+          {d.actualPercentage !== null ? `${formatPercent(d.actualPercentage)} of income` : "No income this period"}
+          {d.targetPercentage !== null && ` · vs plan ${formatPercent(d.targetPercentage)}`}
         </p>
       </div>
     </button>
@@ -341,7 +376,6 @@ export default function BankingFlowTree({ result, loading, error, onRetry, perio
     );
   }
 
-  const sankeyData = { nodes: tree.nodes, links: tree.links };
   const bucketNodes = tree.nodes.filter((n) => n.kind === "bucket" || n.kind === "unallocated");
   const selectedNode = selectedBucket ? tree.nodes.find((n) => n.bucket === selectedBucket) : null;
 
@@ -358,22 +392,7 @@ export default function BankingFlowTree({ result, loading, error, onRetry, perio
          * the detail cards alone (below), which is a complete, readable
          * representation of the same data on its own. */}
         <div className="hidden sm:block lg:col-span-3" style={{ minHeight: 340 }}>
-          <ResponsiveContainer width="100%" height={340}>
-            <Sankey
-              data={sankeyData}
-              nodeWidth={12}
-              nodePadding={28}
-              linkCurvature={0.55}
-              iterations={32}
-              margin={{ top: 28, right: 24, bottom: 12, left: 8 }}
-              node={(props: NodeProps) => (
-                <FlowSankeyNode {...props} selectedBucket={selectedBucket} onSelectBucket={handleSelectBucket} />
-              )}
-              link={(props: LinkProps) => <FlowSankeyLink {...props} selectedBucket={selectedBucket} />}
-            >
-              <Tooltip content={<FlowTooltipContent />} />
-            </Sankey>
-          </ResponsiveContainer>
+          <FlowMap tree={tree} selectedBucket={selectedBucket} onSelectBucket={handleSelectBucket} />
         </div>
 
         {/* Detail cards — the primary, always-visible representation of

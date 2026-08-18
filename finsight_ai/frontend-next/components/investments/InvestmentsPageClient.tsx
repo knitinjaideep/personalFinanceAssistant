@@ -2,70 +2,48 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import {
   AlertTriangle,
-  ArrowRight,
-  BarChart2,
   CheckCircle2,
-  CircleDollarSign,
   Info,
-  Landmark,
-  PieChart,
   Sparkles,
-  TrendingDown,
-  TrendingUp,
   Upload,
+  TrendingUp,
 } from "lucide-react";
-import { motion } from "framer-motion";
 import {
   AccountValueLegend,
   AccountValueSummaryCard,
   AccountValueTable,
   AccountValueTrendChart,
   AccountValueViewToggle,
-  CurrentSnapshotPanel,
   ExpandedAccountDetail,
   colorFor,
   type AccountValueViewMode,
 } from "@/components/account-value/AccountValueExperience";
+import CoralMascot from "@/components/coral/CoralMascot";
 import EmptyState from "@/components/coral/EmptyState";
 import ErrorState from "@/components/coral/ErrorState";
 import GlassCard from "@/components/coral/GlassCard";
 import SectionHeader from "@/components/coral/SectionHeader";
 import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
 import SkeletonState from "@/components/coral-ds/SkeletonState";
-import StatusBadge, { type StatusTone } from "@/components/coral-ds/StatusBadge";
 import Surface from "@/components/coral-ds/Surface";
-import TargetProgressBar from "@/components/coral-ds/TargetProgressBar";
-import NextMonthPlanSection from "@/components/overview/NextMonthPlanSection";
 import {
   investmentsApi,
   type Holding,
-  type InvestmentContributionPlanResult,
-  type InvestmentContributionVehicle,
   type InvestmentsDashboard,
 } from "@/features/investments/api";
-import { overviewApi, type NextMonthPlanResult } from "@/features/overview/api";
 import { useFinancialPeriod } from "@/hooks/useFinancialPeriod";
 import { buildAccountValueDataset, type AccountValueSnapshot } from "@/lib/accountValue";
-import { formatCompactCurrency, formatCurrency } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { useAppStore } from "@/store/appStore";
 
 const INSIGHT_PROMPTS = [
-  "Am I investing according to plan?",
-  "Which contribution should I adjust next month?",
+  "Which account moved my portfolio most?",
+  "Where is my portfolio concentrated?",
   "Review my portfolio concentration.",
   "Compare my IRA balances over time.",
 ];
-
-interface LoadState<T> {
-  data: T | null;
-  loading: boolean;
-  error: boolean;
-}
-
-const INITIAL_LOAD_STATE = { data: null, loading: true, error: false };
 
 function investmentAccountSnapshots(data: InvestmentsDashboard | null): AccountValueSnapshot[] {
   if (!data) return [];
@@ -90,462 +68,6 @@ function investmentAccountSnapshots(data: InvestmentsDashboard | null): AccountV
       status: "complete",
     };
   });
-}
-
-function portfolioInsightText(dataset: ReturnType<typeof buildAccountValueDataset>) {
-  if (dataset.accounts.length === 0) {
-    return {
-      title: "Upload investment statements to unlock portfolio trends.",
-      body: "Coral only shows portfolio value history when statement balance snapshots exist.",
-    };
-  }
-  if (dataset.totalChange === null) {
-    return {
-      title: "Your latest portfolio snapshot is available.",
-      body: "Add another month of statements to compare account growth.",
-    };
-  }
-  const drivers = [...dataset.accounts]
-    .filter((account) => account.change !== null)
-    .sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
-    .slice(0, 2);
-  return {
-    title: dataset.totalChange >= 0
-      ? "Your portfolio increased this period."
-      : "Your portfolio declined this period.",
-    body: drivers.length > 0
-      ? `${drivers.map((account) => account.accountName).join(" and ")} drove most of the monthly change.`
-      : "Coral is using the latest available monthly account value snapshots.",
-  };
-}
-
-function num(value: string | null | undefined): number {
-  return value === null || value === undefined ? 0 : Number(value);
-}
-
-function statusTone(status: InvestmentContributionVehicle["status"]): StatusTone {
-  if (status === "on_track") return "good";
-  if (status === "watch") return "warning";
-  if (status === "off_track") return "danger";
-  return "neutral";
-}
-
-function statusLabel(status: InvestmentContributionVehicle["status"]) {
-  if (status === "on_track") return "On track";
-  if (status === "watch") return "Watch";
-  if (status === "off_track") return "Behind";
-  return "No data";
-}
-
-function vehicleLabel(vehicle: string) {
-  return vehicle === "Taxable Brokerage" ? "Brokerage" : vehicle;
-}
-
-function gapLabel(vehicle: InvestmentContributionVehicle) {
-  if (vehicle.variance_amount === null) return "Gap unavailable";
-  const variance = Number(vehicle.variance_amount);
-  if (variance < 0) return `Behind by ${formatCurrency(Math.abs(variance))}`;
-  if (variance > 0) return `Ahead by ${formatCurrency(variance)}`;
-  return "No gap";
-}
-
-function pctLabel(value: string | null | undefined) {
-  return value === null || value === undefined
-    ? "-"
-    : `${Number(value).toFixed(1).replace(".0", "")}%`;
-}
-
-function ContributionHero({
-  plan,
-  loading,
-  error,
-  onRetry,
-}: {
-  plan: InvestmentContributionPlanResult | null;
-  loading: boolean;
-  error: boolean;
-  onRetry: () => void;
-}) {
-  if (loading) return <SkeletonState variant="card" height="360px" />;
-  if (error) {
-    return (
-      <ErrorState
-        message="Couldn't load investment contribution plan for this period."
-        onRetry={onRetry}
-      />
-    );
-  }
-  if (!plan) return null;
-
-  const targetPct = plan.total_target_pct ?? "15";
-  const actualPct = plan.total_actual_pct;
-  const hasContributionRate = actualPct !== null;
-  const totalGap = plan.vehicles.reduce((sum, vehicle) => {
-    const variance = vehicle.variance_amount === null ? 0 : Number(vehicle.variance_amount);
-    return variance < 0 ? sum + Math.abs(variance) : sum;
-  }, 0);
-  const headline = !hasContributionRate
-    ? "Contribution rate unavailable"
-    : totalGap > 0
-      ? "You're behind plan this period"
-      : "You're investing according to plan";
-  const summaryStatus = !hasContributionRate
-    ? "Data unavailable"
-    : totalGap > 0
-      ? `Behind by ${formatCurrency(totalGap)}`
-      : "On track";
-  const summaryColor = !hasContributionRate
-    ? "var(--status-neutral)"
-    : totalGap > 0
-      ? "var(--status-danger)"
-      : "var(--status-good)";
-
-  return (
-    <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-stretch">
-      <Surface padding="lg" className="relative overflow-hidden min-h-[360px]">
-        <Image
-          src="/mascots/coral-investments.png"
-          alt=""
-          width={112}
-          height={112}
-          className="absolute right-5 top-5 z-0 h-28 w-28 object-contain opacity-10 pointer-events-none"
-        />
-        <div className="relative z-10">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-            <div>
-              <p className="micro-text font-bold uppercase tracking-[0.18em] text-financial-investments">
-                Investments
-              </p>
-              <h1
-                className="mt-2 text-4xl md:text-5xl font-bold"
-                style={{ color: "var(--heading-primary)" }}
-              >
-                Investments
-              </h1>
-              <p className="mt-3 max-w-xl text-base" style={{ color: "var(--text-secondary)" }}>
-                Track your contributions and stay on plan for your long-term goals.
-              </p>
-            </div>
-
-            <div
-              className="rounded-2xl px-6 py-4 min-w-[220px]"
-              style={{
-                background: "var(--financial-investments-soft)",
-                border: "1px solid rgba(156,141,255,0.28)",
-              }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="small-text font-semibold" style={{ color: "var(--text-primary)" }}>
-                  Investments
-                </span>
-                <span className="micro-text" style={{ color: "var(--text-muted)" }}>
-                  Target {pctLabel(targetPct)}
-                </span>
-              </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                {pctLabel(actualPct)}
-              </p>
-              <p
-                className="micro-text mt-1 font-semibold"
-                style={{ color: summaryColor }}
-              >
-                {summaryStatus}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            {plan.vehicles.slice(0, 4).map((vehicle) => (
-              <Surface key={vehicle.vehicle} padding="sm" className="relative">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="small-text font-bold" style={{ color: "var(--text-primary)" }}>
-                      {vehicleLabel(vehicle.vehicle)}
-                    </p>
-                    <p className="micro-text mt-0.5" style={{ color: "var(--text-muted)" }}>
-                      Target {pctLabel(vehicle.target_pct)}
-                    </p>
-                  </div>
-                  <StatusBadge status={statusTone(vehicle.status)}>
-                    {statusLabel(vehicle.status)}
-                  </StatusBadge>
-                </div>
-                <p className="mt-4 text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                  {pctLabel(vehicle.actual_pct)}
-                </p>
-                <p className="micro-text mt-1" style={{ color: "var(--text-muted)" }}>
-                  {gapLabel(vehicle)}
-                </p>
-              </Surface>
-            ))}
-          </div>
-        </div>
-      </Surface>
-
-      <Surface padding="lg" className="flex flex-col justify-center">
-        <span
-          className="w-12 h-12 rounded-2xl flex items-center justify-center"
-          style={{ background: "var(--financial-investments-soft)", color: "var(--financial-investments)" }}
-        >
-          {!hasContributionRate
-            ? <Info size={20} />
-            : totalGap > 0
-              ? <AlertTriangle size={20} />
-              : <CheckCircle2 size={20} />}
-        </span>
-        <h2 className="mt-5 card-title-lg" style={{ color: "var(--text-primary)" }}>
-          {headline}
-        </h2>
-        <p className="mt-3 small-text" style={{ color: "var(--text-muted)" }}>
-          {!hasContributionRate
-            ? "Coral needs observed income before it can calculate contribution percentages."
-            : totalGap > 0
-              ? `You need ${formatCurrency(totalGap)} more to match this period's vehicle targets.`
-              : "Your current contribution mix meets the target allocation for this period."}
-        </p>
-        {plan.completeness.notes.length > 0 && (
-          <p className="mt-4 micro-text" style={{ color: "var(--text-dim)" }}>
-            {plan.completeness.notes[0]}
-          </p>
-        )}
-        <Link
-          href="/chat"
-          className="mt-6 inline-flex items-center gap-2 small-text font-semibold"
-          style={{ color: "var(--financial-investments)" }}
-        >
-          See recommended next steps <ArrowRight size={14} />
-        </Link>
-      </Surface>
-    </section>
-  );
-}
-
-function ContributionBars({
-  plan,
-  loading,
-  error,
-}: {
-  plan: InvestmentContributionPlanResult | null;
-  loading: boolean;
-  error: boolean;
-}) {
-  if (loading) return <SkeletonState variant="card" height="280px" />;
-  if (error) return <ErrorState compact message="Couldn't load contribution bars." />;
-  if (!plan) return null;
-
-  return (
-    <Surface padding="md" as="section">
-      <div className="flex items-center gap-2 mb-5">
-        <h2 className="card-title-lg" style={{ color: "var(--text-primary)" }}>
-          Plan vs Actual Contributions
-        </h2>
-        <Info size={14} style={{ color: "var(--text-muted)" }} />
-      </div>
-      <div className="space-y-5">
-        {plan.vehicles.map((vehicle) => (
-          <div
-            key={vehicle.vehicle}
-            className="grid grid-cols-[120px_minmax(0,1fr)_76px] gap-4 items-center"
-          >
-            <div>
-              <p className="small-text font-semibold" style={{ color: "var(--text-primary)" }}>
-                {vehicleLabel(vehicle.vehicle)}
-              </p>
-              <p className="micro-text" style={{ color: "var(--text-muted)" }}>
-                {formatCurrency(Number(vehicle.actual_amount))}
-              </p>
-            </div>
-            <TargetProgressBar
-              label=""
-              actual={num(vehicle.actual_pct)}
-              target={num(vehicle.target_pct)}
-              bucket="investments"
-            />
-            <div className="text-right">
-              <p className="small-text font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                {pctLabel(vehicle.actual_pct)}
-              </p>
-              <p className="micro-text tabular-nums" style={{ color: "var(--text-muted)" }}>
-                {pctLabel(vehicle.target_pct)}
-              </p>
-            </div>
-          </div>
-        ))}
-        <div
-          className="pt-4 flex items-center justify-between"
-          style={{ borderTop: "1px solid var(--border-subtle)" }}
-        >
-          <span className="small-text font-bold" style={{ color: "var(--financial-investments)" }}>
-            Total Investments
-          </span>
-          <span className="small-text font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
-            {pctLabel(plan.total_actual_pct)} / {pctLabel(plan.total_target_pct)}
-          </span>
-        </div>
-      </div>
-    </Surface>
-  );
-}
-
-function NextMonthContributionPlan({
-  plan,
-  loading,
-  error,
-}: {
-  plan: InvestmentContributionPlanResult | null;
-  loading: boolean;
-  error: boolean;
-}) {
-  if (loading) return <SkeletonState variant="card" height="280px" />;
-  if (error) return <ErrorState compact message="Couldn't load contribution recommendations." />;
-  if (!plan) return null;
-
-  return (
-    <Surface padding="md" as="section">
-      <div className="flex items-center gap-2 mb-5">
-        <h2 className="card-title-lg" style={{ color: "var(--text-primary)" }}>
-          Next Month Contribution Plan
-        </h2>
-        <Info size={14} style={{ color: "var(--text-muted)" }} />
-      </div>
-      <div className="space-y-2">
-        {plan.vehicles.map((vehicle) => {
-          const hasRecommendation = vehicle.recommended_next_month_delta !== null;
-          const delta = hasRecommendation ? Number(vehicle.recommended_next_month_delta) : 0;
-          const needsIncrease = hasRecommendation && delta > 0;
-          return (
-            <div
-              key={vehicle.vehicle}
-              className="flex items-center gap-3 py-3"
-              style={{ borderBottom: "1px solid var(--border-subtle)" }}
-            >
-              <span
-                className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: "var(--financial-investments-soft)", color: "var(--financial-investments)" }}
-              >
-                <CircleDollarSign size={15} />
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="small-text font-semibold" style={{ color: "var(--text-primary)" }}>
-                  {vehicleLabel(vehicle.vehicle)}
-                </p>
-                <p className="micro-text" style={{ color: "var(--text-muted)" }}>
-                  {!hasRecommendation
-                    ? "Contribution data unavailable"
-                    : needsIncrease
-                    ? `To reach ${pctLabel(vehicle.target_pct)} of gross pay`
-                    : "You're on track"}
-                </p>
-              </div>
-              <div className="text-right shrink-0">
-                <p className="small-text font-bold" style={{ color: "var(--text-primary)" }}>
-                  {!hasRecommendation
-                    ? "Data unavailable"
-                    : needsIncrease
-                    ? `Add ${formatCurrency(delta)} more`
-                    : `Keep at ${pctLabel(vehicle.target_pct)}`}
-                </p>
-                <StatusBadge status={!hasRecommendation ? "neutral" : needsIncrease ? "danger" : statusTone(vehicle.status)}>
-                  {!hasRecommendation ? "No data" : needsIncrease ? "Increase" : statusLabel(vehicle.status)}
-                </StatusBadge>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-5 flex flex-wrap gap-3">
-        <Link
-          href="/chat"
-          className="btn-coral inline-flex items-center gap-2 px-4 py-2 rounded-xl small-text font-semibold text-white"
-        >
-          View plan <ArrowRight size={14} />
-        </Link>
-        <Link
-          href="/chat"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl small-text font-semibold"
-          style={{
-            background: "var(--glass-light-bg)",
-            border: "1px solid var(--border-subtle)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          Adjust target
-        </Link>
-      </div>
-    </Surface>
-  );
-}
-
-function InvestmentInsights({
-  plan,
-  loading,
-  error,
-}: {
-  plan: InvestmentContributionPlanResult | null;
-  loading: boolean;
-  error: boolean;
-}) {
-  if (loading) return <SkeletonState variant="card" height="190px" />;
-  if (error) return <ErrorState compact message="Couldn't load investment insights." />;
-  if (!plan) return null;
-
-  const insights = plan.vehicles
-    .filter((vehicle) => vehicle.variance_amount !== null)
-    .sort((a, b) => Number(a.variance_amount) - Number(b.variance_amount))
-    .slice(0, 3);
-
-  if (insights.length === 0) {
-    return (
-      <EmptyState
-        compact
-        icon={<Sparkles size={22} />}
-        title="No investment insights yet"
-        description="Once Coral has observed income and contribution data, investment insights will appear here."
-      />
-    );
-  }
-
-  return (
-    <section>
-      <SectionHeader eyebrow="Insights" title="Coral Investment Insights" size="sm" className="mb-5" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {insights.map((vehicle) => {
-          const variance = Number(vehicle.variance_amount);
-          const behind = variance < 0;
-          return (
-            <Surface key={vehicle.vehicle} padding="md">
-              <span
-                className="w-10 h-10 rounded-2xl flex items-center justify-center"
-                style={{
-                  background: behind ? "var(--status-danger-soft)" : "var(--status-good-soft)",
-                  color: behind ? "var(--status-danger)" : "var(--status-good)",
-                }}
-              >
-                {behind ? <TrendingDown size={16} /> : <CheckCircle2 size={16} />}
-              </span>
-              <h3 className="mt-4 small-text font-bold" style={{ color: "var(--text-primary)" }}>
-                {behind
-                  ? `${vehicleLabel(vehicle.vehicle)} behind target`
-                  : `${vehicleLabel(vehicle.vehicle)} on track`}
-              </h3>
-              <p className="mt-2 micro-text" style={{ color: "var(--text-muted)" }}>
-                {behind
-                  ? `You're contributing ${pctLabel(vehicle.actual_pct)} against a ${pctLabel(vehicle.target_pct)} target.`
-                  : `You're meeting the ${pctLabel(vehicle.target_pct)} contribution target.`}
-              </p>
-              <Link
-                href="/chat"
-                className="mt-5 inline-flex items-center gap-2 micro-text font-semibold"
-                style={{ color: behind ? "var(--status-danger)" : "var(--status-good)" }}
-              >
-                {behind ? "Review contribution" : "Review election"} <ArrowRight size={12} />
-              </Link>
-            </Surface>
-          );
-        })}
-      </div>
-    </section>
-  );
 }
 
 function buildHealthRows(data: InvestmentsDashboard | null) {
@@ -658,6 +180,153 @@ function AccountAllocation({ data }: { data: InvestmentsDashboard | null }) {
   );
 }
 
+function PortfolioIntelligence({
+  data,
+  dataset,
+}: {
+  data: InvestmentsDashboard | null;
+  dataset: ReturnType<typeof buildAccountValueDataset>;
+}) {
+  if (!data || dataset.accounts.length === 0) return null;
+
+  const totalValue = dataset.totalLatestValue;
+  const largestAccount = [...(data.allocation ?? [])].sort((a, b) => (
+    b.pct_of_portfolio - a.pct_of_portfolio
+  ))[0] ?? null;
+  const largestHolding = data.top_holdings.find((holding) => (
+    holding.portfolio_weight !== null && holding.portfolio_weight !== undefined
+  )) ?? null;
+  const cashTotal = data.portfolio_summary.accounts.reduce((sum, account) => (
+    sum + (account.cash_value ?? 0)
+  ), 0);
+  const cashPct = totalValue > 0 ? (cashTotal / totalValue) * 100 : null;
+  const biggestMover = [...dataset.accounts]
+    .filter((account) => account.change !== null)
+    .sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))[0] ?? null;
+  const healthRows = buildHealthRows(data);
+
+  const facts = [
+    largestAccount ? {
+      label: "Largest account",
+      value: largestAccount.account_name,
+      detail: `${largestAccount.pct_of_portfolio.toFixed(1)}% of imported portfolio`,
+      tone: largestAccount.pct_of_portfolio >= 70 ? "warning" as const : "good" as const,
+    } : null,
+    largestHolding ? {
+      label: "Largest holding",
+      value: largestHolding.symbol || largestHolding.description,
+      detail: `${largestHolding.portfolio_weight?.toFixed(1)}% of imported holdings`,
+      tone: (largestHolding.portfolio_weight ?? 0) >= 25 ? "warning" as const : "good" as const,
+    } : null,
+    {
+      label: "Cash position",
+      value: formatCurrency(cashTotal),
+      detail: cashPct === null ? "Cash share unavailable" : `${cashPct.toFixed(1)}% of portfolio is cash`,
+      tone: cashTotal > 0 ? "neutral" as const : "good" as const,
+    },
+    biggestMover ? {
+      label: "Biggest monthly move",
+      value: biggestMover.accountName,
+      detail: `${biggestMover.change! >= 0 ? "+" : "-"}${formatCurrency(Math.abs(biggestMover.change!))} vs prior snapshot`,
+      tone: biggestMover.change! >= 0 ? "good" as const : "warning" as const,
+    } : null,
+  ].filter((fact): fact is NonNullable<typeof fact> => fact !== null);
+
+  return (
+    <section>
+      <SectionHeader
+        eyebrow="Portfolio intelligence"
+        title="What Coral Can Trust From Your Statements"
+        description="Insights below use imported portfolio balances, allocation, cash, and holdings only."
+        size="sm"
+        className="mb-5"
+      />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+        <Surface padding="lg" className="relative overflow-hidden">
+          <div
+            className="absolute -right-16 -top-20 h-52 w-52 rounded-full opacity-30 blur-3xl"
+            style={{ background: "var(--financial-investments-soft)" }}
+          />
+          <div className="relative">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="micro-text font-bold uppercase tracking-[0.18em] text-financial-investments">
+                  Statement-backed
+                </p>
+                <h2 className="mt-2 text-3xl font-black tracking-normal" style={{ color: "var(--text-primary)" }}>
+                  Portfolio Snapshot
+                </h2>
+                <p className="mt-2 max-w-xl small-text" style={{ color: "var(--text-muted)" }}>
+                  No contribution targets, no uncategorized-transfer math. Just the reliable investment facts Coral imported.
+                </p>
+              </div>
+              <div className="rounded-3xl bg-white/70 px-5 py-4 text-right ring-1 ring-slate-200/80">
+                <p className="micro-text font-bold uppercase tracking-[0.16em]" style={{ color: "var(--text-muted)" }}>
+                  Imported value
+                </p>
+                <p className="mt-1 text-3xl font-black tabular-nums" style={{ color: "var(--text-primary)" }}>
+                  {formatCurrency(totalValue)}
+                </p>
+                {dataset.totalChange !== null && (
+                  <p
+                    className="mt-1 small-text font-bold tabular-nums"
+                    style={{ color: dataset.totalChange >= 0 ? "var(--status-good)" : "var(--status-danger)" }}
+                  >
+                    {dataset.totalChange >= 0 ? "+" : "-"}
+                    {formatCurrency(Math.abs(dataset.totalChange))} vs prior snapshot
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-7 grid gap-3 md:grid-cols-2">
+              {facts.map((fact) => (
+                <div
+                  key={fact.label}
+                  className="rounded-3xl bg-white/72 p-4 ring-1 ring-slate-200/80"
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl"
+                      style={{
+                        background: fact.tone === "warning" ? "var(--status-warning-soft)" : fact.tone === "good" ? "var(--status-good-soft)" : "var(--financial-investments-soft)",
+                        color: fact.tone === "warning" ? "var(--status-warning)" : fact.tone === "good" ? "var(--status-good)" : "var(--financial-investments)",
+                      }}
+                    >
+                      {fact.tone === "warning" ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="micro-text font-bold uppercase tracking-[0.14em]" style={{ color: "var(--text-muted)" }}>
+                        {fact.label}
+                      </p>
+                      <p className="mt-1 truncate text-lg font-black" style={{ color: "var(--text-primary)" }}>
+                        {fact.value}
+                      </p>
+                      <p className="mt-1 micro-text" style={{ color: "var(--text-muted)" }}>
+                        {fact.detail}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Surface>
+
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-1">
+          <PortfolioHealth data={data} />
+          <AccountAllocation data={data} />
+        </div>
+      </div>
+      {healthRows.length === 0 && (
+        <p className="mt-3 micro-text" style={{ color: "var(--text-dim)" }}>
+          Add holdings or allocation pages to unlock deeper concentration and cash-position insights.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function HoldingRow({ holding, index, total }: { holding: Holding; index: number; total: number }) {
   return (
     <div
@@ -693,9 +362,6 @@ export default function InvestmentsPageClient() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contributionPlan, setContributionPlan] =
-    useState<LoadState<InvestmentContributionPlanResult>>(INITIAL_LOAD_STATE);
-  const [nextMonthPlan, setNextMonthPlan] = useState<LoadState<NextMonthPlanResult>>(INITIAL_LOAD_STATE);
   const [accountViewMode, setAccountViewMode] = useState<AccountValueViewMode>("line");
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const openUploadModal = useAppStore((s) => s.openUploadModal);
@@ -713,30 +379,10 @@ export default function InvestmentsPageClient() {
       .finally(() => { setLoading(false); setRefreshing(false); });
   }, [startDate, endDate]);
 
-  const loadContributionPlan = useCallback(() => {
-    setContributionPlan((state) => ({ ...state, loading: true, error: false }));
-    investmentsApi
-      .contributionPlan({ startDate, endDate })
-      .then((plan) => setContributionPlan({ data: plan, loading: false, error: false }))
-      .catch(() => setContributionPlan({ data: null, loading: false, error: true }));
-  }, [startDate, endDate]);
-
-  const loadNextMonthPlan = useCallback(() => {
-    setNextMonthPlan((state) => ({ ...state, loading: true, error: false }));
-    overviewApi
-      .nextMonthPlan({ startDate, endDate })
-      .then((plan) => setNextMonthPlan({ data: plan, loading: false, error: false }))
-      .catch(() => setNextMonthPlan({ data: null, loading: false, error: true }));
-  }, [startDate, endDate]);
-
   useEffect(() => { loadDashboard(data !== null); }, [loadDashboard]);
-  useEffect(() => { loadContributionPlan(); }, [loadContributionPlan]);
-  useEffect(() => { loadNextMonthPlan(); }, [loadNextMonthPlan]);
 
   const retryAll = () => {
     loadDashboard(false);
-    loadContributionPlan();
-    loadNextMonthPlan();
   };
 
   const hasAnyData = !!data && (
@@ -749,7 +395,6 @@ export default function InvestmentsPageClient() {
   const selectedAccount = accountDataset.accounts.find((account) => (
     account.accountId === selectedAccountId
   )) ?? null;
-  const portfolioInsight = useMemo(() => portfolioInsightText(accountDataset), [accountDataset]);
   const allocationByName = useMemo(() => new Map((data?.allocation ?? []).map((account) => [
     account.account_name,
     account.pct_of_portfolio,
@@ -774,20 +419,13 @@ export default function InvestmentsPageClient() {
     }
   }, [accountDataset.accounts, selectedAccountId]);
 
-  const portfolioRows = useMemo(() => buildHealthRows(data), [data]);
-  const investmentPlanRecommendations = nextMonthPlan.data?.recommendations.filter((rec) => (
-    rec.bucket === "investments" ||
-    rec.action_type === "increase_investment_contribution" ||
-    rec.action_type === "maintain_contribution"
-  )) ?? null;
-
   return (
     <div className="space-y-8">
       <section className="space-y-6">
-        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_460px]">
+        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-600">
-              Investments
+              Portfolio
             </p>
             <h1 className="mt-3 text-5xl font-black tracking-normal text-slate-950 md:text-6xl">
               Investments
@@ -802,18 +440,17 @@ export default function InvestmentsPageClient() {
                 onChange={setSelection}
                 onPrevMonth={goToPreviousMonth}
                 onNextMonth={goToNextMonth}
-                loading={refreshing || contributionPlan.loading}
+                loading={refreshing}
               />
             </div>
           </div>
 
-          <Image
-            src="/mascots/coral-investments.png"
-            alt=""
-            width={440}
-            height={260}
+          <CoralMascot
+            variant="investments"
+            size="xl"
             priority
-            className="mx-auto h-48 w-auto object-contain"
+            speech="Portfolio detail lives here."
+            className="mx-auto"
           />
         </div>
 
@@ -851,148 +488,34 @@ export default function InvestmentsPageClient() {
         ) : null}
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section
-          className="rounded-[30px] bg-white/90 p-5 shadow-[0_20px_60px_rgba(30,70,110,0.10)] ring-1 ring-slate-200/80 md:p-6"
-        >
-          <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-slate-950">Portfolio Account Value Trends</h2>
-                <Info size={15} className="text-slate-400" />
-              </div>
-              <p className="mt-1 text-sm text-slate-600">Monthly account snapshots from imported statements</p>
+      <section
+        className="rounded-[30px] bg-white/90 p-5 shadow-[0_20px_60px_rgba(30,70,110,0.10)] ring-1 ring-slate-200/80 md:p-6"
+      >
+        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-black text-slate-950">Portfolio Account Value Trends</h2>
+              <Info size={15} className="text-slate-400" />
             </div>
-            <AccountValueViewToggle value={accountViewMode} onChange={setAccountViewMode} />
+            <p className="mt-1 text-sm text-slate-600">Monthly account snapshots from imported statements</p>
           </div>
-          <div className="mb-4">
-            <AccountValueLegend dataset={accountDataset} />
-          </div>
-          {accountViewMode === "line" ? (
-            <AccountValueTrendChart
-              dataset={accountDataset}
-              height={430}
-              selectedAccountId={selectedAccountId}
-            />
-          ) : (
-            <AccountValueTable dataset={accountDataset} />
-          )}
-        </section>
-
-        <div className="space-y-5">
-          <div className="rounded-[28px] bg-white/90 p-5 shadow-[0_18px_50px_rgba(30,70,110,0.08)] ring-1 ring-slate-200/80">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-lg font-black text-slate-950">Latest Portfolio Snapshot</h2>
-              <span className="text-xs font-semibold text-slate-500">
-                {data?.portfolio_summary.last_updated
-                  ? new Date(data.portfolio_summary.last_updated).toLocaleDateString()
-                  : "Latest"}
-              </span>
-            </div>
-            <div className="space-y-3">
-              {accountDataset.accounts.map((account, index) => (
-                <div key={account.accountId} className="flex items-center gap-3 border-b border-slate-200/70 pb-3 last:border-0 last:pb-0">
-                  <span className="h-3 w-3 rounded-full" style={{ background: colorFor(index) }} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-slate-900">{account.accountName}</p>
-                  </div>
-                  <p className="text-sm font-black tabular-nums text-slate-950">
-                    {account.latest ? formatCurrency(account.latest.value) : "-"}
-                  </p>
-                  <p className="w-12 text-right text-sm text-slate-500">
-                    {allocationByName.get(account.accountName)?.toFixed(1) ?? "-"}%
-                  </p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-5 border-t border-slate-200/80 pt-5">
-              <p className="text-sm font-bold text-slate-700">Total Portfolio Value</p>
-              <p className="mt-1 text-3xl font-black tabular-nums text-slate-950">
-                {formatCurrency(accountDataset.totalLatestValue)}
-              </p>
-              {accountDataset.totalChange !== null && (
-                <p
-                  className="mt-2 text-sm font-bold tabular-nums"
-                  style={{ color: accountDataset.totalChange >= 0 ? "#149a6a" : "#d84b36" }}
-                >
-                  {accountDataset.totalChange >= 0 ? "+" : "-"}
-                  {formatCurrency(Math.abs(accountDataset.totalChange))} vs last month
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-[28px] bg-gradient-to-br from-orange-50 to-white p-6 shadow-[0_18px_50px_rgba(30,70,110,0.08)] ring-1 ring-orange-100">
-            <Sparkles size={20} className="text-coral-orange" />
-            <h3 className="mt-4 text-lg font-black text-slate-950">Coral Insight</h3>
-            <p className="mt-4 text-lg font-black text-slate-950">{portfolioInsight.title}</p>
-            <p className="mt-3 text-sm leading-6 text-slate-600">{portfolioInsight.body}</p>
-            <Link
-              href="/chat"
-              className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-coral-orange"
-            >
-              View growth breakdown <ArrowRight size={14} />
-            </Link>
-          </div>
+          <AccountValueViewToggle value={accountViewMode} onChange={setAccountViewMode} />
         </div>
-      </div>
-
-      {accountDataset.accounts.length > 0 && (
-        <CurrentSnapshotPanel dataset={accountDataset} />
-      )}
-
-      <section>
-        <SectionHeader
-          eyebrow="Contributions"
-          title="Investment Contribution Planning"
-          description="Plan-vs-actual guidance stays available below the portfolio value view."
-          size="sm"
-          className="mb-5"
-        />
-        <ContributionHero
-          plan={contributionPlan.data}
-          loading={contributionPlan.loading}
-          error={contributionPlan.error}
-          onRetry={loadContributionPlan}
-        />
+        <div className="mb-4">
+          <AccountValueLegend dataset={accountDataset} />
+        </div>
+        {accountViewMode === "line" ? (
+          <AccountValueTrendChart
+            dataset={accountDataset}
+            height={430}
+            selectedAccountId={selectedAccountId}
+          />
+        ) : (
+          <AccountValueTable dataset={accountDataset} />
+        )}
       </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] gap-6">
-        <ContributionBars
-          plan={contributionPlan.data}
-          loading={contributionPlan.loading}
-          error={contributionPlan.error}
-        />
-        <NextMonthContributionPlan
-          plan={contributionPlan.data}
-          loading={contributionPlan.loading}
-          error={contributionPlan.error}
-        />
-      </div>
-
-      <section>
-        <SectionHeader eyebrow="Shared planner" title="Investment Next Month Plan" size="sm" className="mb-5" />
-        <NextMonthPlanSection
-          recommendations={investmentPlanRecommendations}
-          loading={nextMonthPlan.loading}
-          error={nextMonthPlan.error}
-          onRetry={loadNextMonthPlan}
-          showSourceFacts
-        />
-      </section>
-
-      <InvestmentInsights
-        plan={contributionPlan.data}
-        loading={contributionPlan.loading}
-        error={contributionPlan.error}
-      />
-
-      {(portfolioRows.length > 0 || (data?.allocation.length ?? 0) > 0) && (
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-6">
-          <PortfolioHealth data={data} />
-          <AccountAllocation data={data} />
-        </div>
-      )}
+      <PortfolioIntelligence data={data} dataset={accountDataset} />
 
       {loading && !data && (
         <SkeletonState variant="card" height="260px" />
@@ -1003,48 +526,6 @@ export default function InvestmentsPageClient() {
           message={error}
           onRetry={retryAll}
         />
-      )}
-
-      {data && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-          className="grid grid-cols-2 md:grid-cols-4 gap-4"
-        >
-          <Surface padding="md">
-            <BarChart2 size={16} style={{ color: "var(--financial-investments)" }} />
-            <p className="micro-text mt-3" style={{ color: "var(--text-muted)" }}>Total Portfolio</p>
-            <p className="card-title-lg mt-1" style={{ color: "var(--text-primary)" }}>
-              {data.portfolio_summary.total_portfolio_value > 0
-                ? formatCompactCurrency(data.portfolio_summary.total_portfolio_value)
-                : "-"}
-            </p>
-          </Surface>
-          <Surface padding="md">
-            <TrendingUp size={16} style={{ color: "#4CAF93" }} />
-            <p className="micro-text mt-3" style={{ color: "var(--text-muted)" }}>Unrealized G/L</p>
-            <p className="card-title-lg mt-1" style={{ color: "var(--text-primary)" }}>
-              {data.portfolio_summary.total_unrealized_gain_loss_fmt}
-            </p>
-          </Surface>
-          <Surface padding="md">
-            <Landmark size={16} style={{ color: "var(--text-muted)" }} />
-            <p className="micro-text mt-3" style={{ color: "var(--text-muted)" }}>Accounts Tracked</p>
-            <p className="card-title-lg mt-1" style={{ color: "var(--text-primary)" }}>
-              {data.portfolio_summary.accounts.length || "-"}
-            </p>
-          </Surface>
-          <Surface padding="md">
-            <PieChart size={16} style={{ color: "var(--text-muted)" }} />
-            <p className="micro-text mt-3" style={{ color: "var(--text-muted)" }}>Last Updated</p>
-            <p className="card-title-lg mt-1" style={{ color: "var(--text-primary)" }}>
-              {data.portfolio_summary.last_updated
-                ? new Date(data.portfolio_summary.last_updated).toLocaleDateString()
-                : "-"}
-            </p>
-          </Surface>
-        </motion.div>
       )}
 
       {!hasAnyData && (
@@ -1142,7 +623,7 @@ export default function InvestmentsPageClient() {
           <div>
             <p className="card-title-lg">Ask Coral about your investments</p>
             <p className="small-text mt-0.5" style={{ color: "var(--text-muted)" }}>
-              Deep-dive into your contribution plan and imported holdings.
+              Deep-dive into portfolio movement, imported holdings, and account allocation.
             </p>
           </div>
         </div>

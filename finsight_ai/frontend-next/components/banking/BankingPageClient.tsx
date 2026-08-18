@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import {
   Landmark, TrendingDown, CreditCard, ArrowDownLeft, ArrowUpRight,
@@ -19,6 +18,7 @@ import SectionHeader from "@/components/coral/SectionHeader";
 import EmptyState from "@/components/coral/EmptyState";
 import LoadingState from "@/components/coral/LoadingState";
 import ErrorState from "@/components/coral/ErrorState";
+import CoralMascot from "@/components/coral/CoralMascot";
 import BankingFlowTree from "@/components/banking/BankingFlowTree";
 import BudgetDriftTable from "@/components/banking/BudgetDriftTable";
 import TopDrivers from "@/components/banking/TopDrivers";
@@ -30,21 +30,16 @@ import {
   AccountValueTable,
   AccountValueTrendChart,
   AccountValueViewToggle,
-  CurrentSnapshotPanel,
   ExpandedAccountDetail,
   colorFor,
   type AccountValueViewMode,
 } from "@/components/account-value/AccountValueExperience";
-import CoralAdvisorCard from "@/components/coral-ds/CoralAdvisorCard";
-import DsErrorState from "@/components/coral-ds/ErrorState";
 import DsSectionHeader from "@/components/coral-ds/SectionHeader";
 import FinancialPeriodSelector from "@/components/coral-ds/FinancialPeriodSelector";
-import SkeletonState from "@/components/coral-ds/SkeletonState";
 import NextMonthPlanSection from "@/components/overview/NextMonthPlanSection";
 import {
   overviewApi,
   type NextMonthPlanResult,
-  type OverviewInsightsResult,
   type PlanVsActualResult,
 } from "@/features/overview/api";
 import { buildAccountValueDataset } from "@/lib/accountValue";
@@ -253,13 +248,11 @@ export default function BankingPageClient() {
   const openUploadModal     = useAppStore((s) => s.openUploadModal);
   const { selection, resolved, setSelection, goToPreviousMonth, goToNextMonth } = useFinancialPeriod();
 
-  // Plan vs Actual (drives the flow tree, PR 07) and the advisor summary
-  // headline — both reuse the exact same already-computed backend surfaces
-  // Overview uses (GET /api/v1/plan-vs-actual, GET /api/v1/overview/insights),
+  // Plan vs Actual drives the flow tree (PR 07) using the same backend surface
+  // Overview uses (GET /api/v1/plan-vs-actual),
   // scoped to Banking's own period selection. No parallel classification or
   // aggregation is introduced here; see BankingFlowTree/lib/bankingFlowTree.ts.
   const [planVsActual, setPlanVsActual] = useState<LoadState<PlanVsActualResult>>(INITIAL_LOAD_STATE);
-  const [insights, setInsights] = useState<LoadState<OverviewInsightsResult>>(INITIAL_LOAD_STATE);
 
   // Needs/Wants/Savings category breakdowns for "Where You're Off Plan"
   // (PR 08) — reuse the exact same GET /plan-vs-actual/buckets/{bucket}
@@ -293,11 +286,6 @@ export default function BankingPageClient() {
       .then((d) => setPlanVsActual({ data: d, loading: false, error: false }))
       .catch(() => setPlanVsActual({ data: null, loading: false, error: true }));
 
-    setInsights((s) => ({ ...s, loading: true, error: false }));
-    overviewApi
-      .insights(periodParams)
-      .then((d) => setInsights({ data: d, loading: false, error: false }))
-      .catch(() => setInsights({ data: null, loading: false, error: true }));
   }, [startDate, endDate]);
 
   useEffect(() => { loadFlow(); }, [loadFlow]);
@@ -407,7 +395,7 @@ export default function BankingPageClient() {
 
   const hasAnyData = (data?.card_summary?.length ?? 0) > 0 || (data?.spend_by_month?.length ?? 0) > 0;
 
-  const anyFlowLoading = planVsActual.loading || insights.loading || nextMonthPlan.loading;
+  const anyFlowLoading = planVsActual.loading || nextMonthPlan.loading;
   const bankingPlanRecommendations = nextMonthPlan.data?.recommendations.filter((rec) => (
     rec.bucket === "needs" ||
     rec.bucket === "wants" ||
@@ -444,13 +432,12 @@ export default function BankingPageClient() {
           </div>
 
           <div className="grid items-center gap-5 sm:grid-cols-[210px_minmax(0,1fr)]">
-            <Image
-              src="/mascots/coral-banking.png"
-              alt=""
-              width={240}
-              height={160}
+            <CoralMascot
+              variant="banking"
+              size="lg"
               priority
-              className="mx-auto h-36 w-auto object-contain"
+              speech="Cash details live here."
+              className="mx-auto"
             />
             <div
               className="rounded-[28px] bg-white/86 p-6 shadow-[0_18px_48px_rgba(30,70,110,0.08)] ring-1 ring-slate-200/80"
@@ -545,44 +532,6 @@ export default function BankingPageClient() {
           <AccountValueTable dataset={accountDataset} />
         )}
       </section>
-
-      {accountDataset.accounts.length > 0 && (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-          <CurrentSnapshotPanel dataset={accountDataset} />
-          <div
-            className="rounded-[28px] bg-gradient-to-br from-sky-50 to-white p-6 shadow-[0_18px_50px_rgba(30,70,110,0.08)] ring-1 ring-sky-100"
-          >
-            <div className="flex items-start gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-                <Sparkles size={20} />
-              </span>
-              <div>
-                <h3 className="text-lg font-black text-slate-950">Coral Insight</h3>
-                <p className="mt-5 text-lg font-black text-slate-950">{accountInsight.title}</p>
-                <p className="mt-3 text-sm leading-6 text-slate-600">{accountInsight.body}</p>
-                <Link
-                  href="/chat"
-                  className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-coral-orange"
-                >
-                  See all insights <ArrowUpRight size={14} />
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {insights.loading ? (
-        <SkeletonState variant="card" height="96px" />
-      ) : insights.error ? (
-        <DsErrorState compact message="Couldn't load your banking summary for this period." onRetry={loadFlow} />
-      ) : insights.data ? (
-        <CoralAdvisorCard
-          headline={insights.data.status.headline}
-          body={insights.data.status.body}
-          tone={insights.data.status.tone}
-        />
-      ) : null}
 
       {/* ── Banking Flow Tree — preserved below account-value experience ─ */}
       <section>

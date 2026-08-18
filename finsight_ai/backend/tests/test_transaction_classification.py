@@ -101,6 +101,13 @@ class TestClassificationEngine:
         assert result.master_bucket == MasterBucket.INVESTMENTS
         assert result.category == "Taxable Brokerage"
 
+    def test_patel_brothers_does_not_match_roth_substring(self):
+        result = classify_transaction(
+            _txn("PATEL BROTHERS EDISON 000000001 EDISON NJ", amount="-53.66")
+        )
+        assert result.master_bucket != MasterBucket.INVESTMENTS
+        assert result.cash_flow_type != CashFlowType.INVESTMENT_CONTRIBUTION
+
     def test_401k_contribution_gets_specific_category(self):
         result = classify_transaction(
             _txn("401K CONTRIBUTION - PAYROLL", amount="-500.00", transaction_type="transfer")
@@ -237,6 +244,128 @@ class TestClassificationEngine:
         )
         assert result.cash_flow_type == CashFlowType.INCOME
         assert result.master_bucket == MasterBucket.UNCLASSIFIED
+
+    def test_pay_dir_dep_abbreviation_is_income_not_unclassified_other(self):
+        result = classify_transaction(
+            _txn(
+                "St. Joseph's Pay Dir Dep PPD ID: 9991210001",
+                amount="2012.50",
+                transaction_type="deposit",
+            )
+        )
+        assert result.cash_flow_type == CashFlowType.INCOME
+        assert result.master_bucket == MasterBucket.UNCLASSIFIED
+
+    @pytest.mark.parametrize(
+        ("description", "category"),
+        [
+            ("Zelle Payment To Attayya Jpm99Aztjgkx", "Minimum Debt"),
+            ("Wells Fargo Auto Draft PPD ID: 0122287170", "Minimum Debt"),
+            ("Verizon Paymentrec 1580017380001 Web ID: 9783397101", "Connectivity"),
+            ("Skylineprope-110 Web Pmts Ncdq5L Web ID: 9000327993", "Housing"),
+            ("Yardi Service Ch Web Pmts Tvcfcl Web ID: 9000278329", "Housing"),
+            ("Clickpay Proprtypay Clickpay M1B2C3D4", "Housing"),
+            ("CHARGEPOINT INC 408-8414500 CA", "Transportation"),
+            ("NJ EZPASS 888-288-6865 NJ", "Transportation"),
+            ("COSTCO GAS #1214 TETERBORO NJ", "Transportation"),
+            ("COSTCO WHSE #1214 TETERBORO NJ", "Groceries"),
+        ],
+    )
+    def test_known_recurring_needs_payments_are_expenses(self, description, category):
+        result = classify_transaction(
+            _txn(description, amount="-100.00", transaction_type="payment")
+        )
+        assert result.master_bucket == MasterBucket.NEEDS
+        assert result.category == category
+        assert result.cash_flow_type == CashFlowType.EXPENSE
+
+    @pytest.mark.parametrize(
+        ("description", "category"),
+        [
+            ("ADOBE *800-833-6687 ADOBE.LY/ENUS CA", "Entertainment"),
+            ("OPENAI *CHATGPT SUBSCR OPENAI.COM CA", "Entertainment"),
+            ("Netflix 1 8445052993 CA", "Entertainment"),
+            ("SPOTIFY 877-778-1161 NY", "Entertainment"),
+            ("Vagaro_*City Image Bar MONTCLAIR NJ", "Personal Care"),
+            ("EVERWASH 215-618-8808 EVERWASH.COM PA", "Personal Care"),
+            ("PRESTIGE PICKLEBALL CL PRESTIGEPICKL NJ", "Fitness/Hobbies"),
+        ],
+    )
+    def test_known_recurring_wants_payments_are_expenses(self, description, category):
+        result = classify_transaction(
+            _txn(description, amount="-20.00", transaction_type="purchase")
+        )
+        assert result.master_bucket == MasterBucket.WANTS
+        assert result.category == category
+        assert result.cash_flow_type == CashFlowType.EXPENSE
+
+    def test_529_keyword_does_not_match_inside_phone_number(self):
+        result = classify_transaction(
+            _txn("Netflix 1 8445052993 CA", amount="-8.52", transaction_type="purchase")
+        )
+        assert result.master_bucket == MasterBucket.WANTS
+        assert result.category == "Entertainment"
+        assert result.cash_flow_type != CashFlowType.SAVINGS_CONTRIBUTION
+
+    def test_nj_direct_529_contribution_is_child_savings(self):
+        result = classify_transaction(
+            _txn(
+                "NJ Dir ACH Contrib 000029285809062 Web ID: 2216000928",
+                amount="-100.00",
+                transaction_type="withdrawal",
+            )
+        )
+        assert result.master_bucket == MasterBucket.SAVINGS
+        assert result.category == "Child Savings"
+        assert result.cash_flow_type == CashFlowType.SAVINGS_CONTRIBUTION
+
+    def test_marcus_online_savings_transfer_is_emergency_fund(self):
+        result = classify_transaction(
+            _txn(
+                "Online Transfer 29399019198 To Online Savings ########4182",
+                amount="-4500.00",
+                transaction_type="transfer",
+            )
+        )
+        assert result.master_bucket == MasterBucket.SAVINGS
+        assert result.category == "Emergency Fund"
+        assert result.cash_flow_type == CashFlowType.SAVINGS_CONTRIBUTION
+        assert result.needs_review is False
+
+    def test_american_express_checking_payment_is_neutral_transfer(self):
+        result = classify_transaction(
+            _txn(
+                "American Express ACH Pmt M3188 Web ID: 2005032111",
+                amount="-6603.24",
+                transaction_type="payment",
+            )
+        )
+        assert result.master_bucket == MasterBucket.UNCLASSIFIED
+        assert result.cash_flow_type == CashFlowType.TRANSFER
+
+    def test_morgan_stanley_bank_deposit_program_redemption_is_investment_activity(self):
+        result = classify_transaction(
+            _txn(
+                "Automatic Redemption BANK DEPOSIT PROGRAM",
+                amount="-2500.00",
+                transaction_type="withdrawal",
+                account_type="individual_brokerage",
+            )
+        )
+        assert result.master_bucket == MasterBucket.INVESTMENTS
+        assert result.cash_flow_type == CashFlowType.INVESTMENT_ACTIVITY
+
+    def test_marcus_to_morgan_stanley_inflow_is_investment_contribution(self):
+        result = classify_transaction(
+            _txn(
+                "Online Transfer FUNDS RECEIVED Marcus GS XX-4182",
+                amount="1000.00",
+                transaction_type="transfer",
+                account_type="advisory",
+            )
+        )
+        assert result.master_bucket == MasterBucket.INVESTMENTS
+        assert result.cash_flow_type == CashFlowType.INVESTMENT_CONTRIBUTION
 
     def test_unresolvable_transaction_is_unclassified_not_guessed(self):
         result = classify_transaction(_txn("MISC POS 99182734", amount="-9.00"))

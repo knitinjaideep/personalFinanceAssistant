@@ -107,6 +107,10 @@ function toNumber(v: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function formatPercentage(value: number): string {
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+}
+
 function emptyResult(): BankingFlowTreeResult {
   return { hasIncome: false, incomeAmount: 0, nodes: [], links: [], expandableBuckets: [] };
 }
@@ -323,10 +327,10 @@ export function buildFlowAccessibleSummary(tree: BankingFlowTreeResult): string 
   for (const node of tree.nodes) {
     if (node.kind !== "bucket" && node.kind !== "unallocated") continue;
     const d = node.detail;
-    const pct = d.actualPercentage !== null ? `${d.actualPercentage}% of income` : "an unknown share of income";
+    const pct = d.actualPercentage !== null ? `${formatPercentage(d.actualPercentage)} of income` : "an unknown share of income";
     let sentence = `${node.label}: ${formatCurrency(d.actualAmount)} (${pct})`;
     if (d.targetPercentage !== null) {
-      sentence += `, against a target of ${d.targetPercentage}%`;
+      sentence += `, against a target of ${formatPercentage(d.targetPercentage)}`;
       if (d.varianceAmount !== null) {
         const overUnder = d.varianceAmount >= 0 ? "over" : "under";
         sentence += ` (${formatCurrency(Math.abs(d.varianceAmount))} ${overUnder} plan)`;

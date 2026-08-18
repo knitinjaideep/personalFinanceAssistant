@@ -50,6 +50,30 @@ PURCHASE
 04/12 DD *DOORDASHDASHPASS SAN FRANCISCO CA -.86
 """
 
+_CHECKING_APRIL_PAGE = """\
+March 14, 2026throughApril 14, 2026
+Chase Total Checking
+CHECKING SUMMARY
+TRANSACTION DETAIL
+DATE DESCRIPTION AMOUNT BALANCE
+03/16 Zelle Payment To Regina (Cleans) 28432574050 -90.00 26,301.55
+03/31 JPMorgan Chase B Payroll Dd PPD ID: 1134994650 3,706.92 16,432.69
+"""
+
+_SAPPHIRE_PAGE_WITH_PHONE_FRAGMENT = """\
+June 3, 2026throughJuly 2, 2026
+CHASE SAPPHIRE PREFERRED
+Minimum Payment Due $0.00
+ACCOUNT ACTIVITY
+Date of
+Transaction Merchant Name or Transaction Description $ Amount
+PAYMENTS AND OTHER CREDITS
+06/03 Payment Thank You-Mobile -747.34
+PURCHASE
+06/02 SUNOCO PARAMUS PARAMUS NJ 56.28
+07/02 D36179267 180-072-2008 FL 26.76
+"""
+
 
 class TestSubDollarAmounts:
     async def test_extracts_leading_zero_omitted_amounts(self):
@@ -89,3 +113,29 @@ class TestSubDollarAmounts:
         amounts = {t.amount for t in stmt.transactions}
         assert Decimal("-1234.56") in amounts
         assert Decimal("-42.99") in amounts
+
+
+class TestChaseCheckingStatements:
+    async def test_april_checking_is_not_misclassified_as_apr_credit_card(self):
+        parser = ChaseParser()
+        stmt = await parser.extract(_doc(_CHECKING_APRIL_PAGE))
+
+        assert stmt.account_type == "checking"
+        assert stmt.statement_type == "bank"
+        assert len(stmt.transactions) == 2
+        by_desc = {t.description: t for t in stmt.transactions}
+        assert by_desc["Zelle Payment To Regina (Cleans) 28432574050"].amount == Decimal("-90.00")
+        payroll = by_desc["JPMorgan Chase B Payroll Dd PPD ID: 1134994650"]
+        assert payroll.amount == Decimal("3706.92")
+
+
+class TestChaseStatementPeriodDates:
+    async def test_credit_card_dates_use_statement_period_not_phone_number_fragments(self):
+        parser = ChaseParser()
+        stmt = await parser.extract(_doc(_SAPPHIRE_PAGE_WITH_PHONE_FRAGMENT))
+
+        assert stmt.account_type == "credit_card"
+        assert {t.transaction_date.year for t in stmt.transactions} == {2026}
+        by_desc = {t.description: t for t in stmt.transactions}
+        assert by_desc["Payment Thank You-Mobile"].amount == Decimal("747.34")
+        assert by_desc["D36179267 180-072-2008 FL"].transaction_date.year == 2026

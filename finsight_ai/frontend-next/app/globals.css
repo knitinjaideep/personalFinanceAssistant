@@ -776,6 +776,68 @@
   color: rgba(7,31,51,0.55) !important;
 }
 
+/* Keep primary actions readable after the broad light-mode text-white override. */
+[data-theme="light"] .btn-coral,
+[data-theme="light"] .btn-coral.text-white {
+  color: var(--text-on-accent) !important;
+}
+
+/* ── Dark mode compatibility for light-only Tailwind utilities ───────────────
+   Recent Coral pages intentionally lean on CSS variables, but several detailed
+   cards/tables still carry Tailwind's `white`/`slate` utility classes. Without
+   this bridge, dark mode renders light panels and mismatched slate text inside
+   the otherwise dark ocean shell. */
+[data-theme="dark"] .text-slate-950,
+[data-theme="dark"] .text-slate-900,
+[data-theme="dark"] .text-slate-800 {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .text-slate-700,
+[data-theme="dark"] .text-slate-600 {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .text-slate-500,
+[data-theme="dark"] .text-slate-400 {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-white\/95,
+[data-theme="dark"] .bg-white\/90,
+[data-theme="dark"] .bg-white\/88,
+[data-theme="dark"] .bg-white\/86,
+[data-theme="dark"] .bg-white\/82,
+[data-theme="dark"] .bg-white\/80,
+[data-theme="dark"] .bg-white\/72,
+[data-theme="dark"] .bg-white\/70 {
+  background-color: var(--card-bg) !important;
+}
+
+[data-theme="dark"] .bg-slate-50,
+[data-theme="dark"] .bg-slate-50\/95,
+[data-theme="dark"] .bg-slate-50\/80 {
+  background-color: var(--panel-bg-alt) !important;
+}
+
+[data-theme="dark"] .border-slate-200\/80,
+[data-theme="dark"] .border-slate-200\/70 {
+  border-color: var(--border-subtle) !important;
+}
+
+[data-theme="dark"] .ring-slate-200,
+[data-theme="dark"] .ring-slate-200\/90,
+[data-theme="dark"] .ring-slate-200\/80 {
+  --tw-ring-color: var(--border-subtle) !important;
+}
+
+[data-theme="dark"] input.bg-slate-50,
+[data-theme="dark"] textarea.bg-slate-50 {
+  background-color: rgba(255,255,255,0.055) !important;
+  color: var(--text-primary) !important;
+}
+
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 5px;

@@ -1,7 +1,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import HomePageClient from "./HomePageClient";
+import { bankingApi } from "@/features/banking/api";
 import { documentsApi } from "@/features/documents/api";
+import { investmentsApi } from "@/features/investments/api";
 import { overviewApi } from "@/features/overview/api";
 
 vi.mock("@/hooks/useFinancialPeriod", () => ({
@@ -56,7 +59,19 @@ describe("<HomePageClient />", () => {
       plan_version_number: 1,
       plan_effective_from: "2026-01-01",
       plannable_income: "10000.00",
-      buckets: [],
+      buckets: [
+        {
+          bucket: "needs",
+          target_percentage: "50",
+          actual_percentage: "60",
+          target_amount: "5000.00",
+          actual_amount: "6000.00",
+          variance_amount: "1000.00",
+          variance_percentage_points: "10",
+          status: "off_track",
+          transaction_count: 4,
+        },
+      ],
       completeness: COMPLETENESS,
     });
     vi.spyOn(overviewApi, "insights").mockResolvedValue({
@@ -98,9 +113,61 @@ describe("<HomePageClient />", () => {
         },
       ],
     });
+    vi.spyOn(bankingApi, "banking").mockResolvedValue({
+      spend_by_month: [],
+      spend_by_category: [],
+      top_merchants: [],
+      card_summary: [],
+      account_value_history: [
+        {
+          account_id: "chase-checking",
+          account_name: "Chase Checking",
+          institution: "Chase",
+          institution_type: "chase",
+          account_type: "checking",
+          domain: "banking",
+          snapshot_date: "2026-08-31",
+          value: 11000,
+          currency: "USD",
+          source_statement_id: "stmt-1",
+          source_type: "statement",
+          latest_statement_month: "2026-08",
+          status: "complete",
+        },
+      ],
+      cash_flow: [],
+      subscriptions: [],
+      coverage: [],
+      period: { start_date: "2026-08-01", end_date: "2026-08-31" },
+    });
+    vi.spyOn(investmentsApi, "investments").mockResolvedValue({
+      portfolio_summary: {
+        total_portfolio_value: 120000,
+        total_portfolio_value_fmt: "$120,000.00",
+        total_unrealized_gain_loss: 0,
+        total_unrealized_gain_loss_fmt: "$0.00",
+        last_updated: "2026-08-31",
+        accounts: [],
+      },
+      allocation: [],
+      top_holdings: [],
+      top_gainers: [],
+      top_losers: [],
+      balance_history: [
+        {
+          date: "2026-08-31",
+          total_value: 120000,
+          account_name: "Morgan Stanley Joint",
+          institution_type: "morgan_stanley",
+        },
+      ],
+      coverage: [],
+      period: { start_date: "2026-08-01", end_date: "2026-08-31" },
+    });
   });
 
   afterEach(() => {
+    window.localStorage.clear();
     vi.restoreAllMocks();
     cleanup();
   });
@@ -119,5 +186,27 @@ describe("<HomePageClient />", () => {
       startDate: "2026-08-01",
       endDate: "2026-08-31",
     });
+    expect(await screen.findByText("Cash accounts")).toBeInTheDocument();
+    expect(screen.getByText("Portfolio snapshot")).toBeInTheDocument();
+  });
+
+  it("recalculates Plan vs Actual from editable monthly budget targets and saves them locally", async () => {
+    const user = userEvent.setup();
+    render(<HomePageClient />);
+
+    expect(await screen.findByText("Target $6,400 · Actual $6,000 (50% of income)")).toBeInTheDocument();
+
+    const needsPct = screen.getByLabelText("Needs target percentage");
+    await user.clear(needsPct);
+    await user.type(needsPct, "50");
+
+    expect(screen.getByText("Target $6,000 · Actual $6,000 (50% of income)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Needs monthly target amount")).toHaveValue("6000");
+
+    const saveButton = screen.getByRole("button", { name: "Save targets" });
+    await user.click(saveButton);
+
+    expect(screen.getByText("Saved locally")).toBeInTheDocument();
+    expect(window.localStorage.getItem("coral:overview:budgetPlan")).toContain("\"needs\":\"6000\"");
   });
 });

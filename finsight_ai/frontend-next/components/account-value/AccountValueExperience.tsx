@@ -62,7 +62,7 @@ function monthValue(account: AccountValueSeries, month: string) {
 
 function Sparkline({ points, color }: { points: AccountValuePoint[]; color: string }) {
   if (points.length < 2) {
-    return <div className="h-12 rounded-xl bg-slate-50" />;
+    return <div className="h-12 rounded-xl" style={{ background: "var(--panel-bg-alt)" }} />;
   }
   const width = 140;
   const height = 48;
@@ -106,7 +106,7 @@ export function AccountValueViewToggle({
   return (
     <div
       className="inline-flex rounded-2xl p-1"
-      style={{ background: "#f7fbff", border: "1px solid rgba(117,146,177,0.22)" }}
+      style={{ background: "var(--panel-bg-alt)", border: "1px solid var(--border-subtle)" }}
       aria-label="Account value view"
     >
       {[
@@ -122,9 +122,9 @@ export function AccountValueViewToggle({
             onClick={() => onChange(option.value)}
             className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             style={{
-              color: active ? "#0b61d8" : "#53657f",
-              background: active ? "#e9f3ff" : "transparent",
-              boxShadow: active ? "0 4px 14px rgba(37,99,235,0.10)" : "none",
+              color: active ? "var(--financial-needs)" : "var(--text-muted)",
+              background: active ? "var(--accent-soft)" : "transparent",
+              boxShadow: active ? "0 4px 14px var(--card-shadow)" : "none",
             }}
             aria-pressed={active}
           >
@@ -158,21 +158,21 @@ export function AccountValueSummaryCard({
       aria-expanded={selected}
       className="group min-h-[138px] rounded-3xl p-5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
       style={{
-        background: "rgba(255,255,255,0.88)",
-        border: selected ? `1px solid ${color}88` : "1px solid rgba(121,145,166,0.22)",
+        background: "var(--card-bg)",
+        border: selected ? `1px solid ${color}88` : "1px solid var(--border-subtle)",
         boxShadow: selected
           ? `0 18px 44px ${color}1f`
-          : "0 16px 36px rgba(30,70,110,0.08)",
+          : "var(--panel-shadow)",
       }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <AccountIcon domain={account.domain} color={color} />
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold" style={{ color: "#0a1735" }}>
+            <p className="truncate text-sm font-bold" style={{ color: "var(--text-primary)" }}>
               {account.accountName}
             </p>
-            <p className="mt-1 truncate text-xs" style={{ color: "#61718a" }}>
+            <p className="mt-1 truncate text-xs" style={{ color: "var(--text-muted)" }}>
               {account.institution}
             </p>
           </div>
@@ -187,7 +187,7 @@ export function AccountValueSummaryCard({
 
       <div className="mt-4 grid grid-cols-[minmax(0,1fr)_118px] items-end gap-3">
         <div className="min-w-0">
-          <p className="text-2xl font-black tabular-nums tracking-normal" style={{ color: "#071531" }}>
+          <p className="text-2xl font-black tabular-nums tracking-normal" style={{ color: "var(--text-primary)" }}>
             {account.latest ? formatCurrency(account.latest.value) : "-"}
           </p>
           <p
@@ -195,7 +195,7 @@ export function AccountValueSummaryCard({
             style={{ color: deltaPositive ? "#149a6a" : "#d84b36" }}
           >
             {deltaLabel(account.change, true)}
-            <span className="ml-2 font-medium" style={{ color: "#6b7a92" }}>
+            <span className="ml-2 font-medium" style={{ color: "var(--text-muted)" }}>
               vs {account.previous ? formatMonthLabel(account.previous.month) : "prior month"}
             </span>
           </p>
@@ -231,7 +231,10 @@ export function AccountValueTrendChart({
   const rows = useMemo(() => chartRows(dataset), [dataset]);
   if (rows.length === 0) {
     return (
-      <div className="flex h-72 items-center justify-center rounded-3xl bg-slate-50 text-sm text-slate-500">
+      <div
+        className="flex h-72 items-center justify-center rounded-3xl text-sm"
+        style={{ background: "var(--panel-bg-alt)", color: "var(--text-muted)" }}
+      >
         No account value snapshots in this period.
       </div>
     );
@@ -241,28 +244,30 @@ export function AccountValueTrendChart({
     <div style={{ width: "100%", height }}>
       <ResponsiveContainer>
         <LineChart data={rows} margin={{ top: 18, right: 18, left: 8, bottom: 10 }}>
-          <CartesianGrid stroke="#e5edf5" strokeDasharray="4 4" vertical={false} />
+          <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="4 4" vertical={false} />
           <XAxis
             dataKey="monthLabel"
-            tick={{ fill: "#52627a", fontSize: 12 }}
+            tick={{ fill: "var(--chart-axis)", fontSize: 12 }}
             tickLine={false}
             axisLine={false}
             minTickGap={24}
           />
           <YAxis
             tickFormatter={(value) => formatCompactCurrency(Number(value))}
-            tick={{ fill: "#52627a", fontSize: 12 }}
+            tick={{ fill: "var(--chart-axis)", fontSize: 12 }}
             tickLine={false}
             axisLine={false}
             width={76}
           />
           <Tooltip
             formatter={(value) => [formatCurrency(Number(value)), "Value"]}
-            labelStyle={{ color: "#0a1735", fontWeight: 700 }}
+            labelStyle={{ color: "var(--text-primary)", fontWeight: 700 }}
+            itemStyle={{ color: "var(--text-secondary)" }}
             contentStyle={{
+              background: "var(--card-bg)",
               borderRadius: 16,
-              border: "1px solid rgba(121,145,166,0.25)",
-              boxShadow: "0 18px 50px rgba(20,40,70,0.16)",
+              border: "1px solid var(--border-subtle)",
+              boxShadow: "var(--panel-shadow)",
             }}
           />
           {dataset.accounts.map((account, index) => {
@@ -291,7 +296,10 @@ export function AccountValueTrendChart({
 export function AccountValueTable({ dataset }: { dataset: AccountValueDataset }) {
   if (dataset.months.length === 0) {
     return (
-      <div className="rounded-3xl bg-slate-50 p-8 text-center text-sm text-slate-500">
+      <div
+        className="rounded-3xl p-8 text-center text-sm"
+        style={{ background: "var(--panel-bg-alt)", color: "var(--text-muted)" }}
+      >
         No account value snapshots in this period.
       </div>
     );
@@ -354,10 +362,20 @@ function AccountMiniTrend({ account, color }: { account: AccountValueSeries; col
               <stop offset="95%" stopColor={color} stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="#e5edf5" strokeDasharray="4 4" vertical={false} />
-          <XAxis dataKey="monthLabel" tick={{ fill: "#64748b", fontSize: 11 }} tickLine={false} axisLine={false} />
-          <YAxis tickFormatter={(value) => formatCompactCurrency(Number(value))} tick={{ fill: "#64748b", fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
-          <Tooltip formatter={(value) => [formatCurrency(Number(value)), account.accountName]} />
+          <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="4 4" vertical={false} />
+          <XAxis dataKey="monthLabel" tick={{ fill: "var(--chart-axis)", fontSize: 11 }} tickLine={false} axisLine={false} />
+          <YAxis tickFormatter={(value) => formatCompactCurrency(Number(value))} tick={{ fill: "var(--chart-axis)", fontSize: 11 }} tickLine={false} axisLine={false} width={64} />
+          <Tooltip
+            formatter={(value) => [formatCurrency(Number(value)), account.accountName]}
+            labelStyle={{ color: "var(--text-primary)", fontWeight: 700 }}
+            itemStyle={{ color: "var(--text-secondary)" }}
+            contentStyle={{
+              background: "var(--card-bg)",
+              border: "1px solid var(--border-subtle)",
+              borderRadius: 14,
+              boxShadow: "var(--panel-shadow)",
+            }}
+          />
           <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2.5} fill={`url(#${fillId})`} dot={{ r: 3, fill: "#fff", stroke: color, strokeWidth: 2 }} />
         </AreaChart>
       </ResponsiveContainer>
@@ -397,10 +415,10 @@ export function ExpandedAccountDetail({
         }}
         className="rounded-[28px] p-5 md:p-6"
         style={{
-          background: "linear-gradient(180deg, rgba(255,255,255,0.94), rgba(247,252,255,0.88))",
+          background: "linear-gradient(180deg, var(--panel-bg-alt), var(--panel-bg))",
           border: `1px solid ${color}33`,
-          boxShadow: "0 24px 60px rgba(25,65,105,0.12)",
-          color: "#0a1735",
+          boxShadow: "var(--panel-shadow)",
+          color: "var(--text-primary)",
         }}
       >
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.05fr)]">

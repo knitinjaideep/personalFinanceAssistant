@@ -302,7 +302,7 @@ _SAVINGS_GENERIC_KEYWORDS = [
 
 _INVESTMENT_SUBCATEGORY_KEYWORDS: dict[str, list[str]] = {
     "401(k)": ["401k", "401(k)"],
-    "Roth IRA": ["roth ira", "roth 401", "roth"],
+    "Roth IRA": ["roth ira", "roth 401", "roth contribution", "roth conversion"],
     "ESPP": ["espp", "employee stock purchase"],
     "Taxable Brokerage": [
         "brokerage", "etrade", "e*trade", "e-trade", "morgan stanley",
@@ -311,6 +311,10 @@ _INVESTMENT_SUBCATEGORY_KEYWORDS: dict[str, list[str]] = {
 }
 # Generic "money moved to/within an investment institution" signal.
 _INVESTMENT_GENERIC_KEYWORDS = ["ira contribution", "ira transfer", " ira ", "brokerage transfer"]
+_INVESTMENT_ACTIVITY_HINTS = (
+    "automatic redemption bank deposit program",
+    "bank deposit program",
+)
 
 # Card-payment language that is *unambiguously* a credit-card balance payment
 # (accounting-invariants.md #2 — must never be counted as spending again).
@@ -318,6 +322,7 @@ _CARD_PAYMENT_HINTS = (
     "payment thank you", "payment - thank you", "statement credit",
     "pay your card", "credit card payment", "card payment", "cardmember payment",
     "crd epay", "card epay", "cc payment", "minimum payment",
+    "american express ach pmt", "amex ach pmt", "discover e-payment",
 )
 
 # Generic payment/autopay language (and `transaction_type == "payment"`).
@@ -335,7 +340,64 @@ _GENERIC_PAYMENT_HINTS = (
 _REFUND_HINTS = ("refund", "return", "reversal", "credit adjustment", "chargeback")
 _ROLLOVER_HINTS = ("rollover",)
 _GENERIC_TRANSFER_HINTS = ("transfer", "zelle", "venmo", "paypal transfer")
-_INCOME_HINTS = ("payroll", "direct dep", "direct deposit", "salary", "paycheck")
+_INCOME_HINTS = (
+    "payroll", "direct dep", "direct deposit", "dir dep", "salary", "paycheck",
+)
+_RECURRING_NEEDS_KEYWORDS: dict[str, list[str]] = {
+    "Housing": [
+        "skylineprope-110 web pmts",
+        "yardi service ch web pmts",
+        "clickpay proprtypay",
+    ],
+    "Transportation": [
+        "chargepoint",
+        "nj ezpass",
+        "ezpass",
+        "costco gas",
+    ],
+    "Groceries": [
+        "costco whse",
+        "www costco com",
+    ],
+    "Minimum Debt": [
+        "zelle payment to attayya",
+        "wells fargo auto",
+    ],
+    "Connectivity": [
+        "verizon paymentrec",
+    ],
+}
+
+_RECURRING_WANTS_KEYWORDS: dict[str, list[str]] = {
+    "Dining": [
+        "tst*",
+    ],
+    "Entertainment": [
+        "adobe",
+        "chatgpt",
+        "openai *chatgpt",
+        "netflix",
+        "spotify",
+    ],
+    "Personal Care": [
+        "city image bar",
+        "everwash",
+    ],
+    "Fitness/Hobbies": [
+        "pickleball",
+        "prestige pickleball",
+        "passionpickleball",
+    ],
+}
+
+_RECURRING_SAVINGS_KEYWORDS: dict[str, list[str]] = {
+    "Emergency Fund": [
+        "to online savings ########4182",
+    ],
+    "Child Savings": [
+        "nj dir ach contrib",
+    ],
+}
 
 # Transaction types that only ever occur inside an investment account.
 # NOTE: "interest" is deliberately NOT here — the Amex/Chase/Discover
@@ -362,7 +424,14 @@ _INVESTMENT_ACCOUNT_TYPES = INVESTMENT_ACCOUNT_TYPES
 
 
 def _match_any(text: str, keywords: list[str] | tuple[str, ...]) -> bool:
-    return any(kw in text for kw in keywords)
+    for kw in keywords:
+        if kw.isdigit():
+            if re.search(rf"(?<!\d){re.escape(kw)}(?!\d)", text):
+                return True
+            continue
+        if kw in text:
+            return True
+    return False
 
 
 def _first_subcategory_match(text: str, table: dict[str, list[str]]) -> str | None:
@@ -565,6 +634,24 @@ def classify_transaction(
             reason="interest charge/earned outside an investment account — not a master bucket",
         )
 
+    account_type_lower = (txn.account_type or "").strip().lower()
+
+    # 3b3. Brokerage cash-sweep redemptions are activity inside the investment
+    #      account, not household spending.
+    if (
+        account_type_lower in _INVESTMENT_ACCOUNT_TYPES
+        and _match_any(text, _INVESTMENT_ACTIVITY_HINTS)
+    ):
+        return ClassificationResult(
+            master_bucket=MasterBucket.INVESTMENTS,
+            category=_first_subcategory_match(text, _INVESTMENT_SUBCATEGORY_KEYWORDS),
+            cash_flow_type=CashFlowType.INVESTMENT_ACTIVITY,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.9,
+            needs_review=False,
+            reason="bank deposit program activity inside an investment account",
+        )
+
     # 3c. Credit-card payment neutrality (invariant #2) — purchases are already
     #     represented as their own expense line items, so the payment itself
     #     must not be double-counted as spending. Only unambiguous card-payment
@@ -585,6 +672,44 @@ def classify_transaction(
     #     to a bucket/category below (via tiers 4/5) so it can net against the
     #     original spend category, but the cash_flow_type is fixed here.
     explicit_refund = txn_type == "refund" or _match_any(text, _REFUND_HINTS)
+
+    # 3d2. Known recurring Needs payments that look like generic transfers on
+    #      bank statements but are explicit household bills/loan payments.
+    recurring_needs_hit = _first_subcategory_match(text, _RECURRING_NEEDS_KEYWORDS)
+    if not explicit_refund and amount < 0 and recurring_needs_hit:
+        return ClassificationResult(
+            master_bucket=MasterBucket.NEEDS,
+            category=recurring_needs_hit,
+            cash_flow_type=CashFlowType.EXPENSE,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.9,
+            needs_review=False,
+            reason=f"known recurring Needs payment ({recurring_needs_hit})",
+        )
+
+    recurring_savings_hit = _first_subcategory_match(text, _RECURRING_SAVINGS_KEYWORDS)
+    if not explicit_refund and amount < 0 and recurring_savings_hit:
+        return ClassificationResult(
+            master_bucket=MasterBucket.SAVINGS,
+            category=recurring_savings_hit,
+            cash_flow_type=CashFlowType.SAVINGS_CONTRIBUTION,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.9,
+            needs_review=False,
+            reason=f"known recurring savings contribution ({recurring_savings_hit})",
+        )
+
+    recurring_wants_hit = _first_subcategory_match(text, _RECURRING_WANTS_KEYWORDS)
+    if not explicit_refund and amount < 0 and recurring_wants_hit:
+        return ClassificationResult(
+            master_bucket=MasterBucket.WANTS,
+            category=recurring_wants_hit,
+            cash_flow_type=CashFlowType.EXPENSE,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.9,
+            needs_review=False,
+            reason=f"known recurring Wants payment ({recurring_wants_hit})",
+        )
 
     # 3e. Investment contribution — money moving toward a brokerage/retirement
     #     account (invariant #4: not Needs/Wants spending).
@@ -614,6 +739,20 @@ def classify_transaction(
             confidence=0.85 if category else 0.7,
             needs_review=category is None,
             reason="investment institution/contribution keyword",
+        )
+
+    # 3e2. Inflows already landing on an investment account are investment
+    #      contributions even if the description names the source savings account
+    #      (for example: "FUNDS RECEIVED Marcus GS").
+    if not explicit_refund and amount > 0 and account_type_lower in _INVESTMENT_ACCOUNT_TYPES:
+        return ClassificationResult(
+            master_bucket=MasterBucket.INVESTMENTS,
+            category=_first_subcategory_match(text, _INVESTMENT_SUBCATEGORY_KEYWORDS),
+            cash_flow_type=CashFlowType.INVESTMENT_CONTRIBUTION,
+            source=ClassificationSource.DETERMINISTIC_RULE,
+            confidence=0.75,
+            needs_review=False,
+            reason="inflow landing on an investment account — contribution by account type",
         )
 
     # 3f. Savings contribution (invariant #3: not Needs/Wants spending).
@@ -664,7 +803,6 @@ def classify_transaction(
     #      investment-activity/interest/card-payment/keyword-based savings and
     #      investment rules are tiers 3a-3f, all checked earlier) always take
     #      precedence over this one.
-    account_type_lower = (txn.account_type or "").strip().lower()
     if not explicit_refund and amount > 0:
         if account_type_lower in _SAVINGS_ACCOUNT_TYPES:
             return ClassificationResult(

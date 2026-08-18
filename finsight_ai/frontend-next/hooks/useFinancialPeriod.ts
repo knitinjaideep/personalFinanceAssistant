@@ -11,7 +11,7 @@
  *      (Zustand `periodSelection`) — this is what makes the selection
  *      "survive page navigation" when a link to /banking or /investments
  *      doesn't itself carry period params (e.g. the top-nav links).
- *   3. Otherwise, Current Month (see lib/period.ts DEFAULT_PERIOD_SELECTION).
+ *   3. Otherwise, 6M (see lib/period.ts DEFAULT_PERIOD_SELECTION).
  *
  * Every selection change updates both the store (cross-page memory) and the
  * current page's URL (shareability), per the PR 05 work order's preference

@@ -7,8 +7,11 @@
  * .claude/skills/coral-redesign "Dollar-first communication" and
  * .claude/rules/frontend.md's PLAN -> ACTUAL -> DRIFT -> ACTION ordering.
  *
- * Pure presentation over already-computed backend numbers
- * (GET /api/v1/plan-vs-actual, PR 04) — no financial math happens here.
+ * Pure presentation over already-computed backend actual dollars
+ * (GET /api/v1/plan-vs-actual, PR 04). When the Overview page supplies a
+ * salary override, this component recalculates only the display baseline
+ * for target dollars / actual percentages; transaction actuals remain the
+ * backend source of truth.
  */
 
 import { Home, PiggyBank, ShoppingBag, TrendingUp } from "lucide-react";
@@ -26,9 +29,14 @@ interface PlanVsActualSectionProps {
   loading: boolean;
   error: boolean;
   onRetry?: () => void;
+  monthlyIncome?: number | null;
+  monthlyTargets?: Partial<Record<PlanBucket, number>>;
+  periodMonths?: number;
 }
 
-const BUCKET_ORDER: MasterBucket[] = ["needs", "wants", "savings", "investments"];
+type PlanBucket = "needs" | "wants" | "savings" | "investments";
+
+const BUCKET_ORDER: PlanBucket[] = ["needs", "wants", "savings", "investments"];
 
 const BUCKET_META: Record<string, { label: string; icon: React.ReactNode }> = {
   needs: { label: "Needs", icon: <Home size={16} /> },
@@ -43,7 +51,59 @@ const BUCKET_META: Record<string, { label: string; icon: React.ReactNode }> = {
 // app.domain.plan_vs_actual.compute_status's sign convention exactly.
 const CONSUMPTION_BUCKETS = new Set<MasterBucket>(["needs", "wants"]);
 
-function PlanVsActualRow({ bucket }: { bucket: BucketDrift }) {
+interface DisplayBucketDrift extends Omit<BucketDrift, "target_amount" | "actual_percentage" | "variance_amount"> {
+  target_amount: string | null;
+  actual_percentage: string | null;
+  variance_amount: string | null;
+}
+
+function moneyString(value: number): string {
+  return value.toFixed(2);
+}
+
+function percentageString(value: number): string {
+  return Number(value.toFixed(2)).toString();
+}
+
+function buildDisplayRows({
+  result,
+  monthlyIncome,
+  monthlyTargets,
+  periodMonths = 1,
+}: {
+  result: PlanVsActualResult;
+  monthlyIncome?: number | null;
+  monthlyTargets?: Partial<Record<PlanBucket, number>>;
+  periodMonths?: number;
+}): DisplayBucketDrift[] {
+  const months = Math.max(1, periodMonths);
+  const baselineIncome = monthlyIncome && monthlyIncome > 0
+    ? monthlyIncome * months
+    : Number(result.plannable_income);
+
+  return result.buckets.map((bucket) => {
+    const actualAmount = Number(bucket.actual_amount);
+    const monthlyTarget = bucket.bucket in (monthlyTargets ?? {})
+      ? monthlyTargets?.[bucket.bucket as PlanBucket]
+      : null;
+    const targetAmount = typeof monthlyTarget === "number" && monthlyTarget >= 0
+      ? monthlyTarget * months
+      : bucket.target_amount !== null ? Number(bucket.target_amount) : null;
+    const targetPct = targetAmount !== null && baselineIncome > 0
+      ? targetAmount / baselineIncome * 100
+      : bucket.target_percentage !== null ? Number(bucket.target_percentage) : null;
+
+    return {
+      ...bucket,
+      target_percentage: targetPct !== null ? percentageString(targetPct) : null,
+      target_amount: targetAmount !== null ? moneyString(targetAmount) : null,
+      actual_percentage: baselineIncome > 0 ? percentageString(actualAmount / baselineIncome * 100) : null,
+      variance_amount: targetAmount !== null ? moneyString(actualAmount - targetAmount) : null,
+    };
+  });
+}
+
+function PlanVsActualRow({ bucket }: { bucket: DisplayBucketDrift }) {
   const meta = BUCKET_META[bucket.bucket];
   if (!meta) return null;
 
@@ -97,14 +157,24 @@ function PlanVsActualRow({ bucket }: { bucket: BucketDrift }) {
   );
 }
 
-export default function PlanVsActualSection({ result, loading, error, onRetry }: PlanVsActualSectionProps) {
+export default function PlanVsActualSection({
+  result,
+  loading,
+  error,
+  onRetry,
+  monthlyIncome,
+  monthlyTargets,
+  periodMonths,
+}: PlanVsActualSectionProps) {
   if (loading) return <SkeletonState variant="card" height="320px" />;
   if (error) {
     return <ErrorState compact message="Couldn't load Plan vs Actual for this period." onRetry={onRetry} />;
   }
   if (!result) return null;
 
-  if (!result.completeness.income_observed) {
+  const hasIncomeBaseline = (monthlyIncome ?? 0) > 0 || Number(result.plannable_income) > 0;
+
+  if (!hasIncomeBaseline) {
     return (
       <EmptyState
         compact
@@ -114,9 +184,10 @@ export default function PlanVsActualSection({ result, loading, error, onRetry }:
     );
   }
 
+  const displayRows = buildDisplayRows({ result, monthlyIncome, monthlyTargets, periodMonths });
   const ordered = BUCKET_ORDER
-    .map((bucket) => result.buckets.find((row) => row.bucket === bucket))
-    .filter((row): row is BucketDrift => Boolean(row));
+    .map((bucket) => displayRows.find((row) => row.bucket === bucket))
+    .filter((row): row is DisplayBucketDrift => Boolean(row));
 
   if (ordered.length === 0) {
     return (

@@ -1,13 +1,8 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
-import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import InvestmentsPageClient from "./InvestmentsPageClient";
 import { investmentsApi } from "@/features/investments/api";
-import { overviewApi } from "@/features/overview/api";
-import type {
-  InvestmentContributionPlanResult,
-  InvestmentsDashboard,
-} from "@/features/investments/api";
+import type { InvestmentsDashboard } from "@/features/investments/api";
 
 vi.mock("@/hooks/useFinancialPeriod", () => ({
   useFinancialPeriod: () => ({
@@ -27,113 +22,9 @@ vi.mock("@/components/coral-ds/FinancialPeriodSelector", () => ({
   default: () => <div data-testid="period-selector">August 2026</div>,
 }));
 
-vi.mock("next/image", () => ({
-  default: (props: React.ImgHTMLAttributes<HTMLImageElement>) =>
-    React.createElement("img", props),
+vi.mock("@/components/coral/CoralMascot", () => ({
+  default: () => <div data-testid="mascot" />,
 }));
-
-const CONTRIBUTION_PLAN: InvestmentContributionPlanResult = {
-  period: { start: "2026-08-01", end: "2026-08-31", label: "2026-08" },
-  plannable_income: "10000.00",
-  total_target_pct: "15",
-  total_actual_amount: "1230.00",
-  total_actual_pct: "12.3",
-  completeness: {
-    plan_available: true,
-    plan_version_changed_mid_period: false,
-    income_observed: true,
-    unclassified_transaction_count: 0,
-    unclassified_amount: "0.00",
-    needs_review_count: 0,
-    origin_only_transfer_legs_count: 0,
-    origin_only_transfer_legs_amount: "0.00",
-    payroll_deduction_signal_detected: false,
-    notes: [],
-    is_complete: true,
-  },
-  vehicles: [
-    {
-      vehicle: "401(k)",
-      target_pct: "6",
-      actual_pct: "5.8",
-      target_amount: "600.00",
-      actual_amount: "580.00",
-      variance_amount: "-20.00",
-      variance_pct_points: "-0.20",
-      status: "on_track",
-      recommended_next_month_delta: "20.00",
-      transaction_count: 1,
-      data_completeness: {
-        status: "complete",
-        is_complete: true,
-        income_observed: true,
-        plan_available: true,
-        payroll_data_complete: true,
-        notes: [],
-      },
-    },
-    {
-      vehicle: "Roth IRA",
-      target_pct: "4",
-      actual_pct: "2.1",
-      target_amount: "400.00",
-      actual_amount: "210.00",
-      variance_amount: "-190.00",
-      variance_pct_points: "-1.90",
-      status: "on_track",
-      recommended_next_month_delta: "190.00",
-      transaction_count: 1,
-      data_completeness: {
-        status: "complete",
-        is_complete: true,
-        income_observed: true,
-        plan_available: true,
-        payroll_data_complete: true,
-        notes: [],
-      },
-    },
-    {
-      vehicle: "ESPP",
-      target_pct: "3",
-      actual_pct: "2.9",
-      target_amount: "300.00",
-      actual_amount: "290.00",
-      variance_amount: "-10.00",
-      variance_pct_points: "-0.10",
-      status: "on_track",
-      recommended_next_month_delta: "10.00",
-      transaction_count: 1,
-      data_completeness: {
-        status: "complete",
-        is_complete: true,
-        income_observed: true,
-        plan_available: true,
-        payroll_data_complete: true,
-        notes: [],
-      },
-    },
-    {
-      vehicle: "Taxable Brokerage",
-      target_pct: "2",
-      actual_pct: "1.5",
-      target_amount: "200.00",
-      actual_amount: "150.00",
-      variance_amount: "-50.00",
-      variance_pct_points: "-0.50",
-      status: "on_track",
-      recommended_next_month_delta: "50.00",
-      transaction_count: 1,
-      data_completeness: {
-        status: "complete",
-        is_complete: true,
-        income_observed: true,
-        plan_available: true,
-        payroll_data_complete: true,
-        notes: [],
-      },
-    },
-  ],
-};
 
 const DASHBOARD: InvestmentsDashboard = {
   portfolio_summary: {
@@ -223,44 +114,39 @@ const DASHBOARD: InvestmentsDashboard = {
   ],
   top_gainers: [],
   top_losers: [],
-  balance_history: [],
-  coverage: [],
-  period: { start_date: "2026-08-01", end_date: "2026-08-31" },
-};
-
-const NEXT_MONTH_PLAN = {
-  period: { start: "2026-08-01", end: "2026-08-31", label: "2026-08" },
-  recommendations: [
+  balance_history: [
     {
-      title: "Increase Roth IRA contribution by $190 next period",
-      reason: "Roth IRA is $190 short of its target this period.",
-      estimated_impact: "190.00",
-      priority: 1,
-      action_type: "increase_investment_contribution" as const,
-      source_facts: [{ label: "Vehicle", value: "Roth IRA" }],
-      bucket: "investments" as const,
-      category: "Roth IRA",
-      incomplete_source: false,
+      date: "2026-07-31",
+      total_value: 65000,
+      account_name: "Morgan Stanley Joint",
+      institution_type: "morgan_stanley",
     },
     {
-      title: "Reduce Wants by $250 next period",
-      reason: "Wants is over target this period.",
-      estimated_impact: "250.00",
-      priority: 2,
-      action_type: "reduce_category" as const,
-      source_facts: [{ label: "Bucket", value: "Wants" }],
-      bucket: "wants" as const,
-      category: null,
-      incomplete_source: false,
+      date: "2026-08-31",
+      total_value: 70000,
+      account_name: "Morgan Stanley Joint",
+      institution_type: "morgan_stanley",
+    },
+    {
+      date: "2026-07-31",
+      total_value: 50000,
+      account_name: "Roth IRA",
+      institution_type: "morgan_stanley",
+    },
+    {
+      date: "2026-08-31",
+      total_value: 50000,
+      account_name: "Roth IRA",
+      institution_type: "morgan_stanley",
     },
   ],
+  coverage: [],
+  period: { start_date: "2026-08-01", end_date: "2026-08-31" },
 };
 
 describe("<InvestmentsPageClient />", () => {
   beforeEach(() => {
     vi.spyOn(investmentsApi, "investments").mockResolvedValue(DASHBOARD);
-    vi.spyOn(investmentsApi, "contributionPlan").mockResolvedValue(CONTRIBUTION_PLAN);
-    vi.spyOn(overviewApi, "nextMonthPlan").mockResolvedValue(NEXT_MONTH_PLAN);
   });
 
   afterEach(() => {
@@ -268,92 +154,44 @@ describe("<InvestmentsPageClient />", () => {
     cleanup();
   });
 
-  it("leads with contribution-plan data from the PR11 API", async () => {
+  it("leads with statement-backed portfolio intelligence instead of contribution-plan data", async () => {
     render(<InvestmentsPageClient />);
 
-    expect((await screen.findAllByText("Am I investing according to plan?"))[0]).toBeInTheDocument();
-    expect(await screen.findByText("12.3%")).toBeInTheDocument();
-    expect(screen.getAllByText("Target 15%")[0]).toBeInTheDocument();
-    expect(screen.getAllByText("Roth IRA")[0]).toBeInTheDocument();
-    expect(screen.getByText("Add $190 more")).toBeInTheDocument();
-    expect(investmentsApi.contributionPlan).toHaveBeenCalledWith({
-      startDate: "2026-08-01",
-      endDate: "2026-08-31",
-    });
+    expect(await screen.findByText("Portfolio Account Value Trends")).toBeInTheDocument();
+    expect(screen.getByText("What Coral Can Trust From Your Statements")).toBeInTheDocument();
+    expect(screen.getByText("Largest account")).toBeInTheDocument();
+    expect(screen.getByText("Largest holding")).toBeInTheDocument();
+    expect(screen.getByText("Cash position")).toBeInTheDocument();
+    expect(screen.queryByText("Investment Contribution Planning")).not.toBeInTheDocument();
+    expect(screen.queryByText("Plan vs Actual Contributions")).not.toBeInTheDocument();
   });
 
   it("keeps portfolio details accessible in the account-value experience", async () => {
     render(<InvestmentsPageClient />);
 
     expect(await screen.findByText("Portfolio Account Value Trends")).toBeInTheDocument();
-    expect(screen.getByText("Latest Portfolio Snapshot")).toBeInTheDocument();
+    expect(screen.queryByText("Latest Portfolio Snapshot")).not.toBeInTheDocument();
     expect(await screen.findByText("Account Allocation")).toBeInTheDocument();
     expect(screen.getByText("Top Holdings")).toBeInTheDocument();
-    expect(screen.getByText("AAPL")).toBeInTheDocument();
+    expect(screen.getAllByText("AAPL").length).toBeGreaterThan(0);
   });
 
-  it("limits Coral Investment Insights to three cards", async () => {
+  it("renders portfolio intelligence facts from imported allocation and holdings", async () => {
     render(<InvestmentsPageClient />);
 
-    const section = await screen.findByText("Coral Investment Insights");
-    const insightRegion = section.closest("section");
+    const heading = await screen.findByText("What Coral Can Trust From Your Statements");
+    const insightRegion = heading.closest("section");
     expect(insightRegion).not.toBeNull();
-    expect(within(insightRegion!).getAllByRole("link")).toHaveLength(3);
+    expect(within(insightRegion!).getAllByText("Morgan Stanley Joint").length).toBeGreaterThan(0);
+    expect(within(insightRegion!).getAllByText("AAPL").length).toBeGreaterThan(0);
+    expect(within(insightRegion!).getByText("$2,000")).toBeInTheDocument();
   });
 
-  it("does not present incomplete contribution data as on-track advice", async () => {
-    vi.mocked(investmentsApi.contributionPlan).mockResolvedValue({
-      ...CONTRIBUTION_PLAN,
-      total_actual_pct: null,
-      vehicles: CONTRIBUTION_PLAN.vehicles.map((vehicle) => ({
-        ...vehicle,
-        actual_pct: null,
-        variance_amount: null,
-        variance_pct_points: null,
-        recommended_next_month_delta: null,
-        status: "unknown",
-        data_completeness: {
-          ...vehicle.data_completeness,
-          status: "incomplete",
-          is_complete: false,
-          income_observed: false,
-        },
-      })),
-      completeness: {
-        ...CONTRIBUTION_PLAN.completeness,
-        income_observed: false,
-        notes: ["No income was observed this period; target $ and actual % cannot be computed."],
-        is_complete: false,
-      },
-    });
-
+  it("does not render contribution-derived planner recommendations on Investments", async () => {
     render(<InvestmentsPageClient />);
 
-    expect(await screen.findByText("Contribution rate unavailable")).toBeInTheDocument();
-    expect(screen.getAllByText("Data unavailable")[0]).toBeInTheDocument();
-    expect(screen.getAllByText("Contribution data unavailable")[0]).toBeInTheDocument();
-    expect(screen.queryByText("Keep at 6%")).not.toBeInTheDocument();
-  });
-
-  it("renders the contribution plan when the secondary portfolio dashboard fails", async () => {
-    vi.mocked(investmentsApi.investments).mockRejectedValue(new Error("portfolio unavailable"));
-
-    render(<InvestmentsPageClient />);
-
-    expect(await screen.findByText("12.3%")).toBeInTheDocument();
-    expect(screen.getByText("Plan vs Actual Contributions")).toBeInTheDocument();
-    expect(screen.getByText("portfolio unavailable")).toBeInTheDocument();
-  });
-
-  it("exposes investment-specific recommendations from the shared PR14 planner", async () => {
-    render(<InvestmentsPageClient />);
-
-    expect(await screen.findByText("Investment Next Month Plan")).toBeInTheDocument();
-    expect(screen.getByText("Increase Roth IRA contribution by $190 next period")).toBeInTheDocument();
-    expect(screen.queryByText("Reduce Wants by $250 next period")).not.toBeInTheDocument();
-    expect(overviewApi.nextMonthPlan).toHaveBeenCalledWith({
-      startDate: "2026-08-01",
-      endDate: "2026-08-31",
-    });
+    expect(await screen.findByText("What Coral Can Trust From Your Statements")).toBeInTheDocument();
+    expect(screen.queryByText("Investment Next Month Plan")).not.toBeInTheDocument();
+    expect(screen.queryByText("Increase Roth IRA contribution by $190 next period")).not.toBeInTheDocument();
   });
 });

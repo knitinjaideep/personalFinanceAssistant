@@ -229,7 +229,7 @@ export function goToNextMonth(
 // URL — reopening a "3m" link always means "3 months back from whenever you
 // open it", which is the expected dynamic behavior for a rolling window.
 
-const DEFAULT_SELECTION: PeriodSelection = { mode: "current_month" };
+const DEFAULT_SELECTION: PeriodSelection = { mode: "6m" };
 
 export function periodSelectionFromSearchParams(params: URLSearchParams): PeriodSelection {
   const modeParam = params.get("period");
